@@ -1,0 +1,2 @@
+[functions.invite-staff]
+verify_jwt = true
