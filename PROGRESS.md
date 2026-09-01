@@ -22,8 +22,13 @@ Newest entries at the top.
 - SMTP not set up. Supabase's built-in mailer caps at a few emails per
   hour, nowhere near enough for 60 staff
 - MapTiler key not domain-restricted
-- Job roles are still hardcoded in the frontend (`ALL_ROLES` in
-  `ManagerDashboard.tsx`) — need to become per-organisation
+- Job roles are hardcoded as a nine-item array in the frontend
+  (`ALL_ROLES` in `ManagerDashboard.tsx`) — for SaaS these must become
+  a per-organisation roles table, seeded per org, with a management UI.
+  Affects `StaffManager`, `InviteStaffModal`, `ManagerShiftRequests`,
+  and the role filter in `ManagerDashboard`
+- `LiveMap` `DEFAULT_CENTER` is hardcoded to Essex — should derive from
+  the org's own locations
 
 ---
 
@@ -33,10 +38,14 @@ Newest entries at the top.
 - Phase 2 multi-tenancy: added `organisations` table, backfilled `org_id`
   across all tables
 - Rewrote every RLS policy to scope by `my_org_id()`
-- Updated triggers and RPCs for the new org scoping
-- Verified isolation with a second test organisation
-- Known gap: job roles are still hardcoded in the frontend, need to
-  become per-organisation
+- Updated triggers and RPCs for the new org scoping;
+  `tg_handle_new_user` now sets `org_id`
+- Verified isolation with a second test organisation — locations,
+  staff, scheduler and map all correctly empty for org 2
+- Known gap: job roles are hardcoded as a nine-item array in the
+  frontend, need to become a per-organisation roles table (see below)
+- Also noted: `LiveMap` `DEFAULT_CENTER` hardcoded to Essex, should
+  derive from the org's own locations
 
 ### 2026-09-01
 - Netlify now deploys from GitHub instead of Bolt
