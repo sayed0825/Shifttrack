@@ -21,12 +21,16 @@ Newest entries at the top.
   for a Bolt bug, must move to environment variables
 - SMTP not set up. Supabase's built-in mailer caps at a few emails per
   hour, nowhere near enough for 60 staff
-- Netlify still deploying from Bolt, not from GitHub
 - MapTiler key not domain-restricted
 
 ---
 
 ## Log
+
+### 2026-09-01
+- Netlify now deploys from GitHub instead of Bolt
+- Updated Supabase Site URL to the Netlify domain
+- Verified the invite flow end to end from the Netlify site
 
 ### 2026-08-29
 - Pushed the project from Bolt to GitHub (private repo)
