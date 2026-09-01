@@ -13,8 +13,8 @@ Newest entries at the top.
 
 ## Current state
 
-**Phase:** 1 complete — out of Bolt, code in GitHub, Claude Code set up
-**Next up:** Phase 2 multi-tenancy, or Phase 3 hardening
+**Phase:** 2 complete — multi-tenancy schema and RLS
+**Next up:** Phase 3 hardening
 
 **Known broken / unverified:**
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
@@ -22,10 +22,21 @@ Newest entries at the top.
 - SMTP not set up. Supabase's built-in mailer caps at a few emails per
   hour, nowhere near enough for 60 staff
 - MapTiler key not domain-restricted
+- Job roles are still hardcoded in the frontend (`ALL_ROLES` in
+  `ManagerDashboard.tsx`) — need to become per-organisation
 
 ---
 
 ## Log
+
+### 2026-09-02
+- Phase 2 multi-tenancy: added `organisations` table, backfilled `org_id`
+  across all tables
+- Rewrote every RLS policy to scope by `my_org_id()`
+- Updated triggers and RPCs for the new org scoping
+- Verified isolation with a second test organisation
+- Known gap: job roles are still hardcoded in the frontend, need to
+  become per-organisation
 
 ### 2026-09-01
 - Netlify now deploys from GitHub instead of Bolt
