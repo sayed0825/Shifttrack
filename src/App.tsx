@@ -33,19 +33,19 @@ export default function App() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, first_name, full_name, role')
+        .select('id, first_name, full_name, role, is_active')
         .eq('id', authSession.user.id)
         .maybeSingle();
 
       if (cancelled) return;
-      const role = (profile?.role ?? 'Employee') as Profile['role'];
       setSession({
         userId: authSession.user.id,
         profile: {
           id: authSession.user.id,
           first_name: profile?.first_name ?? null,
           full_name: profile?.full_name ?? null,
-          role,
+          role: profile?.role ?? null,
+          is_active: profile?.is_active ?? true,
         },
       });
     }
@@ -94,18 +94,18 @@ export default function App() {
       if (data.session) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id, first_name, full_name, role')
+          .select('id, first_name, full_name, role, is_active')
           .eq('id', data.session.user.id)
           .maybeSingle();
 
-        const role = (profile?.role ?? 'Employee') as Profile['role'];
         setSession({
           userId: data.session.user.id,
           profile: {
             id: data.session.user.id,
             first_name: profile?.first_name ?? null,
             full_name: profile?.full_name ?? null,
-            role,
+            role: profile?.role ?? null,
+            is_active: profile?.is_active ?? true,
           },
         });
       }

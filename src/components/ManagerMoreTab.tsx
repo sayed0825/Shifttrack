@@ -1,17 +1,28 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CalendarX,
   Check,
   Clock,
+  Eye,
+  EyeOff,
   Loader2,
   MapPin,
+  Pencil,
+  Plus,
+  Shield,
+  Tags,
+  Trash2,
   User,
   UserCog,
   UserPlus,
   X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { useRoles, type Role } from '../hooks/useRoles';
 import InviteStaffModal from './InviteStaffModal';
 import type { Profile } from './ManagerDashboard';
 
@@ -32,6 +43,7 @@ export default function ManagerMoreTab({ profile }: { profile: Profile }): React
       <UnavailabilityApprovalsCard managerId={profile.id} />
       <InviteStaffCard />
       <LocationsCard />
+      <RolesCard />
     </div>
   );
 }
@@ -126,7 +138,9 @@ function ProfileSettingsCard({ profile }: { profile: Profile }): ReactNode {
         </div>
         <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm">
           <span className="text-ink/60">Role:</span>
-          <span className="font-medium text-ink">{profile.role}</span>
+          <span className="font-medium text-ink">
+            {profile.role ?? <span className="italic text-ink/50">No role</span>}
+          </span>
         </div>
 
         {fault && (
@@ -644,6 +658,429 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
               ))}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===========================================================================
+// Section 7 — Roles
+// ===========================================================================
+
+function RolesCard(): ReactNode {
+  const { roles, loading, error, refresh } = useRoles();
+  const [orgId, setOrgId] = useState<string | null>(null);
+
+  const [newName, setNewName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addFault, setAddFault] = useState<string | null>(null);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [rowFault, setRowFault] = useState<string | null>(null);
+
+  const [confirmingDelete, setConfirmingDelete] = useState<{ role: Role; count: number } | null>(null);
+  const [countLoadingId, setCountLoadingId] = useState<string | null>(null);
+
+  // The org isn't otherwise threaded down to this component; read it off the
+  // caller's own profile, falling back to an existing role row once loaded.
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data, error: profileError } = await supabase
+        .from('profiles')
+        .select('org_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (!profileError) {
+        setOrgId((data as { org_id?: string } | null)?.org_id ?? null);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!orgId && roles.length > 0) setOrgId(roles[0].org_id);
+  }, [orgId, roles]);
+
+  const handleAdd = async () => {
+    const name = newName.trim();
+    if (!name) {
+      setAddFault('Enter a role name.');
+      return;
+    }
+    if (!orgId) {
+      setAddFault('Could not determine your organisation. Try again shortly.');
+      return;
+    }
+
+    setAdding(true);
+    setAddFault(null);
+
+    const nextSortOrder = roles.length > 0 ? Math.max(...roles.map((r) => r.sort_order)) + 1 : 0;
+
+    const { error: insertError } = await supabase.from('roles').insert({
+      org_id: orgId,
+      name,
+      sort_order: nextSortOrder,
+      is_protected: false,
+      can_view_map: false,
+    });
+
+    if (insertError) {
+      setAddFault(insertError.message || 'Could not add role.');
+    } else {
+      setNewName('');
+      await refresh();
+    }
+    setAdding(false);
+  };
+
+  const startRename = (role: Role) => {
+    setEditingId(role.id);
+    setEditName(role.name);
+    setRowFault(null);
+  };
+
+  const cancelRename = () => {
+    setEditingId(null);
+    setEditName('');
+  };
+
+  const saveRename = async (role: Role) => {
+    const name = editName.trim();
+    if (!name) {
+      setRowFault('Role name cannot be empty.');
+      return;
+    }
+    setBusyId(role.id);
+    setRowFault(null);
+
+    const { error: updateError } = await supabase.from('roles').update({ name }).eq('id', role.id);
+
+    if (updateError) {
+      setRowFault(updateError.message || 'Could not rename role.');
+    } else {
+      setEditingId(null);
+      setEditName('');
+      await refresh();
+    }
+    setBusyId(null);
+  };
+
+  const toggleCanViewMap = async (role: Role) => {
+    setBusyId(role.id);
+    setRowFault(null);
+
+    const { error: updateError } = await supabase
+      .from('roles')
+      .update({ can_view_map: !role.can_view_map })
+      .eq('id', role.id);
+
+    if (updateError) setRowFault(updateError.message || 'Could not update role.');
+    else await refresh();
+    setBusyId(null);
+  };
+
+  const move = async (index: number, direction: -1 | 1) => {
+    const current = roles[index];
+    const target = roles[index + direction];
+    if (!current || !target) return;
+
+    setBusyId(current.id);
+    setRowFault(null);
+
+    // Three-step swap (via a temporary value) avoids ever having two roles
+    // share a sort_order at once, in case that's uniquely constrained.
+    const step1 = await supabase.from('roles').update({ sort_order: -1 }).eq('id', current.id);
+    const step2 = step1.error
+      ? step1
+      : await supabase.from('roles').update({ sort_order: current.sort_order }).eq('id', target.id);
+    const step3 = step2.error
+      ? step2
+      : await supabase.from('roles').update({ sort_order: target.sort_order }).eq('id', current.id);
+
+    if (step3.error) setRowFault('Could not reorder roles.');
+    await refresh();
+    setBusyId(null);
+  };
+
+  const openDeleteConfirm = async (role: Role) => {
+    setRowFault(null);
+    setCountLoadingId(role.id);
+    const { count, error: countError } = await supabase
+      .from('profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('role', role.name);
+    setCountLoadingId(null);
+
+    if (countError) {
+      setRowFault('Could not check how many people hold this role.');
+      return;
+    }
+    setConfirmingDelete({ role, count: count ?? 0 });
+  };
+
+  const finishDelete = async () => {
+    if (!confirmingDelete) return;
+    setBusyId(confirmingDelete.role.id);
+    setRowFault(null);
+
+    const { error: deleteError } = await supabase.from('roles').delete().eq('id', confirmingDelete.role.id);
+
+    if (deleteError) setRowFault(deleteError.message || 'Could not delete role.');
+    else await refresh();
+
+    setConfirmingDelete(null);
+    setBusyId(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface p-5">
+        <div className="flex items-center gap-2">
+          <Tags className="h-5 w-5 text-ink/50" aria-hidden="true" />
+          <h3 className="text-sm font-semibold text-ink">Roles</h3>
+        </div>
+        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading roles…
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <Tags className="h-5 w-5 text-ink/50" aria-hidden="true" />
+        <h3 className="text-sm font-semibold text-ink">Roles</h3>
+        <span className="text-xs text-ink/50">{roles.length}</span>
+      </div>
+      <p className="mt-2 text-sm text-ink/60">
+        Job roles are shared across scheduling, staff, and shift requests. Drag order with the
+        arrows; the top role appears first in every list.
+      </p>
+
+      {error && (
+        <div className="mt-3 flex gap-2 rounded-lg bg-danger-bg p-3 text-sm">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
+          <p className="text-danger">{error}</p>
+        </div>
+      )}
+      {rowFault && (
+        <div className="mt-3 flex gap-2 rounded-lg bg-danger-bg p-3 text-sm">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
+          <p className="text-danger">{rowFault}</p>
+        </div>
+      )}
+
+      <ul className="mt-4 space-y-2">
+        {roles.map((role, index) => {
+          const isEditing = editingId === role.id;
+          const isBusy = busyId === role.id;
+
+          return (
+            <li key={role.id} className="rounded-xl border border-border p-3">
+              <div className="flex items-center gap-2">
+                <div className="flex shrink-0 flex-col">
+                  <button
+                    type="button"
+                    onClick={() => void move(index, -1)}
+                    disabled={index === 0 || isBusy}
+                    aria-label={`Move ${role.name} up`}
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void move(index, 1)}
+                    disabled={index === roles.length - 1 || isBusy}
+                    aria-label={`Move ${role.name} down`}
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  {isEditing ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        autoFocus
+                        aria-label={`Rename ${role.name}`}
+                        className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="truncate text-sm font-medium text-ink">{role.name}</span>
+                      {role.is_protected && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold uppercase text-ink/60">
+                          <Shield className="h-3 w-3" aria-hidden="true" />
+                          Protected
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-1">
+                  {isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void saveRename(role)}
+                        disabled={isBusy}
+                        aria-label="Save name"
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-success hover:bg-success-bg disabled:opacity-60"
+                      >
+                        {isBusy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelRename}
+                        disabled={isBusy}
+                        aria-label="Cancel rename"
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg"
+                      >
+                        <X className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void toggleCanViewMap(role)}
+                        disabled={isBusy}
+                        aria-pressed={role.can_view_map}
+                        title={role.can_view_map ? 'Can view the live map' : 'Cannot view the live map'}
+                        className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition disabled:opacity-60 ${
+                          role.can_view_map
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border text-ink/60 hover:border-primary/40'
+                        }`}
+                      >
+                        {role.can_view_map ? <Eye className="h-3.5 w-3.5" aria-hidden="true" /> : <EyeOff className="h-3.5 w-3.5" aria-hidden="true" />}
+                        Map
+                      </button>
+
+                      {!role.is_protected && (
+                        <button
+                          type="button"
+                          onClick={() => startRename(role)}
+                          disabled={isBusy}
+                          aria-label={`Rename ${role.name}`}
+                          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:opacity-60"
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      )}
+
+                      {!role.is_protected && (
+                        <button
+                          type="button"
+                          onClick={() => void openDeleteConfirm(role)}
+                          disabled={isBusy || countLoadingId === role.id}
+                          aria-label={`Delete ${role.name}`}
+                          className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-danger hover:bg-danger-bg disabled:opacity-60"
+                        >
+                          {countLoadingId === role.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {roles.length === 0 && (
+        <p className="mt-4 text-center text-sm text-ink/60">No roles set up yet.</p>
+      )}
+
+      {/* Add role */}
+      <div className="mt-4 flex items-center gap-2 border-t border-border pt-4">
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void handleAdd();
+          }}
+          placeholder="New role name"
+          aria-label="New role name"
+          className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        />
+        <button
+          type="button"
+          onClick={() => void handleAdd()}
+          disabled={adding || !newName.trim()}
+          className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
+        >
+          {adding ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+          Add
+        </button>
+      </div>
+      {addFault && <p className="mt-2 text-sm text-danger">{addFault}</p>}
+
+      {/* Delete confirmation */}
+      {confirmingDelete && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="role-delete-title"
+            className="w-full max-w-md rounded-t-2xl bg-surface p-5 sm:rounded-2xl"
+          >
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden="true" />
+              <div>
+                <h4 id="role-delete-title" className="text-base font-semibold text-ink">
+                  Delete "{confirmingDelete.role.name}"?
+                </h4>
+                {confirmingDelete.count > 0 ? (
+                  <p className="mt-1 text-sm text-ink/60">
+                    {confirmingDelete.count} {confirmingDelete.count === 1 ? 'person holds' : 'people hold'} this
+                    role. They will be left with no role, and won't be schedulable or able to see
+                    open shifts until a new one is assigned.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-ink/60">Nobody currently holds this role.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => void finishDelete()}
+                disabled={busyId === confirmingDelete.role.id}
+                className="min-h-[44px] w-full rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+              >
+                {busyId === confirmingDelete.role.id ? 'Deleting…' : 'Delete permanently'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(null)}
+                className="min-h-[44px] w-full rounded-lg px-4 py-2 text-sm font-medium text-ink/60 hover:bg-bg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

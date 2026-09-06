@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { useRoles } from '../hooks/useRoles';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
 import InviteStaffModal from './InviteStaffModal';
@@ -52,18 +53,15 @@ import StaffManager from './StaffManager';
 // Types
 // ---------------------------------------------------------------------------
 
-export type UserRole = 'Manager' | 'Employee' | 'Driver' | 'FOH' | 'KA' | 'Head Chef' | 'Second Chef' | 'Cook' | 'Tandoori Chef' | 'Kitchen Porter';
-
-export const ALL_ROLES: UserRole[] = [
-  'Manager', 'Employee', 'Driver', 'FOH', 'KA',
-  'Head Chef', 'Second Chef', 'Cook', 'Tandoori Chef', 'Kitchen Porter',
-];
+// Roles are per-organisation data now (see src/hooks/useRoles.ts), not a
+// fixed set — this stays a plain string rather than a union.
+export type UserRole = string;
 
 export interface Profile {
   id: string;
   first_name: string | null;
   full_name: string | null;
-  role: UserRole;
+  role: UserRole | null;
   is_active: boolean;
 }
 
@@ -107,7 +105,7 @@ export interface TimesheetSummary {
 }
 
 type TabId = 'map' | 'scheduler' | 'timesheets' | 'more';
-type RoleFilter = 'all' | UserRole;
+type RoleFilter = 'all' | string;
 type LocationFilter = 'all' | string;
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof MapPin }> = [
@@ -119,15 +117,9 @@ const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof MapPin }> = [
 
 const AUTO_CLOCK_OUT_NOTE = 'Auto clocked-out at shift end';
 
-/*
- * The database enum is 'Manager' | 'Employee'. Some earlier specs used
- * 'manager' | 'staff'. Normalising on read means either casing works and the
- * permission check never silently falls through to the staff branch.
- */
-function normaliseRole(value: string | null | undefined): UserRole {
-  const v = String(value ?? '');
-  const known: UserRole[] = ['Manager', 'Driver', 'FOH', 'KA', 'Head Chef', 'Second Chef', 'Cook', 'Tandoori Chef', 'Kitchen Porter'];
-  return (known as string[]).includes(v) ? (v as UserRole) : 'Employee';
+/** Muted "No role" label for anywhere a role is displayed. */
+function roleLabel(role: string | null | undefined): ReactNode {
+  return role ?? <span className="italic text-ink/50">No role</span>;
 }
 
 // ---------------------------------------------------------------------------
@@ -292,6 +284,8 @@ export default function ManagerDashboard(): ReactNode {
   const [notice, setNotice] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
+  const { roles } = useRoles();
+
   const sweepRan = useRef(false);
 
   useEffect(() => {
@@ -323,7 +317,7 @@ export default function ManagerDashboard(): ReactNode {
           return;
         }
 
-        const profile: Profile = { ...profileResult.data, role: normaliseRole(profileResult.data.role) };
+        const profile: Profile = profileResult.data;
         setViewer(profile);
         setLocations(locationResult.data ?? []);
         setTab(profile.role === 'Manager' ? 'map' : 'timesheets');
@@ -434,7 +428,7 @@ export default function ManagerDashboard(): ReactNode {
                   Icon={Filter}
                   options={[
                     { value: 'all', label: 'All roles' },
-                    ...ALL_ROLES.map((r) => ({ value: r, label: r })),
+                    ...roles.map((r) => ({ value: r.name, label: r.name })),
                   ]}
                 />
               </>
@@ -874,7 +868,7 @@ function TimesheetsPanel({
               <p className="truncate text-sm font-semibold text-ink">
                 {summary.profile?.full_name ?? summary.profile?.first_name ?? 'Unknown'}
               </p>
-              <p className="text-xs text-ink/60">{summary.profile?.role}</p>
+              <p className="text-xs text-ink/60">{roleLabel(summary.profile?.role)}</p>
             </div>
             <div className="text-right">
               <p className="text-sm font-semibold tabular-nums text-ink">{formatHours(summary.totalHours)}</p>

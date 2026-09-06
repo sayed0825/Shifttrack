@@ -29,6 +29,7 @@ import {
   pendingCount,
 } from '../lib/offlineQueue';
 import { supabase, pushLiveLocation } from '../supabaseClient';
+import { useRoles } from '../hooks/useRoles';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
@@ -45,8 +46,12 @@ const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof Clock }> = [
   { id: 'more', label: 'More', Icon: MoreHorizontal },
 ];
 
-const MAP_VIEWER_ROLES = ['Manager', 'FOH', 'KA'];
 const LATE_THRESHOLD_MS = 5 * 60 * 1000;
+
+/** Muted "No role" label for anywhere a role is displayed. */
+function roleLabel(role: string | null | undefined): ReactNode {
+  return role ?? <span className="italic text-ink/50">No role</span>;
+}
 
 interface LocationRow {
   id: string;
@@ -152,7 +157,8 @@ function formatDistance(meters: number | null | undefined): string {
 
 export default function EmployeeDashboard({ profile }: { profile: Profile }): ReactNode {
   const [tab, setTab] = useState<TabId>('clock');
-  const canViewMap = MAP_VIEWER_ROLES.includes(profile.role);
+  const { roles } = useRoles();
+  const canViewMap = roles.find((r) => r.name === profile.role)?.can_view_map ?? false;
 
   if (profile.is_active === false) {
     return (
@@ -563,7 +569,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
             <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm">
               <User className="h-4 w-4 text-ink/50" aria-hidden="true" />
               <span className="text-ink/80">Your role:</span>
-              <span className="font-medium text-ink">{profile.role}</span>
+              <span className="font-medium text-ink">{roleLabel(profile.role)}</span>
             </div>
           </div>
         ) : (
@@ -1079,7 +1085,7 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
           </div>
           <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm">
             <span className="text-ink/60">Role:</span>
-            <span className="font-medium text-ink">{profile.role}</span>
+            <span className="font-medium text-ink">{roleLabel(profile.role)}</span>
           </div>
 
           {profileFault && (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ArrowLeftRight, CalendarPlus, Check, Loader2, Send, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeftRight, CalendarPlus, Check, Loader2, Send, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 interface ShiftLite {
@@ -40,7 +40,7 @@ function personName(shift: ShiftLite | null): string {
 export default function EmployeeShiftActions({
   profile,
 }: {
-  profile: { id: string; role: string };
+  profile: { id: string; role: string | null };
 }): ReactNode {
   const [myShifts, setMyShifts] = useState<ShiftLite[]>([]);
   const [peerShifts, setPeerShifts] = useState<ShiftLite[]>([]);
@@ -129,6 +129,18 @@ export default function EmployeeShiftActions({
       <div className="flex items-center justify-center gap-2 py-10 text-sm text-ink/60">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         Loading…
+      </div>
+    );
+  }
+
+  if (!profile.role) {
+    return (
+      <div className="flex gap-2 rounded-2xl border border-border bg-surface p-5 text-sm">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+        <p className="text-ink/70">
+          You don&rsquo;t have a role assigned yet. Ask your manager to set one before you can see
+          open shifts or request swaps.
+        </p>
       </div>
     );
   }

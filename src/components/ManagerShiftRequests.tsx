@@ -1,11 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ArrowLeftRight, CalendarPlus, Check, Loader2, Trash2, UserCheck } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-
-const ROLES = [
-  'Driver', 'FOH', 'KA', 'Head Chef', 'Second Chef',
-  'Cook', 'Tandoori Chef', 'Kitchen Porter',
-];
+import { useRoles } from '../hooks/useRoles';
 
 interface ShiftLite {
   id: string;
@@ -64,10 +60,18 @@ export default function ManagerShiftRequests({
   const [fault, setFault] = useState<string | null>(null);
 
   const [locationId, setLocationId] = useState(locations[0]?.id ?? '');
-  const [role, setRole] = useState(ROLES[0]);
+  const [role, setRole] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('17:00');
   const [endTime, setEndTime] = useState('22:00');
+
+  const { roles, loading: rolesLoading, error: rolesError } = useRoles();
+
+  useEffect(() => {
+    if (roles.length > 0 && !role) {
+      setRole(roles[0].name);
+    }
+  }, [roles, role]);
 
   const load = useCallback(async () => {
     setFault(null);
@@ -132,8 +136,8 @@ export default function ManagerShiftRequests({
   };
 
   const postOpenShift = async () => {
-    if (!locationId || !date) {
-      setFault('Pick a location and a date.');
+    if (!locationId || !date || !role) {
+      setFault('Pick a location, role, and date.');
       return;
     }
     if (startTime === endTime) {
@@ -262,12 +266,22 @@ export default function ManagerShiftRequests({
                 id="open-role"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                disabled={rolesLoading || roles.length === 0}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
                 ))}
               </select>
+              {rolesLoading && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink/60">
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  Loading roles…
+                </p>
+              )}
+              {!rolesLoading && rolesError && (
+                <p className="mt-1.5 text-xs text-danger">{rolesError}</p>
+              )}
             </div>
           </div>
 
@@ -307,7 +321,7 @@ export default function ManagerShiftRequests({
           <button
             type="button"
             onClick={() => void postOpenShift()}
-            disabled={busyId === 'new-open' || !date}
+            disabled={busyId === 'new-open' || !date || !role}
             className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
           >
             {busyId === 'new-open' ? (

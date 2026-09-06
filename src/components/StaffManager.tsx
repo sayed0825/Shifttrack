@@ -4,17 +4,13 @@ import {
   Search, Trash2, UserMinus, UserPlus, Users,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-
-const ROLES = [
-  'Manager', 'Driver', 'FOH', 'KA', 'Head Chef',
-  'Second Chef', 'Cook', 'Tandoori Chef', 'Kitchen Porter',
-];
+import { useRoles } from '../hooks/useRoles';
 
 interface StaffRow {
   id: string;
   first_name: string | null;
   full_name: string | null;
-  role: string;
+  role: string | null;
   is_active: boolean;
 }
 
@@ -63,6 +59,8 @@ export default function StaffManager({
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fault, setFault] = useState<string | null>(null);
+
+  const { roles, loading: rolesLoading, error: rolesError } = useRoles();
 
   const [confirming, setConfirming] = useState<{
     person: StaffRow;
@@ -113,7 +111,7 @@ export default function StaffManager({
         return false;
       }
       if (!needle) return true;
-      return `${p.full_name ?? ''} ${p.first_name ?? ''} ${p.role}`.toLowerCase().includes(needle);
+      return `${p.full_name ?? ''} ${p.first_name ?? ''} ${p.role ?? ''}`.toLowerCase().includes(needle);
     });
   }, [staff, query, roleFilter, locationFilter, assigned]);
 
@@ -133,7 +131,7 @@ export default function StaffManager({
     setBusyId(null);
   };
 
-  const setRole = (person: StaffRow, role: string) =>
+  const setRole = (person: StaffRow, role: string | null) =>
     run(person.id, async () => supabase.from('profiles').update({ role }).eq('id', person.id));
 
   const toggleLocation = async (person: StaffRow, locationId: string) => {
@@ -285,8 +283,8 @@ export default function StaffManager({
                 className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-ink"
               >
                 <option value="all">All roles</option>
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
                 ))}
               </select>
             </div>
@@ -306,6 +304,11 @@ export default function StaffManager({
           )}
 
           {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
+          {rolesError && (
+            <p className="mt-3 rounded-lg bg-warning-bg px-3 py-2 text-sm text-warning">
+              {rolesError} Role editing is unavailable until this loads.
+            </p>
+          )}
 
           {loading ? (
             <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
@@ -338,7 +341,7 @@ export default function StaffManager({
                           {isSelf && <span className="ml-1 text-xs text-ink/50">(you)</span>}
                         </span>
                         <span className="block truncate text-xs text-ink/60">
-                          {person.role}
+                          {person.role ? person.role : <span className="italic text-ink/40">No role</span>}
                           {!person.is_active && ' · deactivated'}
                         </span>
                       </span>
@@ -349,6 +352,15 @@ export default function StaffManager({
                         <span className="block text-xs text-ink/50">this week</span>
                       </span>
                     </button>
+
+                    {!person.role && (
+                      <div className="mt-1.5 flex items-start gap-1.5 pl-5">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+                        <p className="text-xs font-medium text-warning">
+                          No role assigned — they cannot be scheduled or see open shifts until one is set.
+                        </p>
+                      </div>
+                    )}
 
                     {theirs.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1 pl-5">
@@ -374,13 +386,14 @@ export default function StaffManager({
                           </label>
                           <select
                             id={`role-${person.id}`}
-                            value={person.role}
-                            onChange={(e) => void setRole(person, e.target.value)}
-                            disabled={busyId === person.id}
+                            value={person.role ?? ''}
+                            onChange={(e) => void setRole(person, e.target.value || null)}
+                            disabled={busyId === person.id || rolesLoading}
                             className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
                           >
-                            {ROLES.map((r) => (
-                              <option key={r} value={r}>{r}</option>
+                            <option value="">No role</option>
+                            {roles.map((r) => (
+                              <option key={r.id} value={r.name}>{r.name}</option>
                             ))}
                           </select>
                         </div>

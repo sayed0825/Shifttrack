@@ -1,20 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AlertCircle, Check, Loader2, Mail, MapPin, User, UserCog, X } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabaseClient';
-
-export const STAFF_ROLES = [
-  'Driver',
-  'FOH',
-  'KA',
-  'Head Chef',
-  'Second Chef',
-  'Cook',
-  'Tandoori Chef',
-  'Kitchen Porter',
-  'Manager',
-] as const;
-
-export type StaffRole = (typeof STAFF_ROLES)[number];
+import { useRoles } from '../hooks/useRoles';
 
 interface LocationRow {
   id: string;
@@ -33,18 +20,26 @@ export default function InviteStaffModal({
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<StaffRole>('Driver');
+  const [role, setRole] = useState('');
   const [primaryLocationId, setPrimaryLocationId] = useState('');
   const [additionalLocationIds, setAdditionalLocationIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const { roles, loading: rolesLoading, error: rolesError } = useRoles();
+
   useEffect(() => {
     if (locations.length > 0 && !primaryLocationId) {
       setPrimaryLocationId(locations[0].id);
     }
   }, [locations, primaryLocationId]);
+
+  useEffect(() => {
+    if (roles.length > 0 && !role) {
+      setRole(roles[0].name);
+    }
+  }, [roles, role]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -63,6 +58,10 @@ export default function InviteStaffModal({
   const handleInvite = async () => {
     if (!email.includes('@')) {
       setFault('Enter a valid email address.');
+      return;
+    }
+    if (!role) {
+      setFault('Choose a role.');
       return;
     }
 
@@ -211,13 +210,28 @@ export default function InviteStaffModal({
                 <select
                   id="invite-role"
                   value={role}
-                  onChange={(e) => setRole(e.target.value as StaffRole)}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  onChange={(e) => setRole(e.target.value)}
+                  disabled={rolesLoading || roles.length === 0}
+                  className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {STAFF_ROLES.map((r) => (
-                    <option key={r} value={r}>{r}</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.name}>{r.name}</option>
                   ))}
                 </select>
+                {rolesLoading && (
+                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink/60">
+                    <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                    Loading roles…
+                  </p>
+                )}
+                {!rolesLoading && rolesError && (
+                  <p className="mt-1.5 text-xs text-danger">{rolesError}</p>
+                )}
+                {!rolesLoading && !rolesError && roles.length === 0 && (
+                  <p className="mt-1.5 text-xs text-warning">
+                    No roles have been set up yet. Add one in More → Roles first.
+                  </p>
+                )}
               </div>
 
               {/* Locations */}
@@ -297,7 +311,7 @@ export default function InviteStaffModal({
               <button
                 type="button"
                 onClick={() => void handleInvite()}
-                disabled={busy || !email.includes('@')}
+                disabled={busy || !email.includes('@') || !role}
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Mail className="h-4 w-4" aria-hidden="true" />}
