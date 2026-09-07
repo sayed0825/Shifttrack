@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import EmployeeNotes from './EmployeeNotes';
 
 interface StaffRow {
   id: string;
@@ -464,6 +465,11 @@ export default function StaffManager({
                             </button>
                           </div>
                         )}
+
+                        <EmployeeNotes
+                          employeeId={person.id}
+                          employeeName={person.full_name ?? person.first_name ?? 'Unnamed'}
+                        />
                       </div>
                     )}
                   </li>
