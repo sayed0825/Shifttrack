@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CalendarX,
   Check,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -35,15 +36,17 @@ import { isLate, minutesLate } from '../lib/lateness';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
+import EmployeeTasks from './EmployeeTasks';
 import OvertimeClaim from './OvertimeClaim';
 import type { Profile } from './ManagerDashboard';
 
-type TabId = 'clock' | 'schedule' | 'shifts' | 'timesheets' | 'more';
+type TabId = 'clock' | 'schedule' | 'shifts' | 'tasks' | 'timesheets' | 'more';
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof Clock }> = [
   { id: 'clock', label: 'Clock-In', Icon: LogIn },
   { id: 'schedule', label: 'My Schedule', Icon: CalendarDays },
   { id: 'shifts', label: 'Shifts', Icon: ArrowLeftRight },
+  { id: 'tasks', label: 'Tasks', Icon: CheckSquare },
   { id: 'timesheets', label: 'My Timesheets', Icon: Clock },
   { id: 'more', label: 'More', Icon: MoreHorizontal },
 ];
@@ -208,6 +211,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
           {tab === 'clock' && <ClockInTab profile={profile} canViewMap={canViewMap} />}
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
+          {tab === 'tasks' && <EmployeeTasks profile={profile} />}
           {tab === 'timesheets' && <MyTimesheetsTab />}
           {tab === 'more' && <EmployeeMoreTab profile={profile} />}
         </div>

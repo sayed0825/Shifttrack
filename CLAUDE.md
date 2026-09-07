@@ -117,6 +117,26 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   created_at) — manager notes on an employee's profile. Manager-only RLS,
   append-only: no UPDATE or DELETE policy exists for anyone, including
   managers. See src/components/EmployeeNotes.tsx.
+- Task module:
+  - `task_templates` (id, org_id, location_id, title, description,
+    assigned_role, assigned_user_id, requires_photo, recurrence,
+    weekdays smallint[], start_at time, due_at time, is_active,
+    created_by, created_at) — the recurring definition a day's tasks are
+    generated from.
+  - `tasks` (id, org_id, template_id, location_id, title, description,
+    assigned_role, assigned_user_id, start_time, due_time,
+    requires_photo, photo_path, status, completed_by, completed_at,
+    reviewed_by, reviewed_at, created_by, created_at, task_day) — one
+    day's generated instance. status is 'pending' | 'submitted' |
+    'approved' | 'rejected'.
+  - `task_comments` (id, org_id, task_id, sender_id, comment_text,
+    created_at) — a thread on one task, visible to the assignee(s) and
+    managers.
+  - Photos live in the private `task-photos` storage bucket and are
+    purged after one month by a cron job.
+  - A task assigned to `assigned_role` is a SHARED POOL, not copied per
+    person — whoever completes it first completes it for everyone else
+    with that role. See src/components/EmployeeTasks.tsx.
 
 ### UI
 
