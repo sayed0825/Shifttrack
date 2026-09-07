@@ -34,10 +34,6 @@ import ManagerScheduler from './ManagerScheduler';
 import InviteStaffModal from './InviteStaffModal';
 import NotificationBell from './NotificationBell';
 import ManagerMoreTab from './ManagerMoreTab';
-import ManagerShiftRequests from './ManagerShiftRequests';
-import ManagerTasks from './ManagerTasks';
-import OvertimeApprovals from './OvertimeApprovals';
-import StaffManager from './StaffManager';
 
 /*
  * LiveMap and ManagerScheduler are JS modules. Add src/components/legacy.d.ts:
@@ -119,7 +115,7 @@ type LocationFilter = 'all' | string;
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof MapPin }> = [
   { id: 'map', label: 'Live map', Icon: MapPin },
-  { id: 'scheduler', label: 'Scheduler', Icon: Calendar },
+  { id: 'scheduler', label: 'Schedule', Icon: Calendar },
   { id: 'timesheets', label: 'Timesheets', Icon: Clock },
   { id: 'more', label: 'More', Icon: MoreHorizontal },
 ];
@@ -497,13 +493,7 @@ export default function ManagerDashboard(): ReactNode {
         )}
 
         {tab === 'more' && isManager && (
-          <div className="space-y-4">
-            <ManagerMoreTab profile={viewer} />
-            <ManagerShiftRequests locations={locations} />
-            <ManagerTasks locations={locations} />
-            <OvertimeApprovals />
-            <StaffManager locations={locations} viewerId={viewer.id} />
-          </div>
+          <ManagerMoreTab profile={viewer} locations={locations} viewerId={viewer.id} />
         )}
       </main>
 

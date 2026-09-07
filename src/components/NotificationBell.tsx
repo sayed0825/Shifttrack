@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Bell, Check, Clock, MapPin, UserCog, X } from 'lucide-react';
+import { Bell, Check, CheckSquare, Clock, MapPin, UserCog, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
 export interface NotificationRow {
   id: string;
-  type: 'shift_changed' | 'timesheet_edited' | 'location_changed' | 'role_changed';
+  type: 'shift_changed' | 'timesheet_edited' | 'location_changed' | 'role_changed' | 'task';
   title: string;
   body: string | null;
   is_read: boolean;
@@ -16,6 +16,7 @@ const TYPE_ICONS: Record<NotificationRow['type'], typeof Bell> = {
   timesheet_edited: Clock,
   location_changed: MapPin,
   role_changed: UserCog,
+  task: CheckSquare,
 };
 
 function formatRelative(iso: string): string {

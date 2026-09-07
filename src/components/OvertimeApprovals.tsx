@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Check, Clock, Loader2, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import CollapsibleSection from './CollapsibleSection';
 
 interface ClaimRow {
   id: string;
@@ -71,18 +70,7 @@ export default function OvertimeApprovals(): ReactNode {
   };
 
   return (
-    <CollapsibleSection
-      title="Overtime claims"
-      icon={Clock}
-      count={
-        claims.length > 0 && (
-          <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">
-            {claims.length}
-          </span>
-        )
-      }
-      defaultOpen={claims.length > 0}
-    >
+    <div className="rounded-2xl border border-border bg-surface p-5">
       {fault && <p className="mb-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
 
       {loading ? (
@@ -156,6 +144,6 @@ export default function OvertimeApprovals(): ReactNode {
           })}
         </ul>
       )}
-    </CollapsibleSection>
+    </div>
   );
 }

@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
-import CollapsibleSection from './CollapsibleSection';
 import EmployeeNotes from './EmployeeNotes';
 
 interface StaffRow {
@@ -224,12 +223,8 @@ export default function StaffManager({
   const activeFilters = (locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0);
 
   return (
-    <div>
-    <CollapsibleSection
-      title="Staff"
-      icon={Users}
-      count={<span className="text-xs text-ink/50">{staff.length}</span>}
-    >
+    <>
+    <div className="rounded-2xl border border-border bg-surface p-5">
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
@@ -474,7 +469,7 @@ export default function StaffManager({
               })}
             </ul>
           )}
-    </CollapsibleSection>
+    </div>
 
       {/* Confirmation */}
       {confirming && (
@@ -570,6 +565,6 @@ export default function StaffManager({
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

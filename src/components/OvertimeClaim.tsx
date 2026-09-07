@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { AlertCircle, Clock, Loader2, Send } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import CollapsibleSection from './CollapsibleSection';
 
 interface ClaimRow {
   id: string;
@@ -135,7 +134,7 @@ export default function OvertimeClaim({ profileId }: { profileId: string }): Rea
   };
 
   return (
-    <CollapsibleSection title="Overtime" icon={Clock}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="text-sm text-ink/60">
         If you started before or finished after your scheduled hours, claim it here. Your manager
         approves it before it reaches your timesheet.
@@ -280,6 +279,6 @@ export default function OvertimeClaim({ profileId }: { profileId: string }): Rea
         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         Your timesheet keeps the recorded times until a claim is approved.
       </p>
-    </CollapsibleSection>
+    </div>
   );
 }

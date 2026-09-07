@@ -33,11 +33,11 @@ import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
-import CollapsibleSection from './CollapsibleSection';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
 import EmployeeTasks from './EmployeeTasks';
+import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeClaim from './OvertimeClaim';
 import type { Profile } from './ManagerDashboard';
 
@@ -1112,13 +1112,14 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
     }
   };
 
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-ink">More</h2>
-
-      {/* Profile settings */}
-      <CollapsibleSection title="Profile settings" icon={User}>
-        <div className="space-y-3">
+  const sections: MoreTabSection[] = [
+    {
+      id: 'profile',
+      title: 'Profile settings',
+      icon: User,
+      render: () => (
+        <div className="rounded-2xl border border-border bg-surface p-5">
+          <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="emp-first-name" className="block text-sm font-medium text-ink">
@@ -1178,12 +1179,17 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
             {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
             Save profile
           </button>
+          </div>
         </div>
-      </CollapsibleSection>
-
-      {/* Password */}
-      <CollapsibleSection title="Change password" icon={UserCog}>
-        <div className="space-y-3">
+      ),
+    },
+    {
+      id: 'password',
+      title: 'Change password',
+      icon: UserCog,
+      render: () => (
+        <div className="rounded-2xl border border-border bg-surface p-5">
+          <div className="space-y-3">
           <div>
             <label htmlFor="emp-new-password" className="block text-sm font-medium text-ink">
               New password
@@ -1223,11 +1229,18 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
             {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
             Update password
           </button>
+          </div>
         </div>
-      </CollapsibleSection>
+      ),
+    },
+    { id: 'overtime', title: 'Overtime', icon: Clock, render: () => <OvertimeClaim profileId={profile.id} /> },
+    { id: 'unavailability', title: 'Unavailability', icon: CalendarX, render: () => <UnavailabilityCard profileId={profile.id} /> },
+  ];
 
-      <OvertimeClaim profileId={profile.id} />
-      <UnavailabilityCard profileId={profile.id} />
+  return (
+    <div>
+      <h2 className="mb-4 text-lg font-semibold text-ink">More</h2>
+      <MoreTabSections sections={sections} />
     </div>
   );
 }
@@ -1364,7 +1377,7 @@ function UnavailabilityCard({ profileId }: { profileId: string }): ReactNode {
   };
 
   return (
-    <CollapsibleSection title="Unavailability" icon={CalendarX}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="text-sm text-ink/60">Request time off by selecting dates on the calendar.</p>
 
       {/* Calendar */}
@@ -1487,6 +1500,6 @@ function UnavailabilityCard({ profileId }: { profileId: string }): ReactNode {
           </ul>
         )}
       </div>
-    </CollapsibleSection>
+    </div>
   );
 }

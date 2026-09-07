@@ -3,10 +3,12 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowDown,
+  ArrowLeftRight,
   ArrowUp,
   CalendarX,
   Check,
   Clock,
+  ClipboardList,
   Eye,
   EyeOff,
   Loader2,
@@ -20,13 +22,18 @@ import {
   User,
   UserCog,
   UserPlus,
+  Users,
   X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
-import CollapsibleSection from './CollapsibleSection';
 import InviteStaffModal from './InviteStaffModal';
+import ManagerShiftRequests from './ManagerShiftRequests';
+import ManagerTasks from './ManagerTasks';
+import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
+import OvertimeApprovals from './OvertimeApprovals';
+import StaffManager from './StaffManager';
 import type { Profile } from './ManagerDashboard';
 
 interface LocationRow {
@@ -38,18 +45,111 @@ interface LocationRow {
   radius_meters: number;
 }
 
-export default function ManagerMoreTab({ profile }: { profile: Profile }): ReactNode {
+function pendingBadge(count: number): ReactNode {
+  if (count <= 0) return undefined;
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <ProfileSettingsCard profile={profile} />
-      <ChangePasswordCard />
-      <UnavailabilityApprovalsCard managerId={profile.id} />
-      <InviteStaffCard />
-      <LocationsCard />
-      <RolesCard />
-      <GracePeriodCard />
-    </div>
+    <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">{count}</span>
   );
+}
+
+export default function ManagerMoreTab({
+  profile,
+  locations,
+  viewerId,
+}: {
+  profile: Profile;
+  locations: Array<{ id: string; name: string }>;
+  viewerId: string;
+}): ReactNode {
+  const [unavailabilityCount, setUnavailabilityCount] = useState(0);
+  const [overtimeCount, setOvertimeCount] = useState(0);
+  const [shiftRequestCount, setShiftRequestCount] = useState(0);
+  const [tasksReviewCount, setTasksReviewCount] = useState(0);
+
+  // Lightweight counts just for the row badges below — each drilled-in
+  // section fetches its own full data when it actually mounts.
+  useEffect(() => {
+    void (async () => {
+      const { count } = await supabase
+        .from('unavailability_requests')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      setUnavailabilityCount(count ?? 0);
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const { count } = await supabase
+        .from('overtime_claims')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      setOvertimeCount(count ?? 0);
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const [swapsRes, appsRes] = await Promise.all([
+        supabase
+          .from('shift_swaps')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'pending_manager'),
+        supabase.from('shift_applications').select('id', { count: 'exact', head: true }),
+      ]);
+      setShiftRequestCount((swapsRes.count ?? 0) + (appsRes.count ?? 0));
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const { count } = await supabase
+        .from('tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'submitted');
+      setTasksReviewCount(count ?? 0);
+    })();
+  }, []);
+
+  const sections: MoreTabSection[] = [
+    { id: 'profile', title: 'Profile settings', icon: User, render: () => <ProfileSettingsCard profile={profile} /> },
+    { id: 'password', title: 'Change password', icon: UserCog, render: () => <ChangePasswordCard /> },
+    {
+      id: 'unavailability',
+      title: 'Unavailability requests',
+      icon: CalendarX,
+      count: pendingBadge(unavailabilityCount),
+      render: () => <UnavailabilityApprovalsCard managerId={profile.id} />,
+    },
+    {
+      id: 'shift-requests',
+      title: 'Shift requests',
+      icon: ArrowLeftRight,
+      count: pendingBadge(shiftRequestCount),
+      render: () => <ManagerShiftRequests locations={locations} />,
+    },
+    {
+      id: 'tasks',
+      title: 'Tasks',
+      icon: ClipboardList,
+      count: pendingBadge(tasksReviewCount),
+      render: () => <ManagerTasks locations={locations} />,
+    },
+    {
+      id: 'overtime',
+      title: 'Overtime claims',
+      icon: Clock,
+      count: pendingBadge(overtimeCount),
+      render: () => <OvertimeApprovals />,
+    },
+    { id: 'staff', title: 'Staff', icon: Users, render: () => <StaffManager locations={locations} viewerId={viewerId} /> },
+    { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
+    { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
+    { id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> },
+    { id: 'grace-period', title: 'Late clock-in grace period', icon: Timer, render: () => <GracePeriodCard /> },
+  ];
+
+  return <MoreTabSections sections={sections} />;
 }
 
 // ===========================================================================
@@ -101,7 +201,7 @@ function ProfileSettingsCard({ profile }: { profile: Profile }): ReactNode {
   };
 
   return (
-    <CollapsibleSection title="Profile settings" icon={User}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -159,7 +259,7 @@ function ProfileSettingsCard({ profile }: { profile: Profile }): ReactNode {
           Save profile
         </button>
       </div>
-    </CollapsibleSection>
+    </div>
   );
 }
 
@@ -199,7 +299,7 @@ function ChangePasswordCard(): ReactNode {
   };
 
   return (
-    <CollapsibleSection title="Change password" icon={UserCog}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <div className="space-y-3">
         <div>
           <label htmlFor="more-new-password" className="block text-sm font-medium text-ink">New password</label>
@@ -239,7 +339,7 @@ function ChangePasswordCard(): ReactNode {
           Update password
         </button>
       </div>
-    </CollapsibleSection>
+    </div>
   );
 }
 
@@ -265,7 +365,7 @@ function InviteStaffCard(): ReactNode {
   }, []);
 
   return (
-    <CollapsibleSection title="Invite staff" icon={UserPlus}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="text-sm text-ink/60">
         Send an email invite to a new team member. They'll set their own password on first login.
       </p>
@@ -293,7 +393,7 @@ function InviteStaffCard(): ReactNode {
           onInvited={async () => setInviteOpen(false)}
         />
       )}
-    </CollapsibleSection>
+    </div>
   );
 }
 
@@ -357,7 +457,7 @@ function LocationsCard(): ReactNode {
   };
 
   return (
-    <CollapsibleSection title="Locations" icon={MapPin}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-ink/60">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -469,7 +569,7 @@ function LocationsCard(): ReactNode {
       </div>
         </>
       )}
-    </CollapsibleSection>
+    </div>
   );
 }
 
@@ -556,16 +656,7 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
   };
 
   return (
-    <CollapsibleSection
-      title="Unavailability requests"
-      icon={CalendarX}
-      count={
-        pending.length > 0 && (
-          <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">{pending.length} pending</span>
-        )
-      }
-      defaultOpen={pending.length > 0}
-    >
+    <div className="rounded-2xl border border-border bg-surface p-5">
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-ink/60">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -629,7 +720,7 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
           )}
         </div>
       )}
-    </CollapsibleSection>
+    </div>
   );
 }
 
@@ -801,12 +892,8 @@ function RolesCard(): ReactNode {
   };
 
   return (
-    <div>
-    <CollapsibleSection
-      title="Roles"
-      icon={Tags}
-      count={<span className="text-xs text-ink/50">{roles.length}</span>}
-    >
+    <>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-ink/60">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -992,7 +1079,7 @@ function RolesCard(): ReactNode {
       {addFault && <p className="mt-2 text-sm text-danger">{addFault}</p>}
         </>
       )}
-    </CollapsibleSection>
+    </div>
 
       {/* Delete confirmation */}
       {confirmingDelete && (
@@ -1041,7 +1128,7 @@ function RolesCard(): ReactNode {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1093,7 +1180,7 @@ function GracePeriodCard(): ReactNode {
   };
 
   return (
-    <CollapsibleSection title="Late clock-in grace period" icon={Timer}>
+    <div className="rounded-2xl border border-border bg-surface p-5">
       <p className="text-sm text-ink/60">
         How many minutes after a shift's scheduled start a clock-in still counts as on time.
         0 means any clock-in after the scheduled start counts as late.
@@ -1137,6 +1224,6 @@ function GracePeriodCard(): ReactNode {
 
       {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
       {saved && !fault && <p className="mt-3 text-sm text-success">Grace period saved.</p>}
-    </CollapsibleSection>
+    </div>
   );
 }
