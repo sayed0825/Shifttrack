@@ -17,26 +17,21 @@ Newest entries at the top.
 **Next up:**
 1. Migrate hosting from Netlify to Cloudflare Pages (unlimited builds —
    Netlify's free tier build-minute cap has already blocked deploys once,
-   see below).
-2. Once deploys are flowing again, verify the responsive/iOS-safe-area
-   pass and the map/bottom-nav z-index fix on a real iPhone — see "Known
-   broken / unverified" below, neither has actually been confirmed yet.
+   see below) — still pending, not touched this session.
+2. The purged-photo fallback in Task History (a task older than the
+   one-month photo-purge cron, where the signed URL request should fail
+   gracefully) hasn't actually been exercised — everything else this
+   session was verified on a real device. Needs a task old enough for
+   the purge to have already run against it.
 
 Task module is complete and tested end to end on both sides (template
 creation, instance generation, employee completion with and without a
 required photo, manager review, rejection with a required comment, redo,
-and approval all verified against real data). See the log below for what
-that testing turned up and fixed.
+and approval all verified against real data). Manager task tooling has
+since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
-- The responsive/iOS-safe-area pass (commit `e6c192f`) and the follow-up
-  map z-index fix (commit `f79c2a9`) are committed and pushed but
-  UNVERIFIED on a real device. Netlify had hit its free build-minute
-  limit, so neither commit was ever actually deployed — the iPhone
-  testing done against the live site was against a stale build that
-  predates both fixes. Re-verify once hosting is migrated (see "Next up")
-  — specifically the clock-tab map overlapping the bottom nav on iOS
-  Safari, which is what these two commits were meant to fix
+- The purged-photo fallback in Task History — see "Next up" above.
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
   for a Bolt bug, must move to environment variables
 - SMTP not set up. Supabase's built-in mailer caps at a few emails per
@@ -47,16 +42,111 @@ that testing turned up and fixed.
 - Late clock-in detection is implemented but UNTESTED — needs a real
   clock-in against a scheduled shift to verify the LATE badge, since
   manual SQL `time_logs` inserts have no `shift_id`
-- Collapsible sections: `StaffManager` already collapses; other long
-  manager sections (Roles, Locations, unavailability/shift-request
-  lists) should get the same treatment where it makes sense
-- Staff email isn't shown anywhere in the manager staff view
-  (`StaffManager`) — would need a join or an admin API call, since
-  email lives on `auth.users`, not `profiles`
 
 ---
 
 ## Log
+
+### 2026-09-07 (later still)
+Manager-side task tooling and navigation, largely driven by using the
+task module against real data and finding it needed room to grow. All
+verified on a real device except the purged-photo fallback in Task
+History, noted above — that needs a task old enough for the monthly
+photo-purge cron to have actually run against it.
+
+- **Task notifications**: a database trigger now writes a `notifications`
+  row on task events, and a daily cron flags overdue tasks. Added
+  `'task'` to `NotificationBell`'s type→icon map (`CheckSquare`) so
+  they render instead of falling back to the generic bell icon.
+- **Manager More tab → drill-down navigation**: both More tabs
+  (manager and employee) were one long stack of cards. New shared
+  `MoreTabSections.tsx` turns each into a list of section rows with a
+  chevron; tapping one replaces the list with that section's content
+  and a back button, entirely within the tab. Rows for
+  pending-item sections (unavailability requests, overtime claims,
+  shift requests) carry a live count badge, computed from a
+  lightweight query at the list level so it's visible before drilling
+  in rather than only once the full section mounts. `CollapsibleSection`
+  stays in use where a section still has more than one sub-topic
+  worth independently collapsing (Task History's Review/Setup/History
+  split).
+- **FilterButton popover pattern**: a shared `FilterButton.tsx`
+  (button + active-count badge + popover) replaced loose filter
+  `<select>`s wherever they'd accumulated (ManagerDashboard header,
+  ManagerScheduler). The popover portals to `document.body` rather
+  than positioning relative to its trigger — the live map's wrapper
+  has `isolation: isolate` to contain Leaflet's own z-index, which
+  also traps any z-index value trying to escape it from a normal
+  absolutely-positioned child, so no z-index number could ever have
+  fixed that; a portal sidesteps the stacking context entirely. Later
+  found the popover could still render past the bottom of a phone
+  screen with no way to scroll to it — fixed by rendering it as a
+  full-width bottom sheet below `sm` (own scroll, safe-area padding,
+  tap-to-close backdrop) and, from `sm` up, clamping the popover to
+  the viewport (flips above the trigger when there isn't room below,
+  shifts horizontally to stay on screen, gets its own max-height and
+  internal scroll).
+- **ManagerScheduler role filter**: added alongside the existing
+  location filter, both now in one FilterButton popover, filtering
+  the week's shifts by the assigned person's role.
+- **Payroll CSV report**: `PayrollReportModal.tsx`, opened via
+  "Generate report" on the Timesheets tab. Date range + location/role
+  multi-selects (default all), excludes still-open time logs from the
+  totals with a called-out count so a manager can chase them before
+  running payroll, groups by location → role → person, on-screen table
+  (hours to 2 decimals, total row) before a CSV download in the same
+  shape plus the date range on line 1.
+- **Task History**: third section in ManagerTasks alongside Review and
+  Task setup. Filters (date range defaulting to the last 7 days,
+  location multi-select, role multi-select, status — All/Completed/Not
+  completed — all defaulting to All) in a FilterButton popover. Every
+  status shows, newest first; role filtering happens client-side per
+  page since a person-targeted task has a null `assigned_role` and
+  should never be excluded by a role filter. Photo thumbnails reuse a
+  newly-extracted shared `PhotoLightbox` (Review now uses it too); a
+  failed signed-URL fetch shows a muted "Photo no longer stored" note.
+  Paginated at 50 with Load more. A "never completed" count (pending,
+  due_time already past, same date/location/role filters) sits at the
+  top, from a separate lightweight query rather than a head-count one,
+  since the role filter can't be pushed server-side for the reason
+  above and a count-only query couldn't apply it either.
+- **Tasks promoted to a top-level manager tab** (`CheckSquare`, between
+  Schedule and Timesheets — five tabs now) and removed from the More
+  list. Compared against EmployeeDashboard's existing six-tab bottom
+  bar as precedent that five shorter labels would read fine without
+  needing to shorten any.
+- **Invite staff button removed from ManagerDashboard's header** — it
+  was the only non-navigation, non-filter control living there: still
+  reachable from the More tab, untouched.
+- **Badge counts corrected to match their panels**: the shift-requests
+  badge counted every `shift_applications` row, while the panel only
+  ever renders applicants against shifts that are still unassigned and
+  in the future. Fixed the badge query to inner-join to `shifts` and
+  apply the identical filter. Checked the other three badges
+  (unavailability, overtime, tasks-review) against their panels — all
+  three already matched exactly.
+- **Expired open-shift cleanup**: an unfilled open shift that's already
+  started used to just linger — the panel's `start_time >= now()`
+  filter meant it fell out of view with no way to action it. Added an
+  "Expired" group to `ManagerShiftRequests` (muted styling, applicant
+  count, Delete only — no per-applicant action, since assigning someone
+  to a shift that already happened isn't meaningful), excluded from the
+  badge. Also added a daily cron, one day after a shift's start, for
+  the automatic side of the same cleanup.
+- **`safeUuid()` helper** (`src/lib/ids.ts`): `crypto.randomUUID()`
+  needs a secure context (undefined on the plain-HTTP local dev server)
+  and is missing on older iOS Safari. First fallback was a
+  timestamp+random string, which broke `shifts.series_id` (a real
+  `uuid` column) with "invalid input syntax for type uuid" — fixed to
+  build a proper v4-shaped UUID from `crypto.getRandomValues` (or
+  `Math.random` as a last resort), version/variant bits set per
+  RFC 4122. Replaced both call sites (task photo paths, recurring-shift
+  `series_id`).
+- **`profiles.email`**: backfilled from `auth.users` and kept in sync by
+  a `sync_profile_email` trigger. Added to the `Profile` interface and
+  every place that builds one; `StaffManager` shows it (truncated in
+  the collapsed row, in full expanded) and the search filter matches
+  on it. Documented in CLAUDE.md: read it, never write it directly.
 
 ### 2026-09-07 (yet later)
 - Full responsive pass (iOS safe areas, `dvh` instead of `vh`, timesheet
