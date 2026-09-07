@@ -12,6 +12,7 @@ import {
   AlertCircle,
   Calendar,
   Check,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -33,6 +34,7 @@ import { isLate, minutesLate } from '../lib/lateness';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
+import ManagerTasks from './ManagerTasks';
 import InviteStaffModal from './InviteStaffModal';
 import NotificationBell from './NotificationBell';
 import ManagerMoreTab from './ManagerMoreTab';
@@ -112,13 +114,14 @@ export interface TimesheetSummary {
   hasOpenLog: boolean;
 }
 
-type TabId = 'map' | 'scheduler' | 'timesheets' | 'more';
+type TabId = 'map' | 'scheduler' | 'tasks' | 'timesheets' | 'more';
 type RoleFilter = 'all' | string;
 type LocationFilter = 'all' | string;
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof MapPin }> = [
   { id: 'map', label: 'Live map', Icon: MapPin },
   { id: 'scheduler', label: 'Schedule', Icon: Calendar },
+  { id: 'tasks', label: 'Tasks', Icon: CheckSquare },
   { id: 'timesheets', label: 'Timesheets', Icon: Clock },
   { id: 'more', label: 'More', Icon: MoreHorizontal },
 ];
@@ -491,6 +494,8 @@ export default function ManagerDashboard(): ReactNode {
         )}
 
         {tab === 'scheduler' && isManager && <ManagerScheduler />}
+
+        {tab === 'tasks' && isManager && <ManagerTasks locations={locations} />}
 
         {tab === 'timesheets' && (
           <TimesheetsPanel

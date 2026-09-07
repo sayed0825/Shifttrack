@@ -6,7 +6,10 @@ import {
   Clock,
   ClipboardCheck,
   ClipboardList,
+  Filter,
+  History,
   Loader2,
+  MapPin,
   Plus,
   Repeat,
   Trash2,
@@ -17,6 +20,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import CollapsibleSection from './CollapsibleSection';
+import FilterButton from './FilterButton';
 
 type TaskStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
 type Recurrence = 'daily' | 'weekly';
@@ -124,6 +128,43 @@ export default function ManagerTasks({
     <div className="space-y-4">
       <ReviewSection userId={userId} />
       <TaskSetupSection userId={userId} locations={locations} />
+      <HistorySection locations={locations} />
+    </div>
+  );
+}
+
+// ===========================================================================
+// Shared photo lightbox
+// ===========================================================================
+
+function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }): ReactNode {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/80 p-4"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close photo"
+        className="absolute right-4 top-4 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
+      >
+        <X className="h-5 w-5" aria-hidden="true" />
+      </button>
+      <img
+        src={url}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-full max-w-full rounded-lg object-contain"
+      />
     </div>
   );
 }
@@ -194,15 +235,6 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
       });
     })();
   }, [tasks]);
-
-  useEffect(() => {
-    if (!lightboxUrl) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setLightboxUrl(null);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [lightboxUrl]);
 
   const approve = async (task: SubmittedTask) => {
     if (!userId) return;
@@ -392,27 +424,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
           )}
     </CollapsibleSection>
 
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setLightboxUrl(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setLightboxUrl(null)}
-            aria-label="Close photo"
-            className="absolute right-4 top-4 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-          <img
-            src={lightboxUrl}
-            alt=""
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-full max-w-full rounded-lg object-contain"
-          />
-        </div>
-      )}
+      {lightboxUrl && <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
     </div>
   );
 }
@@ -1284,5 +1296,376 @@ function OneOffFormModal({
         )}
       </div>
     </div>
+  );
+}
+
+// ===========================================================================
+// Section 3 — History
+// ===========================================================================
+
+const HISTORY_PAGE_SIZE = 50;
+
+const HISTORY_FIELDS =
+  'id, title, task_day, due_time, status, assigned_role, photo_path, completed_at, reviewed_at, locations ( name ), completer:completed_by ( first_name, full_name ), reviewer:reviewed_by ( first_name, full_name ), assignee:assigned_user_id ( first_name, full_name )';
+
+interface HistoryTaskRow {
+  id: string;
+  title: string;
+  task_day: string;
+  due_time: string;
+  status: TaskStatus;
+  assigned_role: string | null;
+  photo_path: string | null;
+  completed_at: string | null;
+  reviewed_at: string | null;
+  locations: { name: string } | null;
+  completer: { first_name: string | null; full_name: string | null } | null;
+  reviewer: { first_name: string | null; full_name: string | null } | null;
+  assignee: { first_name: string | null; full_name: string | null } | null;
+}
+
+function formatTaskDay(dateKey: string): string {
+  return new Date(`${dateKey}T00:00:00`).toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function defaultHistoryStart(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
+  return localDateKey(d);
+}
+
+function historyStatusClasses(status: TaskStatus): string {
+  if (status === 'approved') return 'bg-success-bg text-success';
+  if (status === 'rejected') return 'bg-danger-bg text-danger';
+  if (status === 'submitted') return 'bg-warning-bg text-warning';
+  return 'bg-bg text-ink/60';
+}
+
+function HistorySection({ locations }: { locations: Array<{ id: string; name: string }> }): ReactNode {
+  const { roles, loading: rolesLoading } = useRoles();
+
+  const [startDate, setStartDate] = useState(defaultHistoryStart);
+  const [endDate, setEndDate] = useState(() => localDateKey(new Date()));
+  const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
+  const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
+
+  const [rows, setRows] = useState<HistoryTaskRow[]>([]);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [neverCompletedCount, setNeverCompletedCount] = useState(0);
+
+  const [signedUrls, setSignedUrls] = useState<Record<string, string | null>>({});
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const fetchedPaths = useRef<Set<string>>(new Set());
+
+  // Both multi-selects default to everything, once their options load.
+  useEffect(() => {
+    setSelectedLocations(new Set(locations.map((l) => l.id)));
+  }, [locations]);
+  useEffect(() => {
+    if (!rolesLoading) setSelectedRoles(new Set(roles.map((r) => r.name)));
+  }, [roles, rolesLoading]);
+
+  const load = useCallback(
+    async (targetPage: number, append: boolean) => {
+      if (!startDate || !endDate || rolesLoading) return;
+      if (append) setLoadingMore(true);
+      else setLoading(true);
+      setError(null);
+
+      let query = supabase
+        .from('tasks')
+        .select(HISTORY_FIELDS)
+        .gte('task_day', startDate)
+        .lte('task_day', endDate)
+        .order('task_day', { ascending: false })
+        .order('due_time', { ascending: false })
+        .range(targetPage * HISTORY_PAGE_SIZE, targetPage * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE - 1);
+
+      if (selectedLocations.size < locations.length) {
+        query = query.in('location_id', Array.from(selectedLocations));
+      }
+
+      const { data, error: queryError } = await query.returns<HistoryTaskRow[]>();
+
+      if (queryError) {
+        setError('Task history could not be loaded.');
+      } else {
+        const fetched = data ?? [];
+        // assigned_role is null for a person-targeted task — it has no role
+        // dimension to filter on, so it stays regardless of role selection.
+        const filtered =
+          selectedRoles.size >= roles.length
+            ? fetched
+            : fetched.filter((t) => !t.assigned_role || selectedRoles.has(t.assigned_role));
+        setRows((prev) => (append ? [...prev, ...filtered] : filtered));
+        setHasMore(fetched.length === HISTORY_PAGE_SIZE);
+      }
+
+      if (append) setLoadingMore(false);
+      else setLoading(false);
+    },
+    [startDate, endDate, selectedLocations, selectedRoles, locations.length, roles.length, rolesLoading]
+  );
+
+  useEffect(() => {
+    setPage(0);
+    void load(0, false);
+  }, [load]);
+
+  // A separate, lighter query for the headline count: role filtering can't
+  // be pushed server-side (see above), so this fetches just the two columns
+  // needed to apply it, rather than paying for a full head-count query that
+  // couldn't apply the same filter anyway.
+  useEffect(() => {
+    if (rolesLoading) return;
+    void (async () => {
+      const nowIso = new Date().toISOString();
+      let query = supabase
+        .from('tasks')
+        .select('id, assigned_role')
+        .eq('status', 'pending')
+        .lt('due_time', nowIso)
+        .gte('task_day', startDate)
+        .lte('task_day', endDate);
+
+      if (selectedLocations.size < locations.length) {
+        query = query.in('location_id', Array.from(selectedLocations));
+      }
+
+      const { data } = await query;
+      const overdue = data ?? [];
+      const scoped =
+        selectedRoles.size >= roles.length
+          ? overdue
+          : overdue.filter((t) => !t.assigned_role || selectedRoles.has(t.assigned_role));
+      setNeverCompletedCount(scoped.length);
+    })();
+  }, [startDate, endDate, selectedLocations, selectedRoles, locations.length, roles.length, rolesLoading]);
+
+  useEffect(() => {
+    const toFetch = rows
+      .map((r) => r.photo_path)
+      .filter((p): p is string => Boolean(p) && !fetchedPaths.current.has(p));
+    if (toFetch.length === 0) return;
+    toFetch.forEach((p) => fetchedPaths.current.add(p));
+
+    void (async () => {
+      const results = await Promise.all(
+        toFetch.map(async (path) => {
+          const { data, error } = await supabase.storage.from('task-photos').createSignedUrl(path, 3600);
+          return [path, error ? null : (data?.signedUrl ?? null)] as const;
+        })
+      );
+      setSignedUrls((prev) => {
+        const next = { ...prev };
+        for (const [path, url] of results) next[path] = url;
+        return next;
+      });
+    })();
+  }, [rows]);
+
+  const toggleLocation = (id: string) => {
+    setSelectedLocations((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleRole = (name: string) => {
+    setSelectedRoles((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const activeFilterCount =
+    (selectedLocations.size < locations.length ? 1 : 0) + (selectedRoles.size < roles.length ? 1 : 0);
+
+  return (
+    <CollapsibleSection title="History" icon={History}>
+      <div className="flex flex-wrap items-center gap-3">
+        <FilterButton activeCount={activeFilterCount}>
+          <div>
+            <label htmlFor="history-start" className="block text-xs font-medium text-ink/60">
+              Start date
+            </label>
+            <input
+              id="history-start"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            />
+          </div>
+          <div>
+            <label htmlFor="history-end" className="block text-xs font-medium text-ink/60">
+              End date
+            </label>
+            <input
+              id="history-end"
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            />
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-ink/60">Locations</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {locations.map((loc) => {
+                const on = selectedLocations.has(loc.id);
+                return (
+                  <button
+                    key={loc.id}
+                    type="button"
+                    onClick={() => toggleLocation(loc.id)}
+                    aria-pressed={on}
+                    className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      on
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-border text-ink hover:border-primary/40'
+                    }`}
+                  >
+                    {on && <Check className="h-3 w-3" aria-hidden="true" />}
+                    {loc.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-ink/60">Roles</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {roles.map((r) => {
+                const on = selectedRoles.has(r.name);
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => toggleRole(r.name)}
+                    aria-pressed={on}
+                    className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      on
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-border text-ink hover:border-primary/40'
+                    }`}
+                  >
+                    {on && <Check className="h-3 w-3" aria-hidden="true" />}
+                    {r.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </FilterButton>
+
+        <div
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+            neverCompletedCount > 0 ? 'bg-warning-bg text-warning' : 'bg-bg text-ink/60'
+          }`}
+        >
+          {neverCompletedCount} never completed in this range
+        </div>
+      </div>
+
+      {error && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{error}</p>}
+
+      {loading ? (
+        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading history…
+        </div>
+      ) : rows.length === 0 ? (
+        <p className="mt-4 text-sm text-ink/60">No tasks in this range for the selected filters.</p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {rows.map((task) => {
+            const target = task.assigned_role ?? nameOf(task.assignee);
+            const photoState = task.photo_path ? signedUrls[task.photo_path] : undefined;
+
+            return (
+              <li key={task.id} className="rounded-xl border border-border p-3">
+                <div className="flex items-start gap-3">
+                  {task.photo_path &&
+                    (photoState === undefined ? (
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-bg">
+                        <Loader2 className="h-4 w-4 animate-spin text-ink/40" aria-hidden="true" />
+                      </div>
+                    ) : photoState === null ? null : (
+                      <button
+                        type="button"
+                        onClick={() => setLightboxUrl(photoState)}
+                        aria-label="View submitted photo"
+                        className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg"
+                      >
+                        <img src={photoState} alt="" className="h-full w-full object-cover" />
+                      </button>
+                    ))}
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-ink">{task.title}</p>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${historyStatusClasses(task.status)}`}
+                      >
+                        {task.status}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-ink/60">
+                      {formatTaskDay(task.task_day)} · {task.locations?.name ?? 'No location'} · {target}
+                    </p>
+                    {task.photo_path && photoState === null && (
+                      <p className="mt-1 text-xs italic text-ink/40">Photo no longer stored</p>
+                    )}
+                    <p className="mt-1 text-xs text-ink/50">
+                      {task.completer
+                        ? `Completed by ${nameOf(task.completer)}${
+                            task.completed_at ? ` · ${formatDateTime(task.completed_at)}` : ''
+                          }`
+                        : 'Not completed'}
+                    </p>
+                    {task.reviewer && (
+                      <p className="text-xs text-ink/50">Reviewed by {nameOf(task.reviewer)}</p>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {hasMore && !loading && (
+        <button
+          type="button"
+          onClick={() => {
+            const nextPage = page + 1;
+            setPage(nextPage);
+            void load(nextPage, true);
+          }}
+          disabled={loadingMore}
+          className="mt-4 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-ink hover:bg-bg disabled:opacity-60"
+        >
+          {loadingMore && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+          Load more
+        </button>
+      )}
+
+      {lightboxUrl && <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+    </CollapsibleSection>
   );
 }

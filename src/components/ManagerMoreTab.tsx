@@ -8,7 +8,6 @@ import {
   CalendarX,
   Check,
   Clock,
-  ClipboardList,
   Eye,
   EyeOff,
   Loader2,
@@ -30,7 +29,6 @@ import { useRoles, type Role } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
 import InviteStaffModal from './InviteStaffModal';
 import ManagerShiftRequests from './ManagerShiftRequests';
-import ManagerTasks from './ManagerTasks';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeApprovals from './OvertimeApprovals';
 import StaffManager from './StaffManager';
@@ -64,7 +62,6 @@ export default function ManagerMoreTab({
   const [unavailabilityCount, setUnavailabilityCount] = useState(0);
   const [overtimeCount, setOvertimeCount] = useState(0);
   const [shiftRequestCount, setShiftRequestCount] = useState(0);
-  const [tasksReviewCount, setTasksReviewCount] = useState(0);
 
   // Lightweight counts just for the row badges below — each drilled-in
   // section fetches its own full data when it actually mounts.
@@ -109,16 +106,6 @@ export default function ManagerMoreTab({
     })();
   }, []);
 
-  useEffect(() => {
-    void (async () => {
-      const { count } = await supabase
-        .from('tasks')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'submitted');
-      setTasksReviewCount(count ?? 0);
-    })();
-  }, []);
-
   const sections: MoreTabSection[] = [
     { id: 'profile', title: 'Profile settings', icon: User, render: () => <ProfileSettingsCard profile={profile} /> },
     { id: 'password', title: 'Change password', icon: UserCog, render: () => <ChangePasswordCard /> },
@@ -135,13 +122,6 @@ export default function ManagerMoreTab({
       icon: ArrowLeftRight,
       count: pendingBadge(shiftRequestCount),
       render: () => <ManagerShiftRequests locations={locations} />,
-    },
-    {
-      id: 'tasks',
-      title: 'Tasks',
-      icon: ClipboardList,
-      count: pendingBadge(tasksReviewCount),
-      render: () => <ManagerTasks locations={locations} />,
     },
     {
       id: 'overtime',
