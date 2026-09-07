@@ -9,7 +9,7 @@ interface ShiftLite {
   end_time: string;
   assigned_user_id: string | null;
   locations: { name: string } | null;
-  profiles: { id: string; first_name: string | null; full_name: string | null } | null;
+  profiles: { id: string; first_name: string | null; full_name: string | null; role: string | null } | null;
 }
 
 interface SwapRow {
@@ -22,7 +22,7 @@ interface SwapRow {
 }
 
 const SHIFT_FIELDS =
-  'id, title, start_time, end_time, assigned_user_id, locations ( name ), profiles:assigned_user_id ( id, first_name, full_name )';
+  'id, title, start_time, end_time, assigned_user_id, locations ( name ), profiles:assigned_user_id ( id, first_name, full_name, role )';
 
 function when(shift: ShiftLite | null): string {
   if (!shift) return '—';
@@ -77,10 +77,16 @@ export default function EmployeeShiftActions({
         .order('created_at', { ascending: false }),
     ]);
 
-    // RLS returns my shifts and same-role colleagues' together.
+    // RLS (shifts_select_same_role) is the real enforcement here — this
+    // client-side role filter is belt and braces so a stale/wrong selection
+    // can't even be offered in the UI, rather than failing opaquely at insert.
     const all = (shiftRes.data ?? []) as unknown as ShiftLite[];
     setMyShifts(all.filter((s) => s.assigned_user_id === profile.id));
-    setPeerShifts(all.filter((s) => s.assigned_user_id && s.assigned_user_id !== profile.id));
+    setPeerShifts(
+      all.filter(
+        (s) => s.assigned_user_id && s.assigned_user_id !== profile.id && s.profiles?.role === profile.role
+      )
+    );
 
     setOpenShifts((openRes.data ?? []) as unknown as ShiftLite[]);
     setMyApplications(
