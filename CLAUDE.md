@@ -115,6 +115,11 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   domain table carries org_id referencing it, including profiles.org_id.
   my_org_id() is a SECURITY DEFINER helper that reads profiles.org_id for
   the current user, the same pattern as is_manager()/my_role().
+- White-labelled: `organisations.name` and `logo_url` are the only branding
+  shown anywhere — the product name is never hardcoded in the UI. Logos
+  live in the public `org-logos` storage bucket at
+  `${orgId}/logo.<ext>` (png/jpg/svg, 1MB cap, enforced client-side in
+  ManagerMoreTab's Branding card). See src/hooks/useOrganisation.ts.
 - `employee_notes` (id, org_id, employee_id, manager_id, note_text,
   created_at) — manager notes on an employee's profile. Manager-only RLS,
   append-only: no UPDATE or DELETE policy exists for anyone, including
@@ -144,11 +149,45 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
     insert/update payload that includes the column, even as null, fails
     with "cannot insert a non-DEFAULT value into column".
 
-### UI
+### UI — design system
 
-- Tailwind theme tokens only: bg-bg, bg-surface, text-ink, border-border,
-  bg-primary (royal green), bg-secondary (brownish orange), plus
-  success/warning/danger for status. Text is black or white only.
+Defined in `src/index.css` under `@theme`. Change the look there, not with
+one-off values on a screen.
+
+- Font is Archivo, self-hosted via `@fontsource/archivo` (400/500/600/700
+  imported in index.css), set as `--font-sans` so it's the default
+  everywhere — never a CDN, never a bare system-font fallback.
+- Type scale is custom (`--text-xs` … `--text-3xl` + paired
+  `--line-height`s in `@theme`), not Tailwind's stock sizes. Every time,
+  duration, date and hours value gets `tabular-nums` — this app is half
+  numbers and they need to align in columns.
+- Exactly two border radii: `rounded-lg` (small — controls: buttons,
+  inputs, chips, nested rows) and `rounded-2xl` (large — sheets, modals,
+  cards that genuinely group content). Both are redefined in `@theme`
+  (`--radius-lg`, `--radius-2xl`); don't reach for `rounded-xl`,
+  `rounded-md`, or a bare `rounded` — there's nowhere in the scale for
+  them to mean anything, and they'll get merged away again.
+  `rounded-full` stays default, for pills/dots only.
+- Colour: `bg-primary` (#14532D, royal green) is brand only — the header
+  bar, primary buttons. Status has its own set, deliberately not brand
+  green or secondary orange: `success`/`warning`/`danger` for
+  approved/attention/rejected outcomes, and `active` (teal) specifically
+  for something ongoing right now — on shift, in range, on duty — which
+  is a different thing from "approved" and must never fall back to brand
+  or success green just because both happen to be green.
+- No entrance animations, no hover transitions on static cards (only on
+  genuinely interactive controls), no all-caps labels, no eyebrow labels
+  above a heading, no gradients, no shadow on static content — shadow
+  only on things that actually float (a popover, a modal, an active tab
+  pill). Text is black or white only.
+- The header bar (`bg-primary`) is structural on both dashboards — it
+  carries the org logo (falling back to the org name in text when
+  `logo_url` is null, via `useOrganisation`), the tab nav, and header
+  controls (filters, notifications, log out) in a white/translucent
+  treatment (`FilterButton`'s `variant="inverted"` is the pattern for a
+  header-bar control; the bottom mobile nav and screen content stay on
+  the neutral bg/surface palette — green is chrome, not a wash over
+  everything).
 - Minimum 44px touch targets. Mobile is the primary case.
 - Leaflet DivIcon markup is built outside React, so every Tailwind class in
   it must be a complete literal string. Never assemble class names

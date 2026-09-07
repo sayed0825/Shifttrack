@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -12,12 +12,14 @@ import {
   EyeOff,
   Loader2,
   MapPin,
+  Palette,
   Pencil,
   Plus,
   Shield,
   Tags,
   Timer,
   Trash2,
+  Upload,
   User,
   UserCog,
   UserPlus,
@@ -27,6 +29,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
+import { useOrganisation } from '../hooks/useOrganisation';
 import InviteStaffModal from './InviteStaffModal';
 import ManagerShiftRequests from './ManagerShiftRequests';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
@@ -134,6 +137,7 @@ export default function ManagerMoreTab({
     { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
     { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
     { id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> },
+    { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
     { id: 'grace-period', title: 'Late clock-in grace period', icon: Timer, render: () => <GracePeriodCard /> },
   ];
 
@@ -462,7 +466,7 @@ function LocationsCard(): ReactNode {
 
       <div className="space-y-3">
         {locations.map((loc) => (
-          <div key={loc.id} className="rounded-xl border border-border">
+          <div key={loc.id} className="rounded-lg border border-border">
             {editingId === loc.id && editForm ? (
               <div className="space-y-3 p-4">
                 <div>
@@ -657,7 +661,7 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
           {pending.length > 0 && (
             <div className="space-y-2">
               {pending.map((req) => (
-                <div key={req.id} className="rounded-xl border border-border p-3">
+                <div key={req.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="text-sm font-medium text-ink">{req.profiles?.full_name ?? req.profiles?.first_name ?? 'Unknown'}</p>
@@ -692,9 +696,9 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
 
           {decided.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-ink/50">Past requests</p>
+              <p className="text-xs font-medium text-ink/50">Past requests</p>
               {decided.map((req) => (
-                <div key={req.id} className="flex items-center justify-between rounded-xl border border-border p-3">
+                <div key={req.id} className="flex items-center justify-between rounded-lg border border-border p-3">
                   <div>
                     <p className="text-sm font-medium text-ink">{req.profiles?.full_name ?? req.profiles?.first_name ?? 'Unknown'}</p>
                     <p className="text-xs text-ink/60">{formatDateRange(req.start_date, req.end_date)}</p>
@@ -913,7 +917,7 @@ function RolesCard(): ReactNode {
           const isBusy = busyId === role.id;
 
           return (
-            <li key={role.id} className="rounded-xl border border-border p-3">
+            <li key={role.id} className="rounded-lg border border-border p-3">
               <div className="flex items-center gap-2">
                 <div className="flex shrink-0 flex-col">
                   <button
@@ -921,7 +925,7 @@ function RolesCard(): ReactNode {
                     onClick={() => void move(index, -1)}
                     disabled={index === 0 || isBusy}
                     aria-label={`Move ${role.name} up`}
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -930,7 +934,7 @@ function RolesCard(): ReactNode {
                     onClick={() => void move(index, 1)}
                     disabled={index === roles.length - 1 || isBusy}
                     aria-label={`Move ${role.name} down`}
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                    className="flex h-[22px] w-[22px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -952,7 +956,7 @@ function RolesCard(): ReactNode {
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-medium text-ink">{role.name}</span>
                       {role.is_protected && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold uppercase text-ink/60">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-bg px-2 py-0.5 text-[10px] font-semibold text-ink/60">
                           <Shield className="h-3 w-3" aria-hidden="true" />
                           Protected
                         </span>
@@ -1117,6 +1121,201 @@ function RolesCard(): ReactNode {
         </div>
       )}
     </>
+  );
+}
+
+// ===========================================================================
+// Section 7b — Branding
+// ===========================================================================
+
+const LOGO_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/svg+xml': 'svg',
+};
+const MAX_LOGO_BYTES = 1024 * 1024;
+
+function BrandingCard(): ReactNode {
+  const { organisation, loading, refresh } = useOrganisation();
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (organisation) setName(organisation.name);
+  }, [organisation]);
+
+  const saveName = async () => {
+    if (!organisation) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setFault('Organisation name cannot be empty.');
+      return;
+    }
+
+    setSaving(true);
+    setSaved(false);
+    setFault(null);
+
+    const { error } = await supabase.from('organisations').update({ name: trimmed }).eq('id', organisation.id);
+
+    setSaving(false);
+    if (error) {
+      setFault(error.message || 'Could not save the name.');
+    } else {
+      setSaved(true);
+      await refresh();
+    }
+  };
+
+  const handleUpload = async (file: File) => {
+    if (!organisation) return;
+    setFault(null);
+
+    const ext = LOGO_EXTENSIONS[file.type];
+    if (!ext) {
+      setFault('Logo must be a PNG, JPG or SVG file.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setFault('Logo must be under 1MB.');
+      return;
+    }
+
+    setUploading(true);
+    const path = `${organisation.id}/logo.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('org-logos')
+      .upload(path, file, { contentType: file.type, upsert: true });
+
+    if (uploadError) {
+      setUploading(false);
+      setFault(uploadError.message || 'Could not upload the logo.');
+      return;
+    }
+
+    // Cache-bust: the path is stable (always logo.<ext>), so without a query
+    // string a browser that already fetched the old file would keep showing
+    // it after a replace.
+    const { data: publicUrlData } = supabase.storage.from('org-logos').getPublicUrl(path);
+    const logoUrl = `${publicUrlData.publicUrl}?v=${Date.now()}`;
+
+    const { error: updateError } = await supabase
+      .from('organisations')
+      .update({ logo_url: logoUrl })
+      .eq('id', organisation.id);
+
+    setUploading(false);
+    if (updateError) {
+      setFault(updateError.message || 'Logo uploaded, but could not be saved.');
+      return;
+    }
+    await refresh();
+  };
+
+  const handleRemove = async () => {
+    if (!organisation) return;
+    setUploading(true);
+    setFault(null);
+
+    const { error } = await supabase.from('organisations').update({ logo_url: null }).eq('id', organisation.id);
+
+    setUploading(false);
+    if (error) setFault(error.message || 'Could not remove the logo.');
+    else await refresh();
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-4">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-bg">
+          {organisation?.logo_url ? (
+            <img
+              src={organisation.logo_url}
+              alt={organisation.name}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <span className="px-1 text-center text-xs font-semibold text-ink/60">
+              {organisation?.name ?? '—'}
+            </span>
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleUpload(file);
+              e.target.value = '';
+            }}
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || loading}
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
+            >
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Upload className="h-4 w-4" aria-hidden="true" />
+              )}
+              {organisation?.logo_url ? 'Replace logo' : 'Upload logo'}
+            </button>
+            {organisation?.logo_url && (
+              <button
+                type="button"
+                onClick={() => void handleRemove()}
+                disabled={uploading}
+                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-ink hover:bg-bg disabled:opacity-60"
+              >
+                Remove logo
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-ink/50">PNG, JPG or SVG, up to 1MB.</p>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <label htmlFor="org-name" className="block text-sm font-medium text-ink">
+          Organisation name
+        </label>
+        <input
+          id="org-name"
+          type="text"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            setSaved(false);
+          }}
+          className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        />
+      </div>
+
+      {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
+      {saved && !fault && <p className="mt-3 text-sm text-success">Saved.</p>}
+
+      <button
+        type="button"
+        onClick={() => void saveName()}
+        disabled={saving || loading || !organisation || name.trim() === organisation.name}
+        className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
+      >
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+        Save name
+      </button>
+    </div>
   );
 }
 

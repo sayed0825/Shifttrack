@@ -377,7 +377,7 @@ export default function ManagerShiftRequests({
                       void run(shift.id, async () => supabase.from('shifts').delete().eq('id', shift.id))
                     }
                     aria-label="Delete expired shift"
-                    className="shrink-0 rounded p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
+                    className="shrink-0 rounded-lg p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -416,7 +416,7 @@ export default function ManagerShiftRequests({
                         void run(shift.id, async () => supabase.from('shifts').delete().eq('id', shift.id))
                       }
                       aria-label="Delete open shift"
-                      className="shrink-0 rounded p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
+                      className="shrink-0 rounded-lg p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
                     >
                       <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>

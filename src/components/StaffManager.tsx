@@ -362,7 +362,7 @@ export default function StaffManager({
                             }`}
                           >
                             {locations.find((l) => l.id === entry.id)?.name ?? 'Unknown'}
-                            {entry.isPrimary && <span className="ml-1 text-[10px] uppercase">primary</span>}
+                            {entry.isPrimary && <span className="ml-1 text-[10px]">primary</span>}
                           </span>
                         ))}
                       </div>

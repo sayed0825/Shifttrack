@@ -19,10 +19,10 @@ const SITE_ZOOM = 15;
  */
 const MARKER_THEME = {
   onDuty: {
-    pill: 'bg-secondary text-white ring-secondary/30',
-    pin: 'bg-secondary ring-white',
-    stem: 'bg-secondary',
-    swatch: 'bg-secondary',
+    pill: 'bg-active text-white ring-active/30',
+    pin: 'bg-active ring-white',
+    stem: 'bg-active',
+    swatch: 'bg-active',
   },
   offDuty: {
     pill: 'bg-border text-ink ring-border',

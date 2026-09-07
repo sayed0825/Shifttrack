@@ -1,6 +1,48 @@
+@import "@fontsource/archivo/400.css";
+@import "@fontsource/archivo/500.css";
+@import "@fontsource/archivo/600.css";
+@import "@fontsource/archivo/700.css";
 @import "tailwindcss";
 
+/*
+ * Design tokens. Change the app's look here — screens should consume these,
+ * not hardcode raw Tailwind palette values or one-off sizes.
+ */
 @theme {
+  /* Typeface: self-hosted Archivo everywhere, not a system-font fallback. */
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /*
+   * Deliberate type scale, not Tailwind's stock sizes. Sized down a touch at
+   * the low end (this is a dense, mobile-first, numbers-heavy app) and
+   * opened up at the high end, so headings actually read as dominant
+   * instead of everything sitting within one narrow band.
+   */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.4rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.625rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 2.25rem;
+
+  /*
+   * Exactly two border radii. Large for sheets, modals and the cards that
+   * genuinely group content; small for controls — buttons, inputs, chips,
+   * nested rows. (rounded-full stays Tailwind's default for pills/dots.)
+   */
+  --radius-lg: 0.625rem;
+  --radius-2xl: 1.25rem;
+
+  /* Brand — used for chrome (the header bar) and primary actions only.
+     Never reused for status; see the status set below. */
   --color-bg: #F7F2E7;
   --color-surface: #FFFDF8;
   --color-primary: #14532D;
@@ -13,12 +55,26 @@
   --color-ink: #1A1A1A;
   --color-paper: #FFFFFF;
 
-  --color-success: #16A34A;
+  /*
+   * Status set. Deliberately not brand green and not secondary orange, so a
+   * status badge never gets mistaken for a brand element or vice versa.
+   * `active` is for something ongoing right now (on shift, in range, on
+   * duty) — distinct from `success`, which is a completed/approved outcome.
+   * Both checked for contrast against --color-bg at badge text sizes.
+   */
+  --color-active: #0E7490;
+  --color-active-bg: #CFFAFE;
+  --color-success: #15803D;
   --color-success-bg: #DCFCE7;
-  --color-warning: #D97706;
+  --color-warning: #B45309;
   --color-warning-bg: #FEF3C7;
-  --color-danger: #DC2626;
+  --color-danger: #B91C1C;
   --color-danger-bg: #FEE2E2;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
 }
 
 /*

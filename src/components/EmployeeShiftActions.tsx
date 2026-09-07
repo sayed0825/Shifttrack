@@ -363,7 +363,7 @@ export default function EmployeeShiftActions({
                     void run(swap.id, async () => supabase.from('shift_swaps').delete().eq('id', swap.id))
                   }
                   aria-label="Remove request"
-                  className="shrink-0 rounded p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
+                  className="shrink-0 rounded-lg p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
                 >
                   <X className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>

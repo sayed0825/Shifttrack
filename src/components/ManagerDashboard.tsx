@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
 import FilterButton from './FilterButton';
@@ -293,6 +294,7 @@ export default function ManagerDashboard(): ReactNode {
   const [notice, setNotice] = useState<string | null>(null);
 
   const { roles } = useRoles();
+  const { organisation } = useOrganisation();
 
   const sweepRan = useRef(false);
 
@@ -366,7 +368,7 @@ export default function ManagerDashboard(): ReactNode {
   if (error || !viewer) {
     return (
       <div className="flex h-full items-center justify-center p-6">
-        <div className="flex max-w-sm gap-3 rounded-xl border border-border bg-surface p-4">
+        <div className="flex max-w-sm gap-3 rounded-lg border border-border bg-surface p-4">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden="true" />
           <div className="text-sm">
             <p className="font-semibold text-ink">Dashboard unavailable</p>
@@ -379,17 +381,31 @@ export default function ManagerDashboard(): ReactNode {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <header className="border-b border-border bg-surface">
+      <header className="bg-primary text-white">
         <div className="flex flex-wrap items-center gap-4 px-4 py-3">
-          <nav className="hidden gap-1 rounded-lg bg-bg p-1 md:flex" aria-label="Dashboard sections">
+          <div className="flex min-w-0 shrink-0 items-center">
+            {organisation?.logo_url ? (
+              <img
+                src={organisation.logo_url}
+                alt={organisation.name}
+                className="h-8 max-w-[9rem] shrink-0 object-contain object-left"
+              />
+            ) : (
+              <span className="truncate text-lg font-semibold text-white">
+                {organisation?.name ?? ' '}
+              </span>
+            )}
+          </div>
+
+          <nav className="hidden gap-1 rounded-lg bg-white/10 p-1 md:flex" aria-label="Dashboard sections">
             {visibleTabs.map(({ id, label, Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
                 aria-current={tab === id ? 'page' : undefined}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  tab === id ? 'bg-surface text-ink shadow-sm' : 'text-ink/60 hover:text-ink'
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  tab === id ? 'bg-white text-primary' : 'text-white/70 hover:text-white'
                 }`}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -408,6 +424,7 @@ export default function ManagerDashboard(): ReactNode {
                 map and timesheets only. */}
             {(tab === 'map' || tab === 'timesheets') && (
               <FilterButton
+                variant="inverted"
                 activeCount={(locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0)}
               >
                 <FilterSelect
@@ -444,7 +461,7 @@ export default function ManagerDashboard(): ReactNode {
                 await supabase.auth.signOut();
                 window.location.reload();
               }}
-              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm font-medium text-ink hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-medium text-white hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             >
               <LogOut className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Log out</span>
@@ -453,14 +470,14 @@ export default function ManagerDashboard(): ReactNode {
         </div>
 
         {notice && (
-          <div className="flex items-center gap-2 border-t border-border bg-secondary/10 px-4 py-2 text-xs text-secondary">
+          <div className="flex items-center gap-2 border-t border-white/20 bg-secondary px-4 py-2 text-xs text-white">
             <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             <span className="flex-1">{notice}</span>
             <button
               type="button"
               onClick={() => setNotice(null)}
               aria-label="Dismiss"
-              className="rounded p-0.5 hover:bg-secondary/20"
+              className="rounded-lg p-0.5 hover:bg-white/20"
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
@@ -537,19 +554,19 @@ function WeekSelector({
   const isCurrent = weekStart.getTime() === startOfWeek(new Date()).getTime();
 
   return (
-    <div className="flex items-center rounded-lg border border-border bg-surface">
+    <div className="flex items-center rounded-lg border border-white/20 bg-white/10">
       <button
         type="button"
         onClick={() => onChange(addDays(weekStart, -7))}
         aria-label="Previous week"
-        className="p-2 text-ink/60 hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="p-2 text-white/80 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
       </button>
       <button
         type="button"
         onClick={() => onChange(startOfWeek(new Date()))}
-        className="border-x border-border px-3 py-1.5 text-sm font-medium tabular-nums text-ink hover:bg-bg"
+        className="border-x border-white/20 px-3 py-1.5 text-sm font-medium tabular-nums text-white hover:bg-white/20"
       >
         {isCurrent ? 'This week' : formatWeekRange(weekStart)}
       </button>
@@ -557,7 +574,7 @@ function WeekSelector({
         type="button"
         onClick={() => onChange(addDays(weekStart, 7))}
         aria-label="Next week"
-        className="p-2 text-ink/60 hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="p-2 text-white/80 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         <ChevronRight className="h-4 w-4" aria-hidden="true" />
       </button>
@@ -690,7 +707,7 @@ function RosterSidebar({
   return (
     <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface">
       <div className="border-b border-border px-4 py-3">
-        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink/50">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-ink/50">
           <Users className="h-3.5 w-3.5" aria-hidden="true" />
           Today’s roster
         </div>
@@ -839,7 +856,7 @@ function TimesheetsPanel({
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-danger bg-danger-bg p-4 text-sm text-danger">
+      <div className="flex items-center gap-2 rounded-lg border border-danger bg-danger-bg p-4 text-sm text-danger">
         <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
         {error}
       </div>
@@ -873,7 +890,7 @@ function TimesheetsPanel({
       </div>
 
       {summaries.length === 0 && (
-        <p className="rounded-xl border border-border bg-surface py-12 text-center text-sm text-ink/60">
+        <p className="rounded-lg border border-border bg-surface py-12 text-center text-sm text-ink/60">
           No time was logged in this week for the current filter.
         </p>
       )}
@@ -914,7 +931,7 @@ function TimesheetsPanel({
                     <p className="text-sm text-ink/80">
                       {formatDay(log.clock_in)}
                       {log.notes === AUTO_CLOCK_OUT_NOTE && (
-                        <span className="ml-2 rounded bg-bg px-1.5 py-0.5 text-[11px] text-ink/60">auto</span>
+                        <span className="ml-2 rounded-lg bg-bg px-1.5 py-0.5 text-[11px] text-ink/60">auto</span>
                       )}
                     </p>
                     <p className="mt-0.5 text-xs tabular-nums text-ink">
@@ -922,7 +939,7 @@ function TimesheetsPanel({
                       {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
                     </p>
                     {late && shiftStart && (
-                      <span className="mt-1 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                      <span className="mt-1 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
                       </span>
                     )}
@@ -936,7 +953,7 @@ function TimesheetsPanel({
                         type="button"
                         onClick={() => setEditing(log)}
                         aria-label={`Edit ${formatDay(log.clock_in)} entry`}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-ink/50 hover:bg-bg hover:text-ink"
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink"
                       >
                         <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -967,7 +984,7 @@ function TimesheetsPanel({
                   <td className="px-4 py-2.5 text-ink/80">
                     {formatDay(log.clock_in)}
                     {log.notes === AUTO_CLOCK_OUT_NOTE && (
-                      <span className="ml-2 rounded bg-bg px-1.5 py-0.5 text-[11px] text-ink/60">
+                      <span className="ml-2 rounded-lg bg-bg px-1.5 py-0.5 text-[11px] text-ink/60">
                         auto
                       </span>
                     )}
@@ -975,7 +992,7 @@ function TimesheetsPanel({
                   <td className="px-2 py-2.5 tabular-nums text-ink">
                     {formatClock(log.clock_in)}
                     {late && shiftStart && (
-                      <span className="ml-2 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                      <span className="ml-2 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
                       </span>
                     )}
@@ -996,7 +1013,7 @@ function TimesheetsPanel({
                         type="button"
                         onClick={() => setEditing(log)}
                         aria-label={`Edit ${formatDay(log.clock_in)} entry`}
-                        className="rounded-md p-1.5 text-ink/50 hover:bg-bg hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        className="rounded-lg p-1.5 text-ink/50 hover:bg-bg hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                       >
                         <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
                       </button>
@@ -1037,7 +1054,7 @@ function SummaryCard({
 }): ReactNode {
   return (
     <div className="rounded-2xl border border-border bg-surface p-4">
-      <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink/50">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-ink/50">
         <Icon className="h-3.5 w-3.5" aria-hidden="true" />
         {label}
       </div>

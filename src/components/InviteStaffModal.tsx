@@ -262,11 +262,11 @@ export default function InviteStaffModal({
                                 else toggleAdditional(loc.id);
                               }
                             }}
-                            className="h-4 w-4 rounded border-border text-primary focus-visible:outline-primary"
+                            className="h-4 w-4 rounded-sm border-border text-primary focus-visible:outline-primary"
                           />
                           <span className="text-sm font-medium text-ink">{loc.name}</span>
                           {isPrimary && (
-                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase text-primary">primary</span>
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">primary</span>
                           )}
                         </label>
                         {isChecked && (

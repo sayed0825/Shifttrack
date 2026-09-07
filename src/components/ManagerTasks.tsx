@@ -323,7 +323,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
                 const url = task.photo_path ? signedUrls[task.photo_path] : undefined;
 
                 return (
-                  <li key={task.id} className="rounded-xl border border-border p-3">
+                  <li key={task.id} className="rounded-lg border border-border p-3">
                     <div className="flex items-start gap-3">
                       {task.photo_path && (
                         <button
@@ -550,7 +550,7 @@ function TaskSetupSection({
               {templates.map((template) => (
                 <li
                   key={template.id}
-                  className={`rounded-xl border border-border p-3 ${template.is_active ? '' : 'opacity-60'}`}
+                  className={`rounded-lg border border-border p-3 ${template.is_active ? '' : 'opacity-60'}`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="min-w-0 flex-1">
@@ -702,7 +702,7 @@ function TargetPicker({
           type="button"
           onClick={() => onTargetChange('role')}
           aria-pressed={target === 'role'}
-          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
             target === 'role' ? 'bg-primary text-white' : 'text-ink/70 hover:bg-bg'
           }`}
         >
@@ -713,7 +713,7 @@ function TargetPicker({
           type="button"
           onClick={() => onTargetChange('individual')}
           aria-pressed={target === 'individual'}
-          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
             target === 'individual' ? 'bg-primary text-white' : 'text-ink/70 hover:bg-bg'
           }`}
         >
@@ -784,7 +784,7 @@ function PhotoToggle({ value, onChange }: { value: boolean; onChange: (v: boolea
           type="button"
           onClick={() => onChange(true)}
           aria-pressed={value}
-          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
             value ? 'bg-primary text-white' : 'text-ink/70 hover:bg-bg'
           }`}
         >
@@ -795,7 +795,7 @@ function PhotoToggle({ value, onChange }: { value: boolean; onChange: (v: boolea
           type="button"
           onClick={() => onChange(false)}
           aria-pressed={!value}
-          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
             !value ? 'bg-primary text-white' : 'text-ink/70 hover:bg-bg'
           }`}
         >
@@ -1645,7 +1645,7 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
             const photoState = task.photo_path ? signedUrls[task.photo_path] : undefined;
 
             return (
-              <li key={task.id} className="rounded-xl border border-border p-3">
+              <li key={task.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-start gap-3">
                   {task.photo_path &&
                     (photoState === undefined ? (

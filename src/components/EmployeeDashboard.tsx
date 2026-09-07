@@ -31,6 +31,7 @@ import {
 } from '../lib/offlineQueue';
 import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
 import LiveMap from './LiveMap';
@@ -169,12 +170,13 @@ function formatDistance(meters: number | null | undefined): string {
 export default function EmployeeDashboard({ profile }: { profile: Profile }): ReactNode {
   const [tab, setTab] = useState<TabId>('clock');
   const { roles } = useRoles();
+  const { organisation } = useOrganisation();
   const canViewMap = roles.find((r) => r.name === profile.role)?.can_view_map ?? false;
 
   if (profile.is_active === false) {
     return (
       <div className="flex h-dvh items-center justify-center p-6">
-        <div className="flex max-w-sm gap-3 rounded-xl border border-border bg-surface p-4">
+        <div className="flex max-w-sm gap-3 rounded-lg border border-border bg-surface p-4">
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden="true" />
           <div className="text-sm">
             <p className="font-semibold text-ink">Account deactivated</p>
@@ -187,19 +189,31 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
 
   return (
     <div className="flex h-dvh flex-col bg-bg">
-      <header className="border-b border-border bg-surface">
+      <header className="bg-primary text-white">
         <div className="flex flex-wrap items-center gap-4 px-3 py-2">
-          <h1 className="text-sm font-bold text-primary">ShiftTrack</h1>
+          <div className="flex min-w-0 shrink-0 items-center">
+            {organisation?.logo_url ? (
+              <img
+                src={organisation.logo_url}
+                alt={organisation.name}
+                className="h-7 max-w-[8rem] shrink-0 object-contain object-left"
+              />
+            ) : (
+              <span className="truncate text-sm font-semibold text-white">
+                {organisation?.name ?? ' '}
+              </span>
+            )}
+          </div>
 
-          <nav className="hidden gap-1 rounded-lg bg-bg p-1 md:flex" aria-label="Dashboard sections">
+          <nav className="hidden gap-1 rounded-lg bg-white/10 p-1 md:flex" aria-label="Dashboard sections">
             {TABS.map(({ id, label, Icon }) => (
               <button
                 key={id}
                 type="button"
                 onClick={() => setTab(id)}
                 aria-current={tab === id ? 'page' : undefined}
-                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                  tab === id ? 'bg-surface text-ink shadow-sm' : 'text-ink/60 hover:text-ink'
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  tab === id ? 'bg-white text-primary' : 'text-white/70 hover:text-white'
                 }`}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
@@ -217,7 +231,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
                 window.location.reload();
               }}
               aria-label="Log out"
-              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-border text-ink hover:bg-bg"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-white/20 bg-white/10 text-white hover:bg-white/20"
             >
               <LogOut className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -562,13 +576,13 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
   const inRange = Boolean(fence?.inRange);
   const radius = fence?.radius ?? shift?.locations?.radius_meters ?? 100;
   const barPercent = fence?.distance == null ? 0 : Math.min(100, (fence.distance / (radius * 2)) * 100);
-  const railColor = tracking ? 'bg-secondary' : inRange ? 'bg-success' : 'bg-danger';
+  const railColor = tracking ? 'bg-secondary' : inRange ? 'bg-active' : 'bg-danger';
 
   return (
     <div className="space-y-4">
       {/* Date + shift summary */}
       <div className="rounded-2xl border border-border bg-surface p-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-ink/50">{formatFullDate(now)}</p>
+        <p className="text-xs font-medium text-ink/50">{formatFullDate(now)}</p>
 
         {shift ? (
           <div className="mt-3 space-y-3">
@@ -592,11 +606,11 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
 
             <dl className="flex items-center justify-between border-t border-border pt-3 text-sm">
               <div>
-                <dt className="text-xs uppercase tracking-wide text-ink/50">Start</dt>
+                <dt className="text-xs text-ink/50">Start</dt>
                 <dd className="font-medium tabular-nums text-ink">{formatClock(shift.start_time)}</dd>
               </div>
               <div className="text-right">
-                <dt className="text-xs uppercase tracking-wide text-ink/50">End</dt>
+                <dt className="text-xs text-ink/50">End</dt>
                 <dd className="font-medium tabular-nums text-ink">{formatClock(shift.end_time)}</dd>
               </div>
             </dl>
@@ -618,13 +632,13 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
 
       {/* Geofence + clock controls */}
       {shift?.locations && (
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+        <div className="relative overflow-hidden rounded-2xl border border-border bg-surface">
           <div className={`absolute inset-y-0 left-0 w-1.5 ${railColor}`} aria-hidden="true" />
 
           <div className="p-5 pl-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink/50">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-ink/50">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   Assigned site
                 </div>
@@ -638,7 +652,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
                   tracking
                     ? 'bg-secondary/10 text-secondary'
                     : inRange
-                      ? 'bg-success-bg text-success'
+                      ? 'bg-active-bg text-active'
                       : 'bg-danger-bg text-danger'
                 }`}
               >
@@ -655,7 +669,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
 
             {/* Distance + bar */}
             {!tracking && (
-              <div className="mt-4 rounded-xl bg-bg p-4">
+              <div className="mt-4 rounded-lg bg-bg p-4">
                 <div className="flex items-baseline justify-between">
                   <div>
                     <span className="font-mono text-2xl font-semibold tabular-nums text-ink">
@@ -673,9 +687,9 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
                     Check again
                   </button>
                 </div>
-                <div className="relative mt-3 h-2 rounded-full bg-slate-200">
+                <div className="relative mt-3 h-2 rounded-full bg-border">
                   <div
-                    className={`h-2 rounded-full transition-all duration-500 ${inRange ? 'bg-success' : 'bg-danger'}`}
+                    className={`h-2 rounded-full transition-all duration-500 ${inRange ? 'bg-active' : 'bg-danger'}`}
                     style={{ width: `${barPercent}%` }}
                   />
                   <div className="absolute inset-y-0 left-1/2 w-px bg-border" aria-hidden="true" />
@@ -688,14 +702,14 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
 
             {/* Elapsed timer */}
             {tracking && (
-              <div className="mt-4 flex items-center justify-between rounded-xl bg-secondary/10 px-4 py-3">
+              <div className="mt-4 flex items-center justify-between rounded-lg bg-secondary/10 px-4 py-3">
                 <span className="text-sm text-secondary">On shift for</span>
                 <span className="text-lg font-semibold tabular-nums text-secondary">{elapsed}</span>
               </div>
             )}
 
             {pending > 0 && (
-              <div className="mt-4 flex gap-2 rounded-xl bg-secondary/10 p-3 text-sm">
+              <div className="mt-4 flex gap-2 rounded-lg bg-secondary/10 p-3 text-sm">
                 <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />
                 <p className="text-secondary">
                   {pending} entr{pending === 1 ? 'y' : 'ies'} saved on this device. They will
@@ -706,7 +720,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
 
             {/* Fault */}
             {fault && (
-              <div className="mt-4 flex gap-2 rounded-xl bg-warning-bg p-3 text-sm">
+              <div className="mt-4 flex gap-2 rounded-lg bg-warning-bg p-3 text-sm">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
                 <p className="text-warning">{fault}</p>
               </div>
@@ -718,7 +732,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
                 type="button"
                 onClick={() => void handleClockOut()}
                 disabled={busy}
-                className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-primary text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-60"
+                className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-primary text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-60"
               >
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <LogOut className="h-5 w-5" aria-hidden="true" />}
                 Clock out
@@ -729,7 +743,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
                   type="button"
                   onClick={() => void handleClockIn()}
                   disabled={busy || !inRange || checking}
-                  className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-success text-base font-semibold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
+                  className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-success text-base font-semibold text-white transition active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
                 >
                   {busy ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <LogIn className="h-5 w-5" aria-hidden="true" />}
                   Clock in
@@ -936,14 +950,14 @@ function MyTimesheetsTab(): ReactNode {
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-border bg-surface p-4">
-          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink/50">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-ink/50">
             <Clock className="h-3.5 w-3.5" aria-hidden="true" />
             Total hours
           </div>
           <p className="mt-1.5 text-xl font-semibold tabular-nums text-ink">{formatHours(totalHours)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-surface p-4">
-          <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink/50">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-ink/50">
             <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
             Entries
           </div>
@@ -979,7 +993,7 @@ function MyTimesheetsTab(): ReactNode {
                       {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
                     </p>
                     {late && shiftStart && (
-                      <span className="mt-1 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                      <span className="mt-1 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
                       </span>
                     )}
@@ -1012,7 +1026,7 @@ function MyTimesheetsTab(): ReactNode {
                     <td className="px-2 py-3 tabular-nums text-ink">
                       {formatClock(log.clock_in)}
                       {late && shiftStart && (
-                        <span className="ml-2 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                        <span className="ml-2 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                           LATE · {minutesLate(log.clock_in, shiftStart)} min
                         </span>
                       )}

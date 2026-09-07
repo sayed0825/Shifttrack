@@ -113,7 +113,7 @@ export default function EmployeeNotes({
     <div className="rounded-lg border border-border bg-surface p-3">
       <div className="flex items-center gap-2">
         <NotebookPen className="h-4 w-4 text-ink/50" aria-hidden="true" />
-        <h4 className="text-xs font-semibold uppercase tracking-wide text-ink/60">
+        <h4 className="text-xs font-semibold text-ink/60">
           Manager notes on {employeeName}
         </h4>
       </div>

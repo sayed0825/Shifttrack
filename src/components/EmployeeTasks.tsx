@@ -157,7 +157,7 @@ export default function EmployeeTasks({ profile }: { profile: Profile }): ReactN
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-danger bg-danger-bg p-4 text-sm text-danger">
+      <div className="flex items-center gap-2 rounded-lg border border-danger bg-danger-bg p-4 text-sm text-danger">
         <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
         {error}
       </div>
@@ -175,7 +175,7 @@ export default function EmployeeTasks({ profile }: { profile: Profile }): ReactN
             type="button"
             onClick={() => setNotice(null)}
             aria-label="Dismiss"
-            className="rounded p-0.5 hover:bg-secondary/20"
+            className="rounded-lg p-0.5 hover:bg-secondary/20"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -231,7 +231,7 @@ function TaskGroup({
 
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink/50">
+      <h3 className="mb-2 text-xs font-semibold text-ink/50">
         {title} <span className="text-ink/40">({tasks.length})</span>
       </h3>
       <ul className="space-y-2">
@@ -253,7 +253,7 @@ function TaskCard({ task, onSelect }: { task: TaskRow; onSelect: (id: string) =>
     <button
       type="button"
       onClick={() => onSelect(task.id)}
-      className={`flex min-h-[44px] w-full items-start gap-3 rounded-xl border p-3 text-left transition ${
+      className={`flex min-h-[44px] w-full items-start gap-3 rounded-lg border p-3 text-left transition ${
         overdue || rejected ? 'border-danger/40 bg-danger-bg/30' : 'border-border bg-surface hover:border-primary/30'
       }`}
     >
@@ -513,7 +513,7 @@ function TaskDetailSheet({
           {task.description && <p className="whitespace-pre-wrap text-sm text-ink/80">{task.description}</p>}
 
           {canAct && (
-            <div className="space-y-2 rounded-xl border border-border bg-bg p-3">
+            <div className="space-y-2 rounded-lg border border-border bg-bg p-3">
               {task.requires_photo && (
                 <div>
                   <label htmlFor="task-photo-input" className="block text-xs font-medium text-ink/60">
@@ -556,7 +556,7 @@ function TaskDetailSheet({
           )}
 
           <div>
-            <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink/50">
+            <h3 className="flex items-center gap-1.5 text-xs font-semibold text-ink/50">
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
               Comments
             </h3>

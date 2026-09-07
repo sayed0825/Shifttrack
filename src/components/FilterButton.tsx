@@ -11,10 +11,13 @@ const SM_BREAKPOINT = 640; // Tailwind's `sm`
 export default function FilterButton({
   label = 'Filter',
   activeCount = 0,
+  variant = 'default',
   children,
 }: {
   label?: string;
   activeCount?: number;
+  /** 'inverted' for use on the brand-green header bar; the popover itself is unaffected. */
+  variant?: 'default' | 'inverted';
   children: ReactNode;
 }): ReactNode {
   const [open, setOpen] = useState(false);
@@ -102,12 +105,20 @@ export default function FilterButton({
         }}
         aria-expanded={open}
         aria-haspopup="true"
-        className="relative inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className={`relative inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 ${
+          variant === 'inverted'
+            ? 'border-white/20 bg-white/10 text-white hover:bg-white/20 focus-visible:outline-white'
+            : 'border-border bg-surface text-ink hover:bg-bg focus-visible:outline-primary'
+        }`}
       >
-        <Filter className="h-4 w-4 text-ink/50" aria-hidden="true" />
+        <Filter className={`h-4 w-4 ${variant === 'inverted' ? 'text-white/70' : 'text-ink/50'}`} aria-hidden="true" />
         {label}
         {activeCount > 0 && (
-          <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
+          <span
+            className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+              variant === 'inverted' ? 'bg-white text-primary' : 'bg-primary text-white'
+            }`}
+          >
             {activeCount}
           </span>
         )}
@@ -163,7 +174,7 @@ export default function FilterButton({
             ref={popoverRef}
             role="dialog"
             aria-label={`${label} options`}
-            className="fixed z-[1200] w-72 max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto rounded-xl border border-border bg-surface p-3 shadow-lg"
+            className="fixed z-[1200] w-72 max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto rounded-lg border border-border bg-surface p-3 shadow-lg"
             style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
           >
             {children}

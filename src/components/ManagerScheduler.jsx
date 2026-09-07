@@ -342,7 +342,7 @@ export default function ManagerScheduler() {
             type="button"
             onClick={() => setNotice(null)}
             aria-label="Dismiss"
-            className="rounded p-1 hover:bg-surface"
+            className="rounded-lg p-1 hover:bg-surface"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -366,7 +366,7 @@ export default function ManagerScheduler() {
               return (
                 <div
                   key={key}
-                  className={`rounded-xl border ${
+                  className={`rounded-lg border ${
                     isToday ? 'border-primary/40 bg-primary/5' : 'border-border bg-surface'
                   }`}
                 >
@@ -419,7 +419,7 @@ export default function ManagerScheduler() {
                             type="button"
                             onClick={() => handleDelete(shift)}
                             aria-label={`Delete ${shift.profiles?.first_name ?? 'shift'}`}
-                            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
+                            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
                           >
                             <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </button>
@@ -862,7 +862,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                   type="button"
                   onClick={() => setRecurring(value)}
                   aria-pressed={recurring === value}
-                  className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-md py-2 text-sm font-medium transition ${
+                  className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-medium transition ${
                     recurring === value ? 'bg-surface text-ink shadow-sm' : 'text-ink/60'
                   }`}
                 >
