@@ -118,7 +118,7 @@ export default function InviteStaffModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="invite-modal-title"
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
+        className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex items-center gap-2">
@@ -300,7 +300,7 @@ export default function InviteStaffModal({
               )}
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
+            <div className="flex justify-end gap-3 border-t border-border px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
               <button
                 type="button"
                 onClick={onClose}

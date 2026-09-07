@@ -469,7 +469,7 @@ function TaskDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="task-detail-title"
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
+        className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
@@ -584,7 +584,7 @@ function TaskDetailSheet({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 border-t border-border px-5 py-3">
+        <div className="flex items-center gap-2 border-t border-border px-5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           <label htmlFor="task-comment-input" className="sr-only">
             Add a comment
           </label>

@@ -313,7 +313,7 @@ export default function ManagerScheduler() {
             Loading schedule…
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 md:grid md:grid-cols-2 md:items-start md:gap-3 md:space-y-0 xl:grid-cols-3">
             {weekDays.map((day) => {
               const key = dateKey(day);
               const dayShifts = shiftsByDay[key] ?? [];
@@ -622,7 +622,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="shift-modal-title"
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
+        className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 id="shift-modal-title" className="text-base font-semibold text-ink">
@@ -901,7 +901,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
           )}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-border px-5 py-4">
+        <div className="flex items-center gap-3 border-t border-border px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <p className="flex-1 text-sm text-ink/60">
             <span className="font-semibold tabular-nums text-ink">{occurrences.length}</span> shift
             {occurrences.length === 1 ? '' : 's'}

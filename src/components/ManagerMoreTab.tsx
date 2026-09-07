@@ -1040,7 +1040,7 @@ function RolesCard(): ReactNode {
             role="dialog"
             aria-modal="true"
             aria-labelledby="role-delete-title"
-            className="w-full max-w-md rounded-t-2xl bg-surface p-5 sm:rounded-2xl"
+            className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-surface px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:rounded-2xl"
           >
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden="true" />

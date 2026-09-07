@@ -487,7 +487,7 @@ export default function StaffManager({
             role="dialog"
             aria-modal="true"
             aria-labelledby="staff-dialog-title"
-            className="w-full max-w-md rounded-t-2xl bg-surface p-5 sm:rounded-2xl"
+            className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-surface px-5 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:rounded-2xl"
           >
             <div className="flex items-start gap-3">
               <AlertTriangle

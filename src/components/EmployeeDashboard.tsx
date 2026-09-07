@@ -225,7 +225,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
       </header>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-md px-4 py-4 pb-24">
+        <div className="mx-auto max-w-md px-4 py-4 pb-[calc(4rem+env(safe-area-inset-bottom))] md:max-w-3xl md:px-6 md:pb-6 lg:max-w-4xl">
           {tab === 'clock' && <ClockInTab profile={profile} canViewMap={canViewMap} />}
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
@@ -235,21 +235,26 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
         </div>
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-border bg-surface md:hidden" aria-label="Dashboard sections">
-        {TABS.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            aria-current={tab === id ? 'page' : undefined}
-            className={`flex flex-1 flex-col items-center gap-1 px-2 py-2.5 text-xs font-medium transition min-h-[44px] justify-center ${
-              tab === id ? 'text-primary' : 'text-ink/60'
-            }`}
-          >
-            <Icon className="h-5 w-5" aria-hidden="true" />
-            {label}
-          </button>
-        ))}
+      <nav
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+        aria-label="Dashboard sections"
+      >
+        <div className="flex h-16">
+          {TABS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              aria-current={tab === id ? 'page' : undefined}
+              className={`flex min-h-[44px] flex-1 flex-col items-center justify-center gap-1 px-2 text-xs font-medium transition ${
+                tab === id ? 'text-primary' : 'text-ink/60'
+              }`}
+            >
+              <Icon className="h-5 w-5" aria-hidden="true" />
+              {label}
+            </button>
+          ))}
+        </div>
       </nav>
     </div>
   );
@@ -750,7 +755,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
               Live map
             </h3>
           </div>
-          <div className="h-80">
+          <div className="h-[min(20rem,55dvh)]">
             <LiveMap height="100%" />
           </div>
         </div>
@@ -955,7 +960,35 @@ function MyTimesheetsTab(): ReactNode {
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-surface">
-          <table className="w-full text-sm">
+          {/* Below sm: stacked cards, no sideways scroll. sm and up: a real table. */}
+          <ul className="divide-y divide-border sm:hidden">
+            {logs.map((log) => {
+              const shiftStart = log.shifts?.start_time ?? null;
+              const late = isLate(log.clock_in, shiftStart, graceMinutes);
+
+              return (
+                <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-ink">{formatDay(log.clock_in)}</p>
+                    <p className="mt-0.5 text-xs tabular-nums text-ink/70">
+                      {formatClock(log.clock_in)} –{' '}
+                      {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
+                    </p>
+                    {late && shiftStart && (
+                      <span className="mt-1 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                        LATE · {minutesLate(log.clock_in, shiftStart)} min
+                      </span>
+                    )}
+                  </div>
+                  <span className="shrink-0 text-sm font-medium tabular-nums text-ink">
+                    {formatHours(durationHours(log.clock_in, log.clock_out))}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+
+          <table className="hidden w-full text-sm sm:table">
             <thead className="sr-only">
               <tr>
                 <th scope="col">Day</th>

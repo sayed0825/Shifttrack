@@ -505,7 +505,10 @@ export default function ManagerDashboard(): ReactNode {
       </main>
 
       {/* Bottom nav for mobile */}
-      <nav className="flex shrink-0 border-t border-border bg-surface md:hidden" aria-label="Dashboard sections">
+      <nav
+        className="flex shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+        aria-label="Dashboard sections"
+      >
         {visibleTabs.map(({ id, label, Icon }) => (
           <button
             key={id}
@@ -889,7 +892,52 @@ function TimesheetsPanel({
             </div>
           </div>
 
-          <table className="w-full text-sm">
+          {/* Below sm: stacked cards, no sideways scroll. sm and up: a real table. */}
+          <ul className="divide-y divide-border sm:hidden">
+            {summary.logs.map((log) => {
+              const shiftStart = log.shifts?.start_time ?? null;
+              const late = isLate(log.clock_in, shiftStart, graceMinutes);
+
+              return (
+                <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm text-ink/80">
+                      {formatDay(log.clock_in)}
+                      {log.notes === AUTO_CLOCK_OUT_NOTE && (
+                        <span className="ml-2 rounded bg-bg px-1.5 py-0.5 text-[11px] text-ink/60">auto</span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 text-xs tabular-nums text-ink">
+                      {formatClock(log.clock_in)} –{' '}
+                      {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
+                    </p>
+                    {late && shiftStart && (
+                      <span className="mt-1 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                        LATE · {minutesLate(log.clock_in, shiftStart)} min
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <span className="text-sm font-medium tabular-nums text-ink">
+                      {formatHours(durationHours(log.clock_in, log.clock_out))}
+                    </span>
+                    {isManager && (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(log)}
+                        aria-label={`Edit ${formatDay(log.clock_in)} entry`}
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-md text-ink/50 hover:bg-bg hover:text-ink"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          <table className="hidden w-full text-sm sm:table">
             <thead className="sr-only">
               <tr>
                 <th scope="col">Day</th>
@@ -1055,7 +1103,7 @@ function EditLogModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-log-title"
-        className="w-full max-w-md overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
+        className="flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-surface sm:rounded-2xl"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
@@ -1077,7 +1125,7 @@ function EditLogModal({
           </button>
         </div>
 
-        <div className="space-y-4 px-5 py-5">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="edit-clock-in" className="block text-sm font-medium text-ink">
@@ -1146,7 +1194,7 @@ function EditLogModal({
           )}
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-border px-5 py-4">
+        <div className="flex justify-end gap-3 border-t border-border px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={onClose}

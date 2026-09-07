@@ -20,3 +20,14 @@
   --color-danger: #DC2626;
   --color-danger-bg: #FEE2E2;
 }
+
+/*
+ * Belt-and-braces against sideways scroll from an unexpectedly wide child
+ * (a long unbroken string, a stray fixed width). Every screen should already
+ * wrap/truncate its own content — this just stops one offender from taking
+ * the whole page with it.
+ */
+html,
+body {
+  overflow-x: hidden;
+}
