@@ -1132,7 +1132,6 @@ function OneOffFormModal({
       due_time: toUtcIso(date, dueTime),
       requires_photo: requiresPhoto,
       status: 'pending',
-      task_day: date,
       created_by: userId,
     });
 

@@ -137,6 +137,10 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   - A task assigned to `assigned_role` is a SHARED POOL, not copied per
     person — whoever completes it first completes it for everyone else
     with that role. See src/components/EmployeeTasks.tsx.
+  - `tasks.task_day` is `GENERATED ALWAYS AS ((start_time at time zone
+    'Europe/London')::date) STORED` — select it, never write it. Any
+    insert/update payload that includes the column, even as null, fails
+    with "cannot insert a non-DEFAULT value into column".
 
 ### UI
 
