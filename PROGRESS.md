@@ -14,9 +14,11 @@ Newest entries at the top.
 ## Current state
 
 **Phase:** 2 complete — multi-tenancy schema and RLS
-**Next up:** Task module is code-complete on both sides now (schema, RLS,
-storage bucket and cron jobs were already done). Neither side has been
-tested against real data yet — see "Known broken / unverified" below.
+**Next up:** Task module is complete and tested end to end on both sides
+(template creation, instance generation, employee completion with and
+without a required photo, manager review, rejection with a required
+comment, redo, and approval all verified against real data). See the log
+below for what that testing turned up and fixed.
 
 **Known broken / unverified:**
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
@@ -29,16 +31,6 @@ tested against real data yet — see "Known broken / unverified" below.
 - Late clock-in detection is implemented but UNTESTED — needs a real
   clock-in against a scheduled shift to verify the LATE badge, since
   manual SQL `time_logs` inserts have no `shift_id`
-- Employee task view (`EmployeeTasks.tsx`) is built and pushed but
-  UNTESTED — needs real task rows (from a template or manual insert)
-  to verify grouping, the overdue/rejected badges, photo upload, the
-  comment thread, and the shared-pool completion race
-- Manager task view (`ManagerTasks.tsx`) is built and pushed but
-  UNTESTED — needs a real submitted task (with and without a required
-  photo) to verify the review queue, signed-url thumbnails and
-  lightbox, and the reject-requires-comment flow; needs a real
-  template + cron run to verify daily/weekly generation actually
-  produces the `tasks` rows the employee view expects
 - Collapsible sections: `StaffManager` already collapses; other long
   manager sections (Roles, Locations, unavailability/shift-request
   lists) should get the same treatment where it makes sense
@@ -49,6 +41,39 @@ tested against real data yet — see "Known broken / unverified" below.
 ---
 
 ## Log
+
+### 2026-09-07 (even later)
+- Task module tested end to end against real data: template creation,
+  instance generation, employee completion (with and without a
+  required photo), manager review, rejection with a required comment,
+  redo, and approval all verified. Task module is now considered
+  complete, not just code-complete
+- Testing surfaced and fixed three bugs:
+  - `task_templates.weekdays` is `NOT NULL` with a default of all
+    seven days; the daily branch of the template-create form was
+    sending `null` explicitly, which overrides the column default
+    instead of falling back to it, and violates the constraint. Now
+    sends `[0..6]` for daily; weekly still sends the selected days
+  - Completing a rejected/pending task could report a false "someone
+    else already completed this" on retry: the first tap's update
+    succeeded but the card wasn't updated from the result, so a second
+    tap found `status = 'submitted'` and read it as a shared-pool
+    loss. `EmployeeTasks.tsx` now applies the row returned by the
+    update directly to local state and refetches immediately; a
+    zero-row update result is only reported as a real conflict after
+    confirming the task wasn't already completed by this same user
+  - Comment authors were resolving as "someone"/"Unknown" for a
+    manager commenting on an employee's task, because the
+    `profiles_select_same_role` RLS policy blocked reading a
+    commenter's profile across roles. Replaced with
+    `profiles_select_same_org` so any authenticated user can read
+    every profile in their organisation; comment authors now resolve
+    correctly. Checking `EmployeeShiftActions.tsx` for the same
+    same-role assumption found the shift-swap peer list still relies
+    on `shifts_select_same_role` RLS (unaffected, still same-role), so
+    nothing there was exposed by the profiles change — added an
+    explicit client-side role filter on the peer list anyway, RLS
+    remains the real enforcement
 
 ### 2026-09-07 (later)
 - Built the manager side of the task module: `ManagerTasks.tsx`, added
