@@ -14,9 +14,9 @@ Newest entries at the top.
 ## Current state
 
 **Phase:** 2 complete — multi-tenancy schema and RLS
-**Next up:** Task module, manager side (schema, RLS, storage bucket and
-cron jobs are already done; the employee view is built and pushed but
-untested — full spec below, under "Next task: manager task view")
+**Next up:** Task module is code-complete on both sides now (schema, RLS,
+storage bucket and cron jobs were already done). Neither side has been
+tested against real data yet — see "Known broken / unverified" below.
 
 **Known broken / unverified:**
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
@@ -33,8 +33,12 @@ untested — full spec below, under "Next task: manager task view")
   UNTESTED — needs real task rows (from a template or manual insert)
   to verify grouping, the overdue/rejected badges, photo upload, the
   comment thread, and the shared-pool completion race
-- Manager side of the task module (review/approve/reject queue,
-  template management) has not been started
+- Manager task view (`ManagerTasks.tsx`) is built and pushed but
+  UNTESTED — needs a real submitted task (with and without a required
+  photo) to verify the review queue, signed-url thumbnails and
+  lightbox, and the reject-requires-comment flow; needs a real
+  template + cron run to verify daily/weekly generation actually
+  produces the `tasks` rows the employee view expects
 - Collapsible sections: `StaffManager` already collapses; other long
   manager sections (Roles, Locations, unavailability/shift-request
   lists) should get the same treatment where it makes sense
@@ -44,39 +48,29 @@ untested — full spec below, under "Next task: manager task view")
 
 ---
 
-## Next task: manager task view
-
-The spec for this lives only in a chat session this file cannot see,
-so it's recorded here in full rather than referenced.
-
-Create `src/components/ManagerTasks.tsx`, taking `locations` as a prop.
-
-**Section 1, Review:** tasks where `status = 'submitted'`, joined to
-`completed_by` and `locations`. Show title, who completed it, when,
-where. Photos are in a PRIVATE bucket, so use `createSignedUrl(path,
-3600)` for thumbnails, with a full-screen lightbox. Approve sets
-status `'approved'`, `reviewed_by`, `reviewed_at`. Request changes
-sets `'rejected'` and REQUIRES a comment inserted into `task_comments`
-in the same action — never allow rejection without explaining why.
-Realtime subscription for new submissions.
-
-**Section 2, Task setup:** list active `task_templates` with title,
-target, time window, days, photo requirement; allow toggling
-`is_active` and deleting. A create form: title, description, location,
-target (segmented control for role vs individual, then the picker),
-start and due time, recurrence daily/weekly, Mon–Sun picker for
-weekly, `requires_photo` toggle. Roles from `useRoles`, staff from
-`profiles`. Separately a one-off task form writing directly to `tasks`
-with a specific date instead of a template. Note that instances are
-generated hourly by cron.
-
-Both sections collapsible. Add a Tasks entry to the manager More tab
-below the shift requests panel. Theme tokens, lucide icons, 44px
-targets, loading and error states.
-
----
-
 ## Log
+
+### 2026-09-07 (later)
+- Built the manager side of the task module: `ManagerTasks.tsx`, added
+  to the manager More tab below the shift requests panel
+- Review section: `status = 'submitted'` tasks joined to `completed_by`
+  and `locations`; signed-url thumbnails (`createSignedUrl`, 1hr) from
+  the private `task-photos` bucket with a full-screen lightbox;
+  realtime subscription so new submissions show up live. Approve sets
+  `approved` + `reviewed_by`/`reviewed_at`. Rejecting requires a
+  comment — the comment is inserted into `task_comments` before the
+  status update, specifically so a failed status update can never
+  leave a task silently rejected with no explanation on record
+- Task setup section: template list (title, role/individual target,
+  time window, days, photo requirement) with an active/paused toggle
+  and delete; a create-template modal (location, role-vs-individual
+  segmented target picker, start/due time, daily/weekly recurrence
+  with a Mon–Sun picker reusing the same weekday convention as
+  `ManagerScheduler`, photo toggle); a separate one-off task modal that
+  writes straight to `tasks` with a specific date instead of a
+  template
+- Both sections collapsible, same pattern as `StaffManager`. Not
+  tested against real data yet (see "Known broken / unverified")
 
 ### 2026-09-07
 - Per-org roles complete: `roles` table (org_id, name, sort_order,

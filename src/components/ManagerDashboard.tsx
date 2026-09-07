@@ -35,6 +35,7 @@ import InviteStaffModal from './InviteStaffModal';
 import NotificationBell from './NotificationBell';
 import ManagerMoreTab from './ManagerMoreTab';
 import ManagerShiftRequests from './ManagerShiftRequests';
+import ManagerTasks from './ManagerTasks';
 import OvertimeApprovals from './OvertimeApprovals';
 import StaffManager from './StaffManager';
 
@@ -496,6 +497,7 @@ export default function ManagerDashboard(): ReactNode {
           <div className="space-y-4">
             <ManagerMoreTab profile={viewer} />
             <ManagerShiftRequests locations={locations} />
+            <ManagerTasks locations={locations} />
             <OvertimeApprovals />
             <StaffManager locations={locations} viewerId={viewer.id} />
           </div>
