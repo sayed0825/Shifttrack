@@ -687,20 +687,14 @@ function RolesCard(): ReactNode {
   const [confirmingDelete, setConfirmingDelete] = useState<{ role: Role; count: number } | null>(null);
   const [countLoadingId, setCountLoadingId] = useState<string | null>(null);
 
-  // The org isn't otherwise threaded down to this component; read it off the
-  // caller's own profile, falling back to an existing role row once loaded.
+  // The org isn't otherwise threaded down to this component; read it via the
+  // same SECURITY DEFINER helper RLS policies use (my_org_id() reads
+  // profiles.org_id for the current user), falling back to an existing role
+  // row once loaded.
   useEffect(() => {
     void (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data, error: profileError } = await supabase
-        .from('profiles')
-        .select('org_id')
-        .eq('id', user.id)
-        .maybeSingle();
-      if (!profileError) {
-        setOrgId((data as { org_id?: string } | null)?.org_id ?? null);
-      }
+      const { data, error: orgIdError } = await supabase.rpc('my_org_id');
+      if (!orgIdError && data) setOrgId(data as string);
     })();
   }, []);
 
@@ -1116,28 +1110,15 @@ function GracePeriodCard(): ReactNode {
     setSaved(false);
     setFault(null);
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setFault('Your session has expired. Sign in again.');
-      setSaving(false);
-      return;
-    }
-
-    const { data: prof, error: profileError } = await supabase
-      .from('profiles')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle();
-
-    const orgId = (prof as { org_id?: string } | null)?.org_id;
-    if (profileError || !orgId) {
+    const { data: orgId, error: orgIdError } = await supabase.rpc('my_org_id');
+    if (orgIdError || !orgId) {
       setFault('Could not determine your organisation.');
       setSaving(false);
       return;
     }
 
     const { error: updateError } = await supabase
-      .from('orgs')
+      .from('organisations')
       .update({ late_grace_minutes: minutes })
       .eq('id', orgId);
 

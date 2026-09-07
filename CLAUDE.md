@@ -105,8 +105,14 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
 - The protect_profile_role trigger blocks role changes when auth.uid() is
   not a Manager. It allows null auth.uid() so the invite Edge Function
   (service_role) can set a role.
-- Roles: Manager, Employee, Driver, FOH, KA, Head Chef, Second Chef, Cook,
-  Tandoori Chef, Kitchen Porter. Enforced by a CHECK on profiles.role.
+- Roles are per-organisation rows in a `roles` table (org_id, name,
+  sort_order, is_protected, can_view_map) rather than a fixed CHECK-enforced
+  set. profiles.role is nullable text, not an FK — see src/hooks/useRoles.ts.
+- Multi-tenancy: an `organisations` table (id, name, slug, logo_url,
+  primary_colour, is_active, late_grace_minutes) is the tenant root. Every
+  domain table carries org_id referencing it, including profiles.org_id.
+  my_org_id() is a SECURITY DEFINER helper that reads profiles.org_id for
+  the current user, the same pattern as is_manager()/my_role().
 
 ### UI
 
