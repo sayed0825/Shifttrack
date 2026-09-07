@@ -187,9 +187,27 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
   return (
     <div className="flex h-dvh flex-col bg-bg">
       <header className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-md items-center justify-between px-3 py-2">
+        <div className="flex flex-wrap items-center gap-4 px-3 py-2">
           <h1 className="text-sm font-bold text-primary">ShiftTrack</h1>
-          <div className="flex items-center gap-2">
+
+          <nav className="hidden gap-1 rounded-lg bg-bg p-1 md:flex" aria-label="Dashboard sections">
+            {TABS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setTab(id)}
+                aria-current={tab === id ? 'page' : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${
+                  tab === id ? 'bg-surface text-ink shadow-sm' : 'text-ink/60 hover:text-ink'
+                }`}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                {label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="ml-auto flex items-center gap-2">
             <NotificationBell />
             <button
               type="button"
