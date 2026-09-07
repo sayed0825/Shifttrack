@@ -23,7 +23,6 @@ import {
   MapPin,
   LogOut,
   MoreHorizontal,
-  UserPlus,
   Users,
   X,
 } from 'lucide-react';
@@ -35,7 +34,6 @@ import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
 import ManagerTasks from './ManagerTasks';
-import InviteStaffModal from './InviteStaffModal';
 import NotificationBell from './NotificationBell';
 import ManagerMoreTab from './ManagerMoreTab';
 import PayrollReportModal from './PayrollReportModal';
@@ -293,7 +291,6 @@ export default function ManagerDashboard(): ReactNode {
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
 
   const { roles } = useRoles();
 
@@ -403,16 +400,6 @@ export default function ManagerDashboard(): ReactNode {
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <NotificationBell />
-            {isManager && (
-              <button
-                type="button"
-                onClick={() => setInviteOpen(true)}
-                className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              >
-                <UserPlus className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Invite staff</span>
-              </button>
-            )}
 
             {/* The week selector only drives the timesheet query. */}
             {tab === 'timesheets' && <WeekSelector weekStart={weekStart} onChange={setWeekStart} />}
@@ -532,16 +519,6 @@ export default function ManagerDashboard(): ReactNode {
           </button>
         ))}
       </nav>
-
-      {inviteOpen && (
-        <InviteStaffModal
-          locations={locations}
-          onClose={() => setInviteOpen(false)}
-          onInvited={async () => {
-            setInviteOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }

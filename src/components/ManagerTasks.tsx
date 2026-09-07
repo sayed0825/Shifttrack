@@ -1345,6 +1345,8 @@ function historyStatusClasses(status: TaskStatus): string {
   return 'bg-bg text-ink/60';
 }
 
+type HistoryStatusFilter = 'all' | 'completed' | 'not_completed';
+
 function HistorySection({ locations }: { locations: Array<{ id: string; name: string }> }): ReactNode {
   const { roles, loading: rolesLoading } = useRoles();
 
@@ -1352,6 +1354,7 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
   const [endDate, setEndDate] = useState(() => localDateKey(new Date()));
   const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
   const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<HistoryStatusFilter>('all');
 
   const [rows, setRows] = useState<HistoryTaskRow[]>([]);
   const [page, setPage] = useState(0);
@@ -1392,6 +1395,8 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
       if (selectedLocations.size < locations.length) {
         query = query.in('location_id', Array.from(selectedLocations));
       }
+      if (statusFilter === 'completed') query = query.in('status', ['approved', 'submitted']);
+      else if (statusFilter === 'not_completed') query = query.in('status', ['pending', 'rejected']);
 
       const { data, error: queryError } = await query.returns<HistoryTaskRow[]>();
 
@@ -1412,7 +1417,16 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
       if (append) setLoadingMore(false);
       else setLoading(false);
     },
-    [startDate, endDate, selectedLocations, selectedRoles, locations.length, roles.length, rolesLoading]
+    [
+      startDate,
+      endDate,
+      selectedLocations,
+      selectedRoles,
+      statusFilter,
+      locations.length,
+      roles.length,
+      rolesLoading,
+    ]
   );
 
   useEffect(() => {
@@ -1491,12 +1505,45 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
   };
 
   const activeFilterCount =
-    (selectedLocations.size < locations.length ? 1 : 0) + (selectedRoles.size < roles.length ? 1 : 0);
+    (selectedLocations.size < locations.length ? 1 : 0) +
+    (selectedRoles.size < roles.length ? 1 : 0) +
+    (statusFilter !== 'all' ? 1 : 0);
 
   return (
     <CollapsibleSection title="History" icon={History}>
       <div className="flex flex-wrap items-center gap-3">
         <FilterButton activeCount={activeFilterCount}>
+          <div>
+            <p className="text-xs font-medium text-ink/60">Status</p>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {(
+                [
+                  { value: 'all', label: 'All' },
+                  { value: 'completed', label: 'Completed' },
+                  { value: 'not_completed', label: 'Not completed' },
+                ] as const
+              ).map((option) => {
+                const on = statusFilter === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setStatusFilter(option.value)}
+                    aria-pressed={on}
+                    className={`inline-flex min-h-[36px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
+                      on
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-border text-ink hover:border-primary/40'
+                    }`}
+                  >
+                    {on && <Check className="h-3 w-3" aria-hidden="true" />}
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div>
             <label htmlFor="history-start" className="block text-xs font-medium text-ink/60">
               Start date
