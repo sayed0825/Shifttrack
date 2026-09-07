@@ -22,17 +22,38 @@ Newest entries at the top.
 - SMTP not set up. Supabase's built-in mailer caps at a few emails per
   hour, nowhere near enough for 60 staff
 - MapTiler key not domain-restricted
-- Job roles are hardcoded as a nine-item array in the frontend
-  (`ALL_ROLES` in `ManagerDashboard.tsx`) — for SaaS these must become
-  a per-organisation roles table, seeded per org, with a management UI.
-  Affects `StaffManager`, `InviteStaffModal`, `ManagerShiftRequests`,
-  and the role filter in `ManagerDashboard`
 - `LiveMap` `DEFAULT_CENTER` is hardcoded to Essex — should derive from
   the org's own locations
+- Late clock-in detection is implemented but UNTESTED — needs a real
+  clock-in against a scheduled shift to verify the LATE badge, since
+  manual SQL `time_logs` inserts have no `shift_id`
 
 ---
 
 ## Log
+
+### 2026-09-07
+- Per-org roles complete: `roles` table (org_id, name, sort_order,
+  is_protected, can_view_map), shared `useRoles` hook (module-scoped
+  cache, one realtime channel for all consumers), role management UI
+  in ManagerMoreTab (add, rename, reorder, delete, can_view_map
+  toggle; `is_protected` roles can't be renamed or deleted)
+- `profiles.role` is nullable now — handled everywhere it's displayed
+  with a muted "No role" label, plus a warning badge in `StaffManager`
+  for staff with no role assigned
+- `can_view_map` per role replaces the hardcoded map-viewer role list
+  in `EmployeeDashboard`
+- Added late clock-in detection: `src/lib/lateness.ts` derives
+  lateness from `clock_in` vs. the linked shift's `start_time` plus an
+  org-level grace period (`src/hooks/useLateGrace.ts`, editable in
+  ManagerMoreTab), LATE badge in both the manager and employee
+  timesheet views. UNTESTED — needs a real clock-in against a
+  scheduled shift; manual SQL `time_logs` inserts have no `shift_id`
+  so they never trigger it
+- Documented the `organisations` table and `org_id`/`my_org_id()` in
+  CLAUDE.md; fixed two spots that had guessed at this schema before it
+  was confirmed (`orgs` → `organisations`, manual profile lookup →
+  `my_org_id()`)
 
 ### 2026-09-02
 - Phase 2 multi-tenancy: added `organisations` table, backfilled `org_id`
