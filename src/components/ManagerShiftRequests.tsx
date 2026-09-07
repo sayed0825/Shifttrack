@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { ArrowLeftRight, CalendarPlus, Check, Loader2, Trash2, UserCheck } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import CollapsibleSection from './CollapsibleSection';
 
 interface ShiftLite {
   id: string;
@@ -162,16 +163,27 @@ export default function ManagerShiftRequests({
     setDate('');
   };
 
-  if (loading) {
-    return (
+  const pendingCount = swaps.length + applications.length;
+
+  return (
+    <CollapsibleSection
+      title="Shift requests"
+      icon={ArrowLeftRight}
+      count={
+        pendingCount > 0 && (
+          <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">
+            {pendingCount}
+          </span>
+        )
+      }
+      defaultOpen={pendingCount > 0}
+    >
+    {loading ? (
       <div className="flex items-center justify-center gap-2 py-10 text-sm text-ink/60">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         Loading requests…
       </div>
-    );
-  }
-
-  return (
+    ) : (
     <div className="space-y-4">
       {fault && <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
 
@@ -400,5 +412,7 @@ export default function ManagerShiftRequests({
         )}
       </section>
     </div>
+    )}
+    </CollapsibleSection>
   );
 }

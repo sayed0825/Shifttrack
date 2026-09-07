@@ -108,6 +108,8 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
 - Roles are per-organisation rows in a `roles` table (org_id, name,
   sort_order, is_protected, can_view_map) rather than a fixed CHECK-enforced
   set. profiles.role is nullable text, not an FK — see src/hooks/useRoles.ts.
+- profiles.email mirrors auth.users.email via the sync_profile_email
+  trigger. Read it, never write it directly.
 - Multi-tenancy: an `organisations` table (id, name, slug, logo_url,
   primary_colour, is_active, late_grace_minutes) is the tenant root. Every
   domain table carries org_id referencing it, including profiles.org_id.

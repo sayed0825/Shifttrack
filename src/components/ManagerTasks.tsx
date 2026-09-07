@@ -3,7 +3,6 @@ import {
   AlertCircle,
   Camera,
   Check,
-  ChevronDown,
   Clock,
   ClipboardCheck,
   ClipboardList,
@@ -17,6 +16,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
+import CollapsibleSection from './CollapsibleSection';
 
 type TaskStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
 type Recurrence = 'daily' | 'weekly';
@@ -133,7 +133,6 @@ export default function ManagerTasks({
 // ===========================================================================
 
 function ReviewSection({ userId }: { userId: string | null }): ReactNode {
-  const [collapsed, setCollapsed] = useState(false);
   const [tasks, setTasks] = useState<SubmittedTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -258,28 +257,19 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-surface">
-      <button
-        type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        aria-expanded={!collapsed}
-        className="flex min-h-[44px] w-full items-center gap-2 p-5 text-left"
-      >
-        <ClipboardCheck className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="flex-1 text-sm font-semibold text-ink">Review</h3>
-        {tasks.length > 0 && (
+    <div>
+    <CollapsibleSection
+      title="Review"
+      icon={ClipboardCheck}
+      count={
+        tasks.length > 0 && (
           <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">
             {tasks.length}
           </span>
-        )}
-        <ChevronDown
-          className={`h-4 w-4 text-ink/50 transition-transform ${collapsed ? '' : 'rotate-180'}`}
-          aria-hidden="true"
-        />
-      </button>
-
-      {!collapsed && (
-        <div className="px-5 pb-5">
+        )
+      }
+      defaultOpen={tasks.length > 0}
+    >
           {fault && <p className="mb-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
 
           {loading ? (
@@ -400,8 +390,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
               })}
             </ul>
           )}
-        </div>
-      )}
+    </CollapsibleSection>
 
       {lightboxUrl && (
         <div
@@ -424,7 +413,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
           />
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -439,7 +428,6 @@ function TaskSetupSection({
   userId: string | null;
   locations: Array<{ id: string; name: string }>;
 }): ReactNode {
-  const [collapsed, setCollapsed] = useState(false);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -506,24 +494,12 @@ function TaskSetupSection({
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-surface">
-      <button
-        type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        aria-expanded={!collapsed}
-        className="flex min-h-[44px] w-full items-center gap-2 p-5 text-left"
-      >
-        <ClipboardList className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="flex-1 text-sm font-semibold text-ink">Task setup</h3>
-        <span className="text-xs text-ink/50">{templates.length}</span>
-        <ChevronDown
-          className={`h-4 w-4 text-ink/50 transition-transform ${collapsed ? '' : 'rotate-180'}`}
-          aria-hidden="true"
-        />
-      </button>
-
-      {!collapsed && (
-        <div className="px-5 pb-5">
+    <div>
+    <CollapsibleSection
+      title="Task setup"
+      icon={ClipboardList}
+      count={<span className="text-xs text-ink/50">{templates.length}</span>}
+    >
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -650,8 +626,7 @@ function TaskSetupSection({
               ))}
             </ul>
           )}
-        </div>
-      )}
+    </CollapsibleSection>
 
       {showTemplateForm && (
         <TemplateFormModal
@@ -676,7 +651,7 @@ function TaskSetupSection({
           onClose={() => setShowOneOffForm(false)}
         />
       )}
-    </section>
+    </div>
   );
 }
 

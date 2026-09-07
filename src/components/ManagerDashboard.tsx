@@ -64,6 +64,7 @@ export interface Profile {
   id: string;
   first_name: string | null;
   full_name: string | null;
+  email: string | null;
   role: UserRole | null;
   is_active: boolean;
 }
@@ -310,7 +311,7 @@ export default function ManagerDashboard(): ReactNode {
         const [profileResult, locationResult] = await Promise.all([
           supabase
             .from('profiles')
-            .select('id, first_name, full_name, role, is_active')
+            .select('id, first_name, full_name, email, role, is_active')
             .eq('id', user.id)
             .single<Profile>(),
           supabase.from('locations').select('id, name').eq('is_active', true).order('name').returns<LocationRow[]>(),

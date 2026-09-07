@@ -25,6 +25,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
+import CollapsibleSection from './CollapsibleSection';
 import InviteStaffModal from './InviteStaffModal';
 import type { Profile } from './ManagerDashboard';
 
@@ -100,13 +101,8 @@ function ProfileSettingsCard({ profile }: { profile: Profile }): ReactNode {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <User className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Profile settings</h3>
-      </div>
-
-      <div className="mt-4 space-y-3">
+    <CollapsibleSection title="Profile settings" icon={User}>
+      <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="more-first-name" className="block text-sm font-medium text-ink">First name</label>
@@ -163,7 +159,7 @@ function ProfileSettingsCard({ profile }: { profile: Profile }): ReactNode {
           Save profile
         </button>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -203,13 +199,8 @@ function ChangePasswordCard(): ReactNode {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <UserCog className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Change password</h3>
-      </div>
-
-      <div className="mt-4 space-y-3">
+    <CollapsibleSection title="Change password" icon={UserCog}>
+      <div className="space-y-3">
         <div>
           <label htmlFor="more-new-password" className="block text-sm font-medium text-ink">New password</label>
           <input
@@ -248,7 +239,7 @@ function ChangePasswordCard(): ReactNode {
           Update password
         </button>
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -274,13 +265,8 @@ function InviteStaffCard(): ReactNode {
   }, []);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <UserPlus className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Invite staff</h3>
-      </div>
-
-      <p className="mt-2 text-sm text-ink/60">
+    <CollapsibleSection title="Invite staff" icon={UserPlus}>
+      <p className="text-sm text-ink/60">
         Send an email invite to a new team member. They'll set their own password on first login.
       </p>
 
@@ -307,7 +293,7 @@ function InviteStaffCard(): ReactNode {
           onInvited={async () => setInviteOpen(false)}
         />
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -370,36 +356,23 @@ function LocationsCard(): ReactNode {
     await load();
   };
 
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <div className="flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-ink/50" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-ink">Locations</h3>
-        </div>
-        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+  return (
+    <CollapsibleSection title="Locations" icon={MapPin}>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-ink/60">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           Loading locations…
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <MapPin className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Locations</h3>
-      </div>
-
+      ) : (
+        <>
       {error && (
-        <div className="mt-3 flex gap-2 rounded-lg bg-danger-bg p-3 text-sm">
+        <div className="mb-3 flex gap-2 rounded-lg bg-danger-bg p-3 text-sm">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
           <p className="text-danger">{error}</p>
         </div>
       )}
 
-      <div className="mt-4 space-y-3">
+      <div className="space-y-3">
         {locations.map((loc) => (
           <div key={loc.id} className="rounded-xl border border-border">
             {editingId === loc.id && editForm ? (
@@ -494,7 +467,9 @@ function LocationsCard(): ReactNode {
           </div>
         ))}
       </div>
-    </div>
+        </>
+      )}
+    </CollapsibleSection>
   );
 }
 
@@ -580,35 +555,26 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
     return 'bg-warning-bg text-warning';
   };
 
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <div className="flex items-center gap-2">
-          <CalendarX className="h-5 w-5 text-ink/50" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-ink">Unavailability requests</h3>
-        </div>
-        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+  return (
+    <CollapsibleSection
+      title="Unavailability requests"
+      icon={CalendarX}
+      count={
+        pending.length > 0 && (
+          <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">{pending.length} pending</span>
+        )
+      }
+      defaultOpen={pending.length > 0}
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-ink/60">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           Loading…
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <CalendarX className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Unavailability requests</h3>
-        {pending.length > 0 && (
-          <span className="rounded-full bg-warning-bg px-2 py-0.5 text-xs font-semibold text-warning">{pending.length} pending</span>
-        )}
-      </div>
-
-      {requests.length === 0 ? (
-        <p className="mt-4 text-sm text-ink/60">No unavailability requests.</p>
+      ) : requests.length === 0 ? (
+        <p className="text-sm text-ink/60">No unavailability requests.</p>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="space-y-3">
           {pending.length > 0 && (
             <div className="space-y-2">
               {pending.map((req) => (
@@ -663,7 +629,7 @@ function UnavailabilityApprovalsCard({ managerId }: { managerId: string }): Reac
           )}
         </div>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
 
@@ -834,29 +800,21 @@ function RolesCard(): ReactNode {
     setBusyId(null);
   };
 
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <div className="flex items-center gap-2">
-          <Tags className="h-5 w-5 text-ink/50" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-ink">Roles</h3>
-        </div>
-        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+  return (
+    <div>
+    <CollapsibleSection
+      title="Roles"
+      icon={Tags}
+      count={<span className="text-xs text-ink/50">{roles.length}</span>}
+    >
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-ink/60">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
           Loading roles…
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <Tags className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Roles</h3>
-        <span className="text-xs text-ink/50">{roles.length}</span>
-      </div>
-      <p className="mt-2 text-sm text-ink/60">
+      ) : (
+        <>
+      <p className="text-sm text-ink/60">
         Job roles are shared across scheduling, staff, and shift requests. Drag order with the
         arrows; the top role appears first in every list.
       </p>
@@ -1032,6 +990,9 @@ function RolesCard(): ReactNode {
         </button>
       </div>
       {addFault && <p className="mt-2 text-sm text-danger">{addFault}</p>}
+        </>
+      )}
+    </CollapsibleSection>
 
       {/* Delete confirmation */}
       {confirmingDelete && (
@@ -1132,12 +1093,8 @@ function GracePeriodCard(): ReactNode {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <Timer className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Late clock-in grace period</h3>
-      </div>
-      <p className="mt-2 text-sm text-ink/60">
+    <CollapsibleSection title="Late clock-in grace period" icon={Timer}>
+      <p className="text-sm text-ink/60">
         How many minutes after a shift's scheduled start a clock-in still counts as on time.
         0 means any clock-in after the scheduled start counts as late.
       </p>
@@ -1180,6 +1137,6 @@ function GracePeriodCard(): ReactNode {
 
       {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
       {saved && !fault && <p className="mt-3 text-sm text-success">Grace period saved.</p>}
-    </div>
+    </CollapsibleSection>
   );
 }

@@ -33,7 +33,7 @@ export default function App() {
 
       const { data: profile } = await supabase
         .from('profiles')
-        .select('id, first_name, full_name, role, is_active')
+        .select('id, first_name, full_name, email, role, is_active')
         .eq('id', authSession.user.id)
         .maybeSingle();
 
@@ -44,6 +44,7 @@ export default function App() {
           id: authSession.user.id,
           first_name: profile?.first_name ?? null,
           full_name: profile?.full_name ?? null,
+          email: profile?.email ?? null,
           role: profile?.role ?? null,
           is_active: profile?.is_active ?? true,
         },
@@ -94,7 +95,7 @@ export default function App() {
       if (data.session) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id, first_name, full_name, role, is_active')
+          .select('id, first_name, full_name, email, role, is_active')
           .eq('id', data.session.user.id)
           .maybeSingle();
 
@@ -104,6 +105,7 @@ export default function App() {
             id: data.session.user.id,
             first_name: profile?.first_name ?? null,
             full_name: profile?.full_name ?? null,
+            email: profile?.email ?? null,
             role: profile?.role ?? null,
             is_active: profile?.is_active ?? true,
           },

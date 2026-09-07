@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  AlertTriangle, Check, ChevronDown, Filter, Loader2, MapPin,
+  AlertTriangle, Check, Filter, Loader2, MapPin,
   Search, Trash2, UserMinus, UserPlus, Users,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import CollapsibleSection from './CollapsibleSection';
 import EmployeeNotes from './EmployeeNotes';
 
 interface StaffRow {
   id: string;
   first_name: string | null;
   full_name: string | null;
+  email: string | null;
   role: string | null;
   is_active: boolean;
 }
@@ -49,7 +51,6 @@ export default function StaffManager({
   locations: Array<{ id: string; name: string }>;
   viewerId: string;
 }): ReactNode {
-  const [collapsed, setCollapsed] = useState(false);
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [assigned, setAssigned] = useState<Record<string, { id: string; isPrimary: boolean }[]>>({});
   const [hours, setHours] = useState<Record<string, number>>({});
@@ -73,7 +74,7 @@ export default function StaffManager({
     const weekStart = startOfWeek(new Date());
 
     const [staffRes, locRes, logRes] = await Promise.all([
-      supabase.from('profiles').select('id, first_name, full_name, role, is_active').order('full_name'),
+      supabase.from('profiles').select('id, first_name, full_name, email, role, is_active').order('full_name'),
       supabase.from('profile_locations').select('profile_id, location_id, is_primary'),
       supabase
         .from('time_logs')
@@ -112,7 +113,9 @@ export default function StaffManager({
         return false;
       }
       if (!needle) return true;
-      return `${p.full_name ?? ''} ${p.first_name ?? ''} ${p.role ?? ''}`.toLowerCase().includes(needle);
+      return `${p.full_name ?? ''} ${p.first_name ?? ''} ${p.role ?? ''} ${p.email ?? ''}`
+        .toLowerCase()
+        .includes(needle);
     });
   }, [staff, query, roleFilter, locationFilter, assigned]);
 
@@ -221,24 +224,12 @@ export default function StaffManager({
   const activeFilters = (locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0);
 
   return (
-    <section className="rounded-2xl border border-border bg-surface">
-      <button
-        type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        aria-expanded={!collapsed}
-        className="flex min-h-[44px] w-full items-center gap-2 p-5 text-left"
-      >
-        <Users className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="flex-1 text-sm font-semibold text-ink">Staff</h3>
-        <span className="text-xs text-ink/50">{staff.length}</span>
-        <ChevronDown
-          className={`h-4 w-4 text-ink/50 transition-transform ${collapsed ? '' : 'rotate-180'}`}
-          aria-hidden="true"
-        />
-      </button>
-
-      {!collapsed && (
-        <div className="px-5 pb-5">
+    <div>
+    <CollapsibleSection
+      title="Staff"
+      icon={Users}
+      count={<span className="text-xs text-ink/50">{staff.length}</span>}
+    >
           <div className="relative">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
@@ -248,7 +239,7 @@ export default function StaffManager({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search name or role"
+              placeholder="Search name, email, or role"
               aria-label="Search staff"
               className="min-h-[44px] w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm"
             />
@@ -341,6 +332,9 @@ export default function StaffManager({
                           {person.full_name ?? person.first_name ?? 'Unnamed'}
                           {isSelf && <span className="ml-1 text-xs text-ink/50">(you)</span>}
                         </span>
+                        {person.email && (
+                          <span className="block truncate text-xs text-ink/50">{person.email}</span>
+                        )}
                         <span className="block truncate text-xs text-ink/60">
                           {person.role ? person.role : <span className="italic text-ink/40">No role</span>}
                           {!person.is_active && ' · deactivated'}
@@ -381,6 +375,9 @@ export default function StaffManager({
 
                     {open && (
                       <div className="mt-3 space-y-3 rounded-lg bg-bg p-3">
+                        {person.email && (
+                          <p className="break-all text-xs text-ink/70">{person.email}</p>
+                        )}
                         <div>
                           <label htmlFor={`role-${person.id}`} className="block text-xs font-medium text-ink/60">
                             Job role
@@ -477,8 +474,7 @@ export default function StaffManager({
               })}
             </ul>
           )}
-        </div>
-      )}
+    </CollapsibleSection>
 
       {/* Confirmation */}
       {confirming && (
@@ -574,6 +570,6 @@ export default function StaffManager({
           </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

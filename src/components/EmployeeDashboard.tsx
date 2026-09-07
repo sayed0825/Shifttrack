@@ -33,6 +33,7 @@ import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
+import CollapsibleSection from './CollapsibleSection';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
@@ -1116,13 +1117,8 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
       <h2 className="text-lg font-semibold text-ink">More</h2>
 
       {/* Profile settings */}
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <div className="flex items-center gap-2">
-          <User className="h-5 w-5 text-ink/50" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-ink">Profile settings</h3>
-        </div>
-
-        <div className="mt-4 space-y-3">
+      <CollapsibleSection title="Profile settings" icon={User}>
+        <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="emp-first-name" className="block text-sm font-medium text-ink">
@@ -1183,16 +1179,11 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
             Save profile
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
 
       {/* Password */}
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <div className="flex items-center gap-2">
-          <UserCog className="h-5 w-5 text-ink/50" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-ink">Change password</h3>
-        </div>
-
-        <div className="mt-4 space-y-3">
+      <CollapsibleSection title="Change password" icon={UserCog}>
+        <div className="space-y-3">
           <div>
             <label htmlFor="emp-new-password" className="block text-sm font-medium text-ink">
               New password
@@ -1233,7 +1224,7 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
             Update password
           </button>
         </div>
-      </div>
+      </CollapsibleSection>
 
       <OvertimeClaim profileId={profile.id} />
       <UnavailabilityCard profileId={profile.id} />
@@ -1373,12 +1364,8 @@ function UnavailabilityCard({ profileId }: { profileId: string }): ReactNode {
   };
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="flex items-center gap-2">
-        <CalendarX className="h-5 w-5 text-ink/50" aria-hidden="true" />
-        <h3 className="text-sm font-semibold text-ink">Unavailability</h3>
-      </div>
-      <p className="mt-2 text-sm text-ink/60">Request time off by selecting dates on the calendar.</p>
+    <CollapsibleSection title="Unavailability" icon={CalendarX}>
+      <p className="text-sm text-ink/60">Request time off by selecting dates on the calendar.</p>
 
       {/* Calendar */}
       <div className="mt-4">
@@ -1500,6 +1487,6 @@ function UnavailabilityCard({ profileId }: { profileId: string }): ReactNode {
           </ul>
         )}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }
