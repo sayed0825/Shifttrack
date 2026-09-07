@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { ChevronDown, Compass, Filter, Gauge, Loader2, MapPin, RefreshCw, Truck } from 'lucide-react';
+import { Compass, Gauge, Loader2, RefreshCw, Truck } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabaseClient';
 
@@ -108,32 +108,13 @@ function MapController({ target, bounds }) {
   return null;
 }
 
-export default function LiveMap({ height = '100%' }) {
+export default function LiveMap({ height = '100%', locationFilter = 'all' }) {
   const [sites, setSites] = useState([]);
-  const [selectedSiteId, setSelectedSiteId] = useState('all');
   const [drivers, setDrivers] = useState([]); // [{ position, profile, shift }]
   const [duty, setDuty] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [, forceTick] = useState(0);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const filterRef = useRef(null);
-
-  useEffect(() => {
-    if (!filterOpen) return undefined;
-    const onPointerDown = (event) => {
-      if (filterRef.current && !filterRef.current.contains(event.target)) setFilterOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setFilterOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [filterOpen]);
 
   // Keeps the "x min ago" strings honest between refreshes.
   useEffect(() => {
@@ -194,8 +175,8 @@ export default function LiveMap({ height = '100%' }) {
   }, [refresh]);
 
   const selectedSite = useMemo(
-    () => (selectedSiteId === 'all' ? null : (sites.find((s) => s.id === selectedSiteId) ?? null)),
-    [sites, selectedSiteId]
+    () => (locationFilter === 'all' ? null : (sites.find((s) => s.id === locationFilter) ?? null)),
+    [sites, locationFilter]
   );
 
   const markers = useMemo(() => {
@@ -217,8 +198,8 @@ export default function LiveMap({ height = '100%' }) {
       // Off duty means the position is stale or the shift is over.
       // Showing it would imply a driver is out when they are not.
       .filter(({ onDuty }) => onDuty)
-      .filter(({ shift }) => selectedSiteId === 'all' || shift?.location_id === selectedSiteId);
-  }, [drivers, selectedSiteId, duty]);
+      .filter(({ shift }) => locationFilter === 'all' || shift?.location_id === locationFilter);
+  }, [drivers, locationFilter, duty]);
 
   const bounds = useMemo(() => {
     const points = markers.map((m) => [m.position.latitude, m.position.longitude]);
@@ -232,59 +213,6 @@ export default function LiveMap({ height = '100%' }) {
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-surface">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-        <div className="relative" ref={filterRef}>
-          <button
-            type="button"
-            onClick={() => setFilterOpen((prev) => !prev)}
-            aria-expanded={filterOpen}
-            aria-haspopup="true"
-            className="relative inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            <Filter className="h-4 w-4 text-ink/50" aria-hidden="true" />
-            Filter
-            {selectedSiteId !== 'all' && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-white">
-                1
-              </span>
-            )}
-          </button>
-
-          {filterOpen && (
-            <div
-              role="dialog"
-              aria-label="Map filters"
-              className="absolute left-0 top-full z-20 mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-3 shadow-lg"
-            >
-              <label htmlFor="map-location-filter" className="block text-xs font-medium text-ink/60">
-                Location
-              </label>
-              <div className="relative mt-1.5">
-                <select
-                  id="map-location-filter"
-                  value={selectedSiteId}
-                  onChange={(event) => setSelectedSiteId(event.target.value)}
-                  className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                >
-                  <option value="all">All locations</option>
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.id}>
-                      {site.name}
-                    </option>
-                  ))}
-                </select>
-                <MapPin
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
-                  aria-hidden="true"
-                />
-                <ChevronDown
-                  className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
-                  aria-hidden="true"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
         <div className="flex items-center gap-1.5 text-sm text-ink/80">
           <Truck className="h-4 w-4 text-ink/50" aria-hidden="true" />
           <span className="font-medium tabular-nums text-ink">{onDutyCount}</span>

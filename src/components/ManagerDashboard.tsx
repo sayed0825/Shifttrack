@@ -16,6 +16,7 @@ import {
   ChevronRight,
   Clock,
   Edit3,
+  FileSpreadsheet,
   Filter,
   Loader2,
   MapPin,
@@ -29,17 +30,19 @@ import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
+import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
 import InviteStaffModal from './InviteStaffModal';
 import NotificationBell from './NotificationBell';
 import ManagerMoreTab from './ManagerMoreTab';
+import PayrollReportModal from './PayrollReportModal';
 
 /*
  * LiveMap and ManagerScheduler are JS modules. Add src/components/legacy.d.ts:
  *
  *   declare module './LiveMap' {
- *     const LiveMap: React.FC<{ height?: string }>;
+ *     const LiveMap: React.FC<{ height?: string; locationFilter?: string }>;
  *     export default LiveMap;
  *   }
  *   declare module './ManagerScheduler' {
@@ -411,15 +414,19 @@ export default function ManagerDashboard(): ReactNode {
             {/* The week selector only drives the timesheet query. */}
             {tab === 'timesheets' && <WeekSelector weekStart={weekStart} onChange={setWeekStart} />}
 
-            {/* The scheduler has its own location filter, so these are map and
-                timesheets only. */}
+            {/* The scheduler has its own location + role filter, so these are
+                map and timesheets only. */}
             {(tab === 'map' || tab === 'timesheets') && (
-              <>
+              <FilterButton
+                activeCount={(locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0)}
+              >
                 <FilterSelect
+                  id="dash-location-filter"
                   label="Location"
                   value={locationFilter}
                   onChange={setLocationFilter}
                   Icon={MapPin}
+                  fullWidth
                   options={[
                     { value: 'all', label: 'All locations' },
                     ...locations.map((location) => ({ value: location.id, label: location.name })),
@@ -427,16 +434,18 @@ export default function ManagerDashboard(): ReactNode {
                 />
 
                 <FilterSelect
+                  id="dash-role-filter"
                   label="Role"
                   value={roleFilter}
                   onChange={setRoleFilter}
                   Icon={Filter}
+                  fullWidth
                   options={[
                     { value: 'all', label: 'All roles' },
                     ...roles.map((r) => ({ value: r.name, label: r.name })),
                   ]}
                 />
-              </>
+              </FilterButton>
             )}
 
             <button
@@ -475,7 +484,7 @@ export default function ManagerDashboard(): ReactNode {
             {/* isolate contains Leaflet's internal z-index (panes/controls go up to
                 1000) so it can never compete with page-level chrome like a modal. */}
             <div className="relative z-0 min-h-[24rem] isolate">
-              <LiveMap />
+              <LiveMap locationFilter={locationFilter} />
             </div>
             <RosterSidebar locationFilter={locationFilter} roleFilter={roleFilter} />
           </div>
@@ -489,6 +498,7 @@ export default function ManagerDashboard(): ReactNode {
             weekStart={weekStart}
             locationFilter={locationFilter}
             roleFilter={roleFilter}
+            locations={locations}
           />
         )}
 
@@ -574,35 +584,44 @@ function WeekSelector({
 }
 
 interface FilterSelectProps<T extends string> {
+  id: string;
   label: string;
   value: T;
   onChange: Dispatch<SetStateAction<T>>;
   Icon: typeof MapPin;
   options: ReadonlyArray<{ value: T; label: string }>;
+  fullWidth?: boolean;
 }
 
 function FilterSelect<T extends string>({
+  id,
   label,
   value,
   onChange,
   Icon,
   options,
+  fullWidth,
 }: FilterSelectProps<T>): ReactNode {
   return (
-    <div className="relative">
-      <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50" aria-hidden="true" />
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value as T)}
-        className="appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-8 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+    <div>
+      <label htmlFor={id} className="block text-xs font-medium text-ink/60">
+        {label}
+      </label>
+      <div className="relative mt-1.5">
+        <Icon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50" aria-hidden="true" />
+        <select
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value as T)}
+          className={`min-h-[44px] appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-8 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${fullWidth ? 'w-full' : ''}`}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
@@ -756,16 +775,19 @@ function TimesheetsPanel({
   weekStart,
   locationFilter,
   roleFilter,
+  locations,
 }: {
   viewer: Profile;
   weekStart: Date;
   locationFilter: LocationFilter;
   roleFilter: RoleFilter;
+  locations: LocationRow[];
 }): ReactNode {
   const [logs, setLogs] = useState<TimeLogWithShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TimeLogRow | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const isManager = viewer.role === 'Manager';
   const { graceMinutes } = useLateGrace();
@@ -844,6 +866,19 @@ function TimesheetsPanel({
 
   return (
     <div className="space-y-4">
+      {isManager && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-bg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-ink/50" aria-hidden="true" />
+            Generate report
+          </button>
+        </div>
+      )}
+
       {/* Weekly summary */}
       <div className="grid gap-3 sm:grid-cols-3">
         <SummaryCard label="Week of" value={formatWeekRange(weekStart)} Icon={Calendar} />
@@ -1003,6 +1038,8 @@ function TimesheetsPanel({
           }}
         />
       )}
+
+      {reportOpen && <PayrollReportModal locations={locations} onClose={() => setReportOpen(false)} />}
     </div>
   );
 }

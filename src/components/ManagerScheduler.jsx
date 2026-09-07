@@ -5,6 +5,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Filter,
   Loader2,
   MapPin,
   Plus,
@@ -15,6 +16,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
+import { useRoles } from '../hooks/useRoles';
+import FilterButton from './FilterButton';
 
 const PRESET_TIMES = [
   { start: '17:00', end: '22:00' },
@@ -138,10 +141,13 @@ export default function ManagerScheduler() {
   const [locations, setLocations] = useState([]);
   const [shifts, setShifts] = useState([]);
   const [locationFilter, setLocationFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalSeed, setModalSeed] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  const { roles, loading: rolesLoading } = useRoles();
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
@@ -191,7 +197,9 @@ export default function ManagerScheduler() {
 
   const shiftsByDay = useMemo(() => {
     const map = {};
-    for (const shift of shifts) {
+    const filtered =
+      roleFilter === 'all' ? shifts : shifts.filter((shift) => shift.profiles?.role === roleFilter);
+    for (const shift of filtered) {
       const key = dateKey(new Date(shift.start_time));
       (map[key] ??= []).push(shift);
     }
@@ -199,7 +207,7 @@ export default function ManagerScheduler() {
       map[key].sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
     }
     return map;
-  }, [shifts]);
+  }, [shifts, roleFilter]);
 
   const handleDelete = useCallback(
     async (shift) => {
@@ -262,25 +270,60 @@ export default function ManagerScheduler() {
           This week
         </button>
 
-        <div className="relative">
-          <select
-            value={locationFilter}
-            onChange={(event) => setLocationFilter(event.target.value)}
-            aria-label="Filter schedule by location"
-            className="min-h-[44px] appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          >
-            <option value="all">All locations</option>
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-          <MapPin
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
-            aria-hidden="true"
-          />
-        </div>
+        <FilterButton
+          activeCount={(locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0)}
+        >
+          <div>
+            <label htmlFor="sched-location-filter" className="block text-xs font-medium text-ink/60">
+              Location
+            </label>
+            <div className="relative mt-1.5">
+              <select
+                id="sched-location-filter"
+                value={locationFilter}
+                onChange={(event) => setLocationFilter(event.target.value)}
+                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <option value="all">All locations</option>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
+              </select>
+              <MapPin
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="sched-role-filter" className="block text-xs font-medium text-ink/60">
+              Role
+            </label>
+            <div className="relative mt-1.5">
+              <select
+                id="sched-role-filter"
+                value={roleFilter}
+                onChange={(event) => setRoleFilter(event.target.value)}
+                disabled={rolesLoading}
+                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+              >
+                <option value="all">All roles</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.name}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+              <Filter
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+        </FilterButton>
 
         <button
           type="button"
