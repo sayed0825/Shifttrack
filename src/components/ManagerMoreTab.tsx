@@ -90,12 +90,20 @@ export default function ManagerMoreTab({
 
   useEffect(() => {
     void (async () => {
+      const nowIso = new Date().toISOString();
       const [swapsRes, appsRes] = await Promise.all([
         supabase
           .from('shift_swaps')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'pending_manager'),
-        supabase.from('shift_applications').select('id', { count: 'exact', head: true }),
+        // Must match the panel's open-shifts filter exactly (unassigned,
+        // still in the future) — an application against a shift that's
+        // already started or been filled never renders there.
+        supabase
+          .from('shift_applications')
+          .select('id, shifts:shift_id!inner(start_time, assigned_user_id)', { count: 'exact', head: true })
+          .is('shifts.assigned_user_id', null)
+          .gte('shifts.start_time', nowIso),
       ]);
       setShiftRequestCount((swapsRes.count ?? 0) + (appsRes.count ?? 0));
     })();

@@ -55,6 +55,7 @@ export default function ManagerShiftRequests({
   const [swaps, setSwaps] = useState<SwapRow[]>([]);
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
   const [openShifts, setOpenShifts] = useState<ShiftLite[]>([]);
+  const [expiredShifts, setExpiredShifts] = useState<ShiftLite[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fault, setFault] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export default function ManagerShiftRequests({
     setFault(null);
     const nowIso = new Date().toISOString();
 
-    const [swapRes, appRes, openRes] = await Promise.all([
+    const [swapRes, appRes, openRes, expiredRes] = await Promise.all([
       supabase
         .from('shift_swaps')
         .select(
@@ -97,11 +98,18 @@ export default function ManagerShiftRequests({
         .is('assigned_user_id', null)
         .gte('start_time', nowIso)
         .order('start_time'),
+      supabase
+        .from('shifts')
+        .select(SHIFT_FIELDS)
+        .is('assigned_user_id', null)
+        .lt('start_time', nowIso)
+        .order('start_time', { ascending: false }),
     ]);
 
     setSwaps((swapRes.data ?? []) as unknown as SwapRow[]);
     setApplications((appRes.data ?? []) as unknown as ApplicationRow[]);
     setOpenShifts((openRes.data ?? []) as unknown as ShiftLite[]);
+    setExpiredShifts((expiredRes.data ?? []) as unknown as ShiftLite[]);
     setLoading(false);
   }, []);
 
@@ -333,6 +341,52 @@ export default function ManagerShiftRequests({
           </button>
         </div>
       </section>
+
+      {/* Expired: unfilled and already started. Nothing to action here beyond
+          clearing it out, so this is a tidy-up list, not a queue — muted
+          styling, no applicant actions, and excluded from the pending badge. */}
+      {expiredShifts.length > 0 && (
+        <section className="rounded-2xl border border-border/60 bg-bg p-5">
+          <div className="flex items-center gap-2">
+            <UserCheck className="h-5 w-5 text-ink/40" aria-hidden="true" />
+            <h3 className="text-sm font-semibold text-ink/60">Expired</h3>
+          </div>
+          <p className="mt-1 text-xs text-ink/50">
+            Never filled and already started. Delete to clear, or leave for the record.
+          </p>
+
+          <ul className="mt-3 space-y-2">
+            {expiredShifts.map((shift) => {
+              const applicantCount = (applicantsByShift.get(shift.id) ?? []).length;
+              return (
+                <li
+                  key={shift.id}
+                  className="flex items-center gap-3 rounded-lg border border-border/60 bg-surface/60 p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-ink/70">{when(shift)}</p>
+                    <p className="truncate text-xs text-ink/50">
+                      {shift.locations?.name ?? 'No location'} · {shift.required_role ?? 'Any role'}
+                      {applicantCount > 0 &&
+                        ` · ${applicantCount} applicant${applicantCount === 1 ? '' : 's'}`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void run(shift.id, async () => supabase.from('shifts').delete().eq('id', shift.id))
+                    }
+                    aria-label="Delete expired shift"
+                    className="shrink-0 rounded p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {/* Open shifts and their applicants */}
       <section className="rounded-2xl border border-border bg-surface p-5">
