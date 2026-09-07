@@ -4,13 +4,13 @@ import { supabase } from '../supabaseClient';
 
 interface NoteRow {
   id: string;
-  note: string;
+  note_text: string;
   created_at: string;
   manager_id: string;
   author: { first_name: string | null; full_name: string | null } | null;
 }
 
-const NOTE_FIELDS = 'id, note, created_at, manager_id, author:manager_id ( first_name, full_name )';
+const NOTE_FIELDS = 'id, note_text, created_at, manager_id, author:manager_id ( first_name, full_name )';
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString([], {
@@ -85,7 +85,7 @@ export default function EmployeeNotes({
     const tempId = `local-${Date.now()}`;
     const optimistic: NoteRow = {
       id: tempId,
-      note,
+      note_text: note,
       created_at: new Date().toISOString(),
       manager_id: user.id,
       author: null,
@@ -95,7 +95,7 @@ export default function EmployeeNotes({
 
     const { data, error: insertError } = await supabase
       .from('employee_notes')
-      .insert({ employee_id: employeeId, manager_id: user.id, note })
+      .insert({ employee_id: employeeId, manager_id: user.id, note_text: note })
       .select(NOTE_FIELDS)
       .single<NoteRow>();
 
@@ -176,7 +176,7 @@ export default function EmployeeNotes({
                   className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-primary"
                   aria-hidden="true"
                 />
-                <p className="whitespace-pre-wrap text-sm text-ink">{n.note}</p>
+                <p className="whitespace-pre-wrap text-sm text-ink">{n.note_text}</p>
                 <p className="mt-1 text-xs text-ink/50">
                   {n.author?.full_name ?? n.author?.first_name ?? 'Unknown manager'} ·{' '}
                   {formatDateTime(n.created_at)}

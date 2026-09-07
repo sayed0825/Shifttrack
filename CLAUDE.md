@@ -113,6 +113,10 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   domain table carries org_id referencing it, including profiles.org_id.
   my_org_id() is a SECURITY DEFINER helper that reads profiles.org_id for
   the current user, the same pattern as is_manager()/my_role().
+- `employee_notes` (id, org_id, employee_id, manager_id, note_text,
+  created_at) — manager notes on an employee's profile. Manager-only RLS,
+  append-only: no UPDATE or DELETE policy exists for anyone, including
+  managers. See src/components/EmployeeNotes.tsx.
 
 ### UI
 
