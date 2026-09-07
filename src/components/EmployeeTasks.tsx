@@ -121,6 +121,10 @@ export default function EmployeeTasks({ profile }: { profile: Profile }): ReactN
     };
   }, [load, profile.id]);
 
+  const applyTaskUpdate = useCallback((updated: TaskRow) => {
+    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+  }, []);
+
   const selected = useMemo(() => tasks.find((t) => t.id === selectedId) ?? null, [tasks, selectedId]);
 
   // If a refetch drops the selected task (someone else completed a shared
@@ -197,7 +201,11 @@ export default function EmployeeTasks({ profile }: { profile: Profile }): ReactN
           task={selected}
           profile={profile}
           onClose={() => setSelectedId(null)}
-          onCompleted={() => setNotice('Task submitted.')}
+          onCompleted={(updated) => {
+            applyTaskUpdate(updated);
+            setNotice('Task submitted.');
+            void load();
+          }}
           onConflict={() => setNotice('Someone else already completed this task.')}
         />
       )}
@@ -299,7 +307,7 @@ function TaskDetailSheet({
   task: TaskRow;
   profile: Profile;
   onClose: () => void;
-  onCompleted: () => void;
+  onCompleted: (updated: TaskRow) => void;
   onConflict: () => void;
 }): ReactNode {
   const [comments, setComments] = useState<CommentRow[]>([]);
@@ -419,18 +427,35 @@ function TaskDetailSheet({
         .eq('id', task.id)
         .in('status', ['pending', 'rejected'])
         .select(TASK_FIELDS)
-        .maybeSingle();
+        .maybeSingle<TaskRow>();
 
       if (updateError) throw updateError;
 
-      if (!data) {
-        // Someone else in the shared pool completed it first.
-        onConflict();
+      if (data) {
+        onCompleted(data);
+        onClose();
         return;
       }
 
-      onCompleted();
-      onClose();
+      // Zero rows matched — either someone else in the shared pool completed
+      // it first, or this is a stale retry of a submit that already went
+      // through for this same user (e.g. a double tap before the UI caught
+      // up). Re-read the row to tell the two apart before reporting a loss.
+      const { data: current, error: refetchError } = await supabase
+        .from('tasks')
+        .select(TASK_FIELDS)
+        .eq('id', task.id)
+        .maybeSingle<TaskRow>();
+
+      if (refetchError) throw refetchError;
+
+      if (current && current.completed_by === profile.id) {
+        onCompleted(current);
+        onClose();
+        return;
+      }
+
+      onConflict();
     } catch (err) {
       setCompleteFault(err instanceof Error ? err.message : 'Could not submit the task.');
     } finally {
@@ -550,7 +575,7 @@ function TaskDetailSheet({
                   <li key={c.id} className="rounded-lg bg-bg px-3 py-2">
                     <p className="text-sm text-ink">{c.comment_text}</p>
                     <p className="mt-0.5 text-xs text-ink/50">
-                      {c.sender?.full_name ?? c.sender?.first_name ?? 'Someone'} · {formatDateTime(c.created_at)}
+                      {c.sender?.full_name ?? c.sender?.first_name ?? 'Unknown'} · {formatDateTime(c.created_at)}
                     </p>
                   </li>
                 ))}
