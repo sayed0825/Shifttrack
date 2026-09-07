@@ -894,7 +894,7 @@ function TemplateFormModal({
       assigned_user_id: target === 'individual' ? staffId : null,
       requires_photo: requiresPhoto,
       recurrence,
-      weekdays: recurrence === 'weekly' ? [...weekdays].sort((a, b) => a - b) : null,
+      weekdays: recurrence === 'weekly' ? [...weekdays].sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6],
       start_at: startAt,
       due_at: dueAt,
       is_active: true,
