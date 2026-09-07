@@ -14,13 +14,29 @@ Newest entries at the top.
 ## Current state
 
 **Phase:** 2 complete — multi-tenancy schema and RLS
-**Next up:** Task module is complete and tested end to end on both sides
-(template creation, instance generation, employee completion with and
-without a required photo, manager review, rejection with a required
-comment, redo, and approval all verified against real data). See the log
-below for what that testing turned up and fixed.
+**Next up:**
+1. Migrate hosting from Netlify to Cloudflare Pages (unlimited builds —
+   Netlify's free tier build-minute cap has already blocked deploys once,
+   see below).
+2. Once deploys are flowing again, verify the responsive/iOS-safe-area
+   pass and the map/bottom-nav z-index fix on a real iPhone — see "Known
+   broken / unverified" below, neither has actually been confirmed yet.
+
+Task module is complete and tested end to end on both sides (template
+creation, instance generation, employee completion with and without a
+required photo, manager review, rejection with a required comment, redo,
+and approval all verified against real data). See the log below for what
+that testing turned up and fixed.
 
 **Known broken / unverified:**
+- The responsive/iOS-safe-area pass (commit `e6c192f`) and the follow-up
+  map z-index fix (commit `f79c2a9`) are committed and pushed but
+  UNVERIFIED on a real device. Netlify had hit its free build-minute
+  limit, so neither commit was ever actually deployed — the iPhone
+  testing done against the live site was against a stale build that
+  predates both fixes. Re-verify once hosting is migrated (see "Next up")
+  — specifically the clock-tab map overlapping the bottom nav on iOS
+  Safari, which is what these two commits were meant to fix
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
   for a Bolt bug, must move to environment variables
 - SMTP not set up. Supabase's built-in mailer caps at a few emails per
@@ -41,6 +57,30 @@ below for what that testing turned up and fixed.
 ---
 
 ## Log
+
+### 2026-09-07 (yet later)
+- Full responsive pass (iOS safe areas, `dvh` instead of `vh`, timesheet
+  tables → stacked cards below `sm`, modal sheets capped at `90dvh` with
+  safe-area padding on their action bars, tablet-width fixes). Specific
+  target bug: the live map on `EmployeeDashboard`'s clock tab overlapping
+  the bottom nav on iPhone Safari
+- First pass fixed the spacing (nav padding, main's bottom padding) but
+  the map was still painting over the nav — turned out to be z-index, not
+  spacing: Leaflet's own panes/controls use z-index up to 1000, and
+  `.leaflet-container` doesn't establish its own stacking context, so
+  those values competed directly with page chrome. Fixed by wrapping both
+  `LiveMap` usages in `relative z-0 isolate` to contain Leaflet's stacking,
+  raising the fixed bottom nav to `z-[1100]`, and raising every modal
+  (there are nine) plus the notification dropdown to `z-[1200]` so they
+  still sit above both the nav and the map
+- Both fixes pushed (`e6c192f`, `f79c2a9`) but turned out to be
+  UNVERIFIED — see "Known broken / unverified" above. Netlify's free
+  build-minute limit had been hit, so the site being tested on a phone
+  was a stale build from before either commit
+- Lesson: don't rely on a redeploy per iteration to test on a phone. Run
+  `npm run dev -- --host` and open the printed Network URL on the phone
+  (same Wi-Fi) instead — it reflects the working tree immediately, no
+  build/deploy round-trip and no build-minute cost
 
 ### 2026-09-07 (even later)
 - Task module tested end to end against real data: template creation,
