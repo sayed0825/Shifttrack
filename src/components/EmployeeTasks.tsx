@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { safeUuid } from '../lib/ids';
 import type { Profile } from './ManagerDashboard';
 
 type TaskStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
@@ -409,7 +410,7 @@ function TaskDetailSheet({
       let photoPath: string | null = null;
 
       if (task.requires_photo && photoFile) {
-        photoPath = `${task.id}/${crypto.randomUUID()}.jpg`;
+        photoPath = `${task.id}/${safeUuid()}.jpg`;
         const { error: uploadError } = await supabase.storage
           .from('task-photos')
           .upload(photoPath, photoFile, { contentType: photoFile.type || 'image/jpeg' });

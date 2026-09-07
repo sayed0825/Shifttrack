@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { safeUuid } from '../lib/ids';
 
 const PRESET_TIMES = [
   { start: '17:00', end: '22:00' },
@@ -559,7 +560,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
 
       // is_recurring and series_id must be set together — the
       // shifts_series_consistency CHECK rejects a row with one but not the other.
-      const seriesId = recurring ? crypto.randomUUID() : null;
+      const seriesId = recurring ? safeUuid() : null;
       const location = locations.find((entry) => entry.id === locationId);
       const endDayOffset = overnight ? 1 : 0;
 
