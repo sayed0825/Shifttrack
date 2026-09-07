@@ -405,7 +405,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
 
       {lightboxUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/80 p-4"
           onClick={() => setLightboxUrl(null)}
         >
           <button
@@ -911,7 +911,7 @@ function TemplateFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
       <div
         role="dialog"
         aria-modal="true"
@@ -1149,7 +1149,7 @@ function OneOffFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
       <div
         role="dialog"
         aria-modal="true"

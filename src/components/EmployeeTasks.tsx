@@ -464,7 +464,7 @@ function TaskDetailSheet({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
       <div
         role="dialog"
         aria-modal="true"

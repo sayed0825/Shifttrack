@@ -126,7 +126,7 @@ export default function NotificationBell(): ReactNode {
         <div
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 top-full z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
+          className="absolute right-0 top-full z-[1200] mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <h3 className="text-sm font-semibold text-ink">Notifications</h3>

@@ -236,7 +236,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
       </main>
 
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-[1100] border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label="Dashboard sections"
       >
         <div className="flex h-16">
@@ -755,7 +755,10 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
               Live map
             </h3>
           </div>
-          <div className="h-[min(20rem,55dvh)]">
+          {/* isolate contains Leaflet's internal z-index (panes/controls go up to
+              1000) so it can never compete with page-level chrome like the
+              fixed bottom nav or a modal. */}
+          <div className="relative z-0 h-[min(20rem,55dvh)] isolate">
             <LiveMap height="100%" />
           </div>
         </div>

@@ -475,7 +475,9 @@ export default function ManagerDashboard(): ReactNode {
       <main className="min-h-0 flex-1 overflow-y-auto p-4">
         {tab === 'map' && isManager && (
           <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[1fr_20rem]">
-            <div className="min-h-[24rem]">
+            {/* isolate contains Leaflet's internal z-index (panes/controls go up to
+                1000) so it can never compete with page-level chrome like a modal. */}
+            <div className="relative z-0 min-h-[24rem] isolate">
               <LiveMap />
             </div>
             <RosterSidebar locationFilter={locationFilter} roleFilter={roleFilter} />
@@ -1098,7 +1100,7 @@ function EditLogModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-[1200] flex items-end justify-center bg-primary/40 sm:items-center sm:p-6">
       <div
         role="dialog"
         aria-modal="true"
