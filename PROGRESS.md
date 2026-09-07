@@ -14,7 +14,9 @@ Newest entries at the top.
 ## Current state
 
 **Phase:** 2 complete — multi-tenancy schema and RLS
-**Next up:** Phase 3 hardening
+**Next up:** Task module, manager side (schema, RLS, storage bucket and
+cron jobs are already done; the employee view is built and pushed but
+untested — spec is in chat history)
 
 **Known broken / unverified:**
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
@@ -27,6 +29,18 @@ Newest entries at the top.
 - Late clock-in detection is implemented but UNTESTED — needs a real
   clock-in against a scheduled shift to verify the LATE badge, since
   manual SQL `time_logs` inserts have no `shift_id`
+- Employee task view (`EmployeeTasks.tsx`) is built and pushed but
+  UNTESTED — needs real task rows (from a template or manual insert)
+  to verify grouping, the overdue/rejected badges, photo upload, the
+  comment thread, and the shared-pool completion race
+- Manager side of the task module (review/approve/reject queue,
+  template management) has not been started
+- Collapsible sections: `StaffManager` already collapses; other long
+  manager sections (Roles, Locations, unavailability/shift-request
+  lists) should get the same treatment where it makes sense
+- Staff email isn't shown anywhere in the manager staff view
+  (`StaffManager`) — would need a join or an admin API call, since
+  email lives on `auth.users`, not `profiles`
 
 ---
 
@@ -54,6 +68,23 @@ Newest entries at the top.
   CLAUDE.md; fixed two spots that had guessed at this schema before it
   was confirmed (`orgs` → `organisations`, manual profile lookup →
   `my_org_id()`)
+- Manager notes on employee profiles: complete and tested.
+  `EmployeeNotes.tsx` reads `employee_notes` (append-only, manager-only
+  RLS, no UPDATE/DELETE policy for anyone) and lets a manager add a
+  note; wired into `StaffManager`'s expanded staff panel, not into
+  `EmployeeDashboard`
+- Task module started: `task_templates`, `tasks`, `task_comments`
+  tables, RLS, the private `task-photos` storage bucket, and the
+  cron jobs (generation + monthly photo purge) are done on the
+  database side. Documented in CLAUDE.md, including that a
+  role-assigned task is a shared pool, not copied per person
+- Built the employee side: `EmployeeTasks.tsx` (new Tasks tab, between
+  Shifts and My Timesheets) groups today's tasks into due now /
+  upcoming / done, with overdue and rejected badges, a bottom-sheet
+  detail view with a realtime comment thread, and photo-required
+  completion via the device camera input. Pushed but UNTESTED (see
+  above) — manager side (review/approve/reject, template management)
+  is the next task, spec already given
 
 ### 2026-09-02
 - Phase 2 multi-tenancy: added `organisations` table, backfilled `org_id`
