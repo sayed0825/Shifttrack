@@ -16,7 +16,7 @@ Newest entries at the top.
 **Phase:** 2 complete — multi-tenancy schema and RLS
 **Next up:** Task module, manager side (schema, RLS, storage bucket and
 cron jobs are already done; the employee view is built and pushed but
-untested — spec is in chat history)
+untested — full spec below, under "Next task: manager task view")
 
 **Known broken / unverified:**
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
@@ -41,6 +41,38 @@ untested — spec is in chat history)
 - Staff email isn't shown anywhere in the manager staff view
   (`StaffManager`) — would need a join or an admin API call, since
   email lives on `auth.users`, not `profiles`
+
+---
+
+## Next task: manager task view
+
+The spec for this lives only in a chat session this file cannot see,
+so it's recorded here in full rather than referenced.
+
+Create `src/components/ManagerTasks.tsx`, taking `locations` as a prop.
+
+**Section 1, Review:** tasks where `status = 'submitted'`, joined to
+`completed_by` and `locations`. Show title, who completed it, when,
+where. Photos are in a PRIVATE bucket, so use `createSignedUrl(path,
+3600)` for thumbnails, with a full-screen lightbox. Approve sets
+status `'approved'`, `reviewed_by`, `reviewed_at`. Request changes
+sets `'rejected'` and REQUIRES a comment inserted into `task_comments`
+in the same action — never allow rejection without explaining why.
+Realtime subscription for new submissions.
+
+**Section 2, Task setup:** list active `task_templates` with title,
+target, time window, days, photo requirement; allow toggling
+`is_active` and deleting. A create form: title, description, location,
+target (segmented control for role vs individual, then the picker),
+start and due time, recurrence daily/weekly, Mon–Sun picker for
+weekly, `requires_photo` toggle. Roles from `useRoles`, staff from
+`profiles`. Separately a one-off task form writing directly to `tasks`
+with a specific date instead of a template. Note that instances are
+generated hourly by cron.
+
+Both sections collapsible. Add a Tasks entry to the manager More tab
+below the shift requests panel. Theme tokens, lucide icons, 44px
+targets, loading and error states.
 
 ---
 
