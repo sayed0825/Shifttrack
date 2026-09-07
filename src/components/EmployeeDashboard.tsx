@@ -30,6 +30,8 @@ import {
 } from '../lib/offlineQueue';
 import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useLateGrace } from '../hooks/useLateGrace';
+import { isLate, minutesLate } from '../lib/lateness';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
@@ -77,6 +79,11 @@ interface TimeLogRow {
   clock_out: string | null;
   notes: string | null;
   location_id: string | null;
+}
+
+/** A time log joined with its shift's start_time, for late detection. */
+interface TimeLogWithShift extends TimeLogRow {
+  shifts: { start_time: string } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -842,8 +849,9 @@ function MyScheduleTab(): ReactNode {
 
 function MyTimesheetsTab(): ReactNode {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  const [logs, setLogs] = useState<TimeLogRow[]>([]);
+  const [logs, setLogs] = useState<TimeLogWithShift[]>([]);
   const [loading, setLoading] = useState(true);
+  const { graceMinutes } = useLateGrace();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -852,13 +860,13 @@ function MyTimesheetsTab(): ReactNode {
 
     const { data } = await supabase
       .from('time_logs')
-      .select('id, clock_in, clock_out, notes, location_id')
+      .select('id, clock_in, clock_out, notes, location_id, shifts:shift_id ( start_time )')
       .eq('user_id', user.id)
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
       .order('clock_in', { ascending: false });
 
-    setLogs(data ?? []);
+    setLogs((data ?? []) as unknown as TimeLogWithShift[]);
     setLoading(false);
   }, [weekStart]);
 
@@ -935,18 +943,30 @@ function MyTimesheetsTab(): ReactNode {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {logs.map((log) => (
-                <tr key={log.id}>
-                  <td className="px-4 py-3 text-ink/80">{formatDay(log.clock_in)}</td>
-                  <td className="px-2 py-3 tabular-nums text-ink">{formatClock(log.clock_in)}</td>
-                  <td className="px-2 py-3 tabular-nums text-ink">
-                    {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums font-medium text-ink">
-                    {formatHours(durationHours(log.clock_in, log.clock_out))}
-                  </td>
-                </tr>
-              ))}
+              {logs.map((log) => {
+                const shiftStart = log.shifts?.start_time ?? null;
+                const late = isLate(log.clock_in, shiftStart, graceMinutes);
+
+                return (
+                  <tr key={log.id}>
+                    <td className="px-4 py-3 text-ink/80">{formatDay(log.clock_in)}</td>
+                    <td className="px-2 py-3 tabular-nums text-ink">
+                      {formatClock(log.clock_in)}
+                      {late && shiftStart && (
+                        <span className="ml-2 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                          LATE · {minutesLate(log.clock_in, shiftStart)} min
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-3 tabular-nums text-ink">
+                      {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-ink">
+                      {formatHours(durationHours(log.clock_in, log.clock_out))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

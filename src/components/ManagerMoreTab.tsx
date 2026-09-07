@@ -15,6 +15,7 @@ import {
   Plus,
   Shield,
   Tags,
+  Timer,
   Trash2,
   User,
   UserCog,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
+import { useLateGrace } from '../hooks/useLateGrace';
 import InviteStaffModal from './InviteStaffModal';
 import type { Profile } from './ManagerDashboard';
 
@@ -44,6 +46,7 @@ export default function ManagerMoreTab({ profile }: { profile: Profile }): React
       <InviteStaffCard />
       <LocationsCard />
       <RolesCard />
+      <GracePeriodCard />
     </div>
   );
 }
@@ -1083,6 +1086,119 @@ function RolesCard(): ReactNode {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ===========================================================================
+// Section 8 — Late clock-in grace period
+// ===========================================================================
+
+function GracePeriodCard(): ReactNode {
+  const { graceMinutes, loading, refresh } = useLateGrace();
+  const [value, setValue] = useState('0');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) setValue(String(graceMinutes));
+  }, [loading, graceMinutes]);
+
+  const handleSave = async () => {
+    const minutes = Math.round(Number(value));
+    if (!Number.isFinite(minutes) || minutes < 0) {
+      setFault('Enter a whole number of minutes, 0 or more.');
+      return;
+    }
+
+    setSaving(true);
+    setSaved(false);
+    setFault(null);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setFault('Your session has expired. Sign in again.');
+      setSaving(false);
+      return;
+    }
+
+    const { data: prof, error: profileError } = await supabase
+      .from('profiles')
+      .select('org_id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const orgId = (prof as { org_id?: string } | null)?.org_id;
+    if (profileError || !orgId) {
+      setFault('Could not determine your organisation.');
+      setSaving(false);
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('orgs')
+      .update({ late_grace_minutes: minutes })
+      .eq('id', orgId);
+
+    if (updateError) {
+      setFault(updateError.message || 'Could not save the grace period.');
+    } else {
+      setSaved(true);
+      await refresh();
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-2">
+        <Timer className="h-5 w-5 text-ink/50" aria-hidden="true" />
+        <h3 className="text-sm font-semibold text-ink">Late clock-in grace period</h3>
+      </div>
+      <p className="mt-2 text-sm text-ink/60">
+        How many minutes after a shift's scheduled start a clock-in still counts as on time.
+        0 means any clock-in after the scheduled start counts as late.
+      </p>
+
+      {loading ? (
+        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading…
+        </div>
+      ) : (
+        <div className="mt-4 flex items-end gap-3">
+          <div>
+            <label htmlFor="grace-minutes" className="block text-sm font-medium text-ink">
+              Grace period (minutes)
+            </label>
+            <input
+              id="grace-minutes"
+              type="number"
+              min={0}
+              step={1}
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setSaved(false);
+              }}
+              className="mt-1.5 min-h-[44px] w-32 rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+            Save
+          </button>
+        </div>
+      )}
+
+      {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
+      {saved && !fault && <p className="mt-3 text-sm text-success">Grace period saved.</p>}
     </div>
   );
 }

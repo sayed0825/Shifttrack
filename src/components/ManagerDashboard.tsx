@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useLateGrace } from '../hooks/useLateGrace';
+import { isLate, minutesLate } from '../lib/lateness';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
 import InviteStaffModal from './InviteStaffModal';
@@ -96,10 +98,15 @@ export interface RosterEntry {
   openLog: TimeLogRow | null;
 }
 
+/** A time log joined with its shift's start_time, for late detection. */
+export interface TimeLogWithShift extends TimeLogRow {
+  shifts: { start_time: string } | null;
+}
+
 export interface TimesheetSummary {
   userId: string;
   profile: Profile | null;
-  logs: TimeLogRow[];
+  logs: TimeLogWithShift[];
   totalHours: number;
   hasOpenLog: boolean;
 }
@@ -757,12 +764,13 @@ function TimesheetsPanel({
   locationFilter: LocationFilter;
   roleFilter: RoleFilter;
 }): ReactNode {
-  const [logs, setLogs] = useState<TimeLogRow[]>([]);
+  const [logs, setLogs] = useState<TimeLogWithShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TimeLogRow | null>(null);
 
   const isManager = viewer.role === 'Manager';
+  const { graceMinutes } = useLateGrace();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -771,7 +779,7 @@ function TimesheetsPanel({
     let query = supabase
       .from('time_logs')
       .select(
-        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, profiles:user_id ( id, first_name, full_name, role )'
+        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, profiles:user_id ( id, first_name, full_name, role ), shifts:shift_id ( start_time )'
       )
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
@@ -782,7 +790,7 @@ function TimesheetsPanel({
     if (!isManager) query = query.eq('user_id', viewer.id);
     if (locationFilter !== 'all') query = query.eq('location_id', locationFilter);
 
-    const { data, error: queryError } = await query.returns<TimeLogRow[]>();
+    const { data, error: queryError } = await query.returns<TimeLogWithShift[]>();
 
     if (queryError) setError('Timesheets could not be loaded. Refresh to try again.');
     else setLogs((data ?? []).filter((log) => roleFilter === 'all' || log.profiles?.role === roleFilter));
@@ -890,8 +898,12 @@ function TimesheetsPanel({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {summary.logs.map((log) => (
-                <tr key={log.id}>
+              {summary.logs.map((log) => {
+                const shiftStart = log.shifts?.start_time ?? null;
+                const late = isLate(log.clock_in, shiftStart, graceMinutes);
+
+                return (
+                  <tr key={log.id}>
                   <td className="px-4 py-2.5 text-ink/80">
                     {formatDay(log.clock_in)}
                     {log.notes === AUTO_CLOCK_OUT_NOTE && (
@@ -900,7 +912,14 @@ function TimesheetsPanel({
                       </span>
                     )}
                   </td>
-                  <td className="px-2 py-2.5 tabular-nums text-ink">{formatClock(log.clock_in)}</td>
+                  <td className="px-2 py-2.5 tabular-nums text-ink">
+                    {formatClock(log.clock_in)}
+                    {late && shiftStart && (
+                      <span className="ml-2 inline-flex items-center rounded bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
+                        LATE · {minutesLate(log.clock_in, shiftStart)} min
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-2.5 tabular-nums text-ink">
                     {log.clock_out ? (
                       formatClock(log.clock_out)
@@ -924,7 +943,8 @@ function TimesheetsPanel({
                     </td>
                   )}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </section>
