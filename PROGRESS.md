@@ -61,6 +61,77 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-09 (later)
+Permissions model rebuilt around capability flags, plus a security
+pass fixing the gap that opened between what the UI offered a
+location-scoped Manager and what the database would actually let them
+do. Verified end to end with a location-scoped Manager account, not
+just an Administrator.
+
+- **Capability flags, not role names**: `roles.can_manage` and
+  `roles.is_admin` now drive every permission decision, both in RLS
+  policies and in the client (`usePermissions`, calling the
+  `is_manager()`/`is_admin()` SECURITY DEFINER functions rather than
+  matching `profiles.role` text against a hardcoded list). `Manager`
+  was renamed to `Administrator`; a new location-scoped `Manager` role
+  sits underneath it — an Administrator manages every org location, a
+  Manager only the locations in their own `profile_locations` rows.
+- **Scoping enforced in the database, not just the UI**:
+  `manages_person()`/`manages_location()` (both wrapping
+  `my_managed_locations()`) gate the RLS policies on `profiles`,
+  `employee_notes`, `shifts`, and `locations` — a Manager cannot write
+  a row for a person or location outside their scope no matter what
+  the client sends. `employee_notes` also picked up a soft-delete path
+  (`deleted_at`/`deleted_by`) for Administrators; it is no longer
+  strictly append-only, but there is still no hard DELETE policy for
+  anyone.
+- **Fixed a session-restore race in all four module-scoped hooks**
+  (`usePermissions`, `useRoles`, `useOrganisation`, `useLateGrace`):
+  each fetched on first mount regardless of whether the Supabase
+  session had finished restoring from storage, so the RPC/query could
+  fire with no auth token, 401, and get cached as a permanent
+  false/empty/zero — for `usePermissions` specifically, that could
+  route a Manager to the wrong dashboard. Each hook now awaits
+  `supabase.auth.getSession()` first, never marks a fetch as loaded on
+  a missing session or an error, and clears its cache on
+  `SIGNED_IN`/`SIGNED_OUT` so a second user signing in in the same tab
+  (e.g. the deactivated-account sign-out path, which does not reload
+  the page) cannot inherit the previous user's cached permissions.
+- **New `src/hooks/useManagedLocations.ts`**, wrapping
+  `my_managed_locations()` with the same session-gated,
+  never-cache-a-failure pattern. Wired into every location picker in
+  the app — `StaffManager`'s roster, `ManagerDashboard`'s
+  Map/Timesheets filter, `ManagerScheduler`'s filter and Add-shift
+  modal (which also gates who can be picked as staff, via
+  `profile_locations` for the now-restricted location), `ManagerTasks`
+  (template form, one-off form, history filter), `ManagerShiftRequests`'
+  open-shift form, and `PayrollReportModal`'s location multi-select —
+  so a Manager is never offered a person or location the database
+  would reject, instead of reaching the control and hitting a raw RLS
+  error.
+- **New `src/lib/friendlyError.ts`**: maps Postgres/PostgREST error
+  codes to plain language (42501/RLS → permission, 23505 → unique,
+  23503 → foreign key, 23514 → check violation; anything else logs the
+  raw error and shows a generic message). Applied everywhere a
+  Supabase database error was being shown to a user via raw
+  `error.message`; left untouched the handful of sites where the
+  message comes from Supabase Auth, the geolocation API, or the
+  invite-staff Edge Function's own JSON body, since none of those
+  carry Postgres codes.
+- **Locations are admin-only to edit**: the `locations` RLS policy's
+  `WITH CHECK` requires `is_admin()` unconditionally (a Manager can
+  view/select a location they manage but never save an edit to one),
+  so the Locations card in `ManagerMoreTab` moved behind the `isAdmin`
+  gate alongside Roles, Branding, and the grace period — a
+  location-scoped Manager does not see that row at all, since editing
+  a geofence changes where staff can clock in.
+- **Supabase MCP connected, read-only.** Documented in CLAUDE.md: check
+  the live schema through it before writing queries rather than
+  assuming column names from this file or a grep of `src/`, since the
+  migrations folder is known to be incomplete. Being read-only, it
+  cannot apply schema changes — migrations still go to the user to run
+  manually.
+
 ### 2026-09-09
 Org branding + a full visual redesign pass. Pushed but **not yet
 reviewed on a real device** — unlike the rest of this log, treat this
