@@ -460,6 +460,9 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
         clock_in: new Date().toISOString(),
         clock_in_latitude: position.coords.latitude,
         clock_in_longitude: position.coords.longitude,
+        // Captured now, not read back from the profile at report time — a
+        // later promotion must not rewrite which role earned these hours.
+        role_at_clock_in: profile.role,
       };
 
       try {

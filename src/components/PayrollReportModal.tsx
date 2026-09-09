@@ -9,6 +9,7 @@ interface TimeLogRow {
   clock_in: string;
   clock_out: string | null;
   location_id: string | null;
+  role_at_clock_in: string | null;
   profiles: { full_name: string | null; first_name: string | null; role: string | null } | null;
   locations: { name: string } | null;
 }
@@ -123,7 +124,7 @@ export default function PayrollReportModal({
     const { data, error } = await supabase
       .from('time_logs')
       .select(
-        'id, clock_in, clock_out, location_id, profiles:user_id ( full_name, first_name, role ), locations:location_id ( name )'
+        'id, clock_in, clock_out, location_id, role_at_clock_in, profiles:user_id ( full_name, first_name, role ), locations:location_id ( name )'
       )
       .gte('clock_in', localDayStartIso(startDate))
       .lt('clock_in', localDayEndExclusiveIso(endDate))
@@ -145,9 +146,15 @@ export default function PayrollReportModal({
     const withClockOut = logs.filter((log) => log.clock_out !== null);
     setExcludedCount(logs.length - withClockOut.length);
 
+    // The role a person held at clock-in, not their current one — a
+    // promotion since must not rewrite which role earned these hours.
+    // Only falls back to the current role for a log that predates this
+    // column ever being set.
+    const roleFor = (log: TimeLogRow) => log.role_at_clock_in ?? log.profiles?.role ?? null;
+
     const scoped = withClockOut.filter((log) => {
       if (log.location_id && !selectedLocations.has(log.location_id)) return false;
-      const role = log.profiles?.role;
+      const role = roleFor(log);
       if (role && !selectedRoles.has(role)) return false;
       return true;
     });
@@ -155,7 +162,7 @@ export default function PayrollReportModal({
     const grouped = new Map<string, ReportRow>();
     for (const log of scoped) {
       const location = log.locations?.name ?? 'No location';
-      const role = log.profiles?.role ?? 'No role';
+      const role = roleFor(log) ?? 'No role';
       const name = log.profiles?.full_name ?? log.profiles?.first_name ?? 'Unknown';
       const key = `${location}|${role}|${name}`;
       const hours = (new Date(log.clock_out as string).getTime() - new Date(log.clock_in).getTime()) / 3_600_000;
@@ -297,8 +304,8 @@ export default function PayrollReportModal({
 
           <p className="flex gap-2 rounded-lg bg-bg px-3 py-2 text-xs text-ink/60">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            The role shown for each person is their CURRENT role, not the role they held during this
-            period — that matters if someone changed position mid-period.
+            The role shown for each entry is the role they held at clock-in, so a later promotion
+            does not change which role earned past hours.
           </p>
 
           {fault && <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
