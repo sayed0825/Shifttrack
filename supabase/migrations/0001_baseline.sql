@@ -652,6 +652,10 @@ begin
 end;
 $function$;
 
+-- Fixed by 0003_manager_notify_capability.sql: originally compared
+-- p.role to the literal 'Manager', stale since that role was renamed
+-- Administrator — matched nobody, so these notifications went out to no
+-- one. Below is the corrected, capability-flag version.
 create or replace function public.notify_org_managers(p_org_id uuid, p_type text, p_title text, p_body text)
  returns void
  language sql
@@ -661,7 +665,8 @@ as $function$
   insert into public.notifications (user_id, org_id, type, title, body)
   select p.id, p_org_id, p_type, p_title, p_body
   from public.profiles p
-  where p.org_id = p_org_id and p.role = 'Manager' and p.is_active;
+  join public.roles r on r.org_id = p.org_id and r.name = p.role
+  where p.org_id = p_org_id and r.can_manage and p.is_active;
 $function$;
 
 create or replace function public.notify_location_managers(p_org_id uuid, p_location_id uuid, p_type text, p_title text, p_body text)
@@ -1246,6 +1251,10 @@ begin
   return new;
 end; $function$;
 
+-- Fixed by 0003_manager_notify_capability.sql: v_sender_is_manager
+-- originally compared p.role to the literal 'Manager', stale since that
+-- role was renamed Administrator. Below is the corrected,
+-- capability-flag version.
 create or replace function public.tg_task_comment_notify()
  returns trigger
  language plpgsql
@@ -1257,8 +1266,11 @@ declare
   v_sender_is_manager boolean;
 begin
   select * into v_task from public.tasks where id = new.task_id;
-  select (p.role = 'Manager') into v_sender_is_manager
-  from public.profiles p where p.id = new.sender_id;
+
+  select coalesce(r.can_manage, false) into v_sender_is_manager
+  from public.profiles p
+  left join public.roles r on r.org_id = p.org_id and r.name = p.role
+  where p.id = new.sender_id;
 
   if v_sender_is_manager then
     -- Prefer whoever did the work; fall back to the assignee.
