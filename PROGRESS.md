@@ -13,7 +13,10 @@ Newest entries at the top.
 
 ## Current state
 
-**Phase:** 2 complete — multi-tenancy schema and RLS
+**Phase:** 2c complete — multi-tenancy schema and RLS (2a), capability-flag
+permissions rebuild (2b), full schema baseline dumped to
+`supabase/migrations/0001_baseline.sql` (2c). The repo is now the source
+of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
 1. Real-device check of the branding + visual redesign pass pushed this
    session (see log below) — NOT YET REVIEWED on a real device, unlike
@@ -60,6 +63,46 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-09 (yet later)
+Phase 2c: the entire database schema — every table, RLS policy,
+function, trigger, storage bucket/policy and cron job — had been typed
+into the Supabase SQL Editor by hand over the life of this project, with
+none of it in the repo. That was the biggest unmanaged risk in the
+project: no diff, no review, no way to reconstruct it.
+
+- Dumped the full live schema via the read-only Supabase MCP connection
+  (`pg_get_constraintdef`/`functiondef`/`triggerdef`, `pg_policy`,
+  `pg_indexes`, `storage.buckets`, `cron.job`) into
+  `supabase/migrations/0001_baseline.sql`: 17 tables with columns,
+  defaults, constraints and the one generated column
+  (`tasks.task_day`); 34 explicit indexes; 42 functions; 20 triggers (18
+  on app tables, 2 on `auth.users`); RLS enabled/forced + all 59
+  policies (54 table + 5 on `storage.objects`); 2 storage buckets and
+  their policies; 5 `pg_cron` job schedules; the project's own
+  `ensure_rls` event trigger. Ordered so the file actually runs
+  top-to-bottom (tables → indexes → functions → a short pass attaching
+  `org_id default my_org_id()` once that function exists → triggers →
+  RLS → storage → cron), which is not the literal order it was
+  requested in — RLS policies and several column defaults call
+  functions that have to exist first.
+- Marked explicitly as a point-in-time snapshot (2026-09-09), not a
+  from-scratch build script, and not tested against an empty database.
+- Two inline comments in the first draft turned out to be stale —
+  re-querying the live functions caught both: `delete_staff_member`
+  already calls `manages_person()` (the comment claiming it didn't was
+  leftover from before that fix landed); the `locations` RLS policy's
+  `WITH CHECK (is_admin())` is deliberate, not a bug — editing a
+  geofence changes where staff can clock in, so that's
+  administrators-only by design. Corrected both comments.
+- Verified completeness by diffing every table, policy, function and
+  trigger name in the file against a fresh MCP query of the live
+  database — all four categories matched exactly, nothing live is
+  missing from the dump.
+- Updated CLAUDE.md: the repo is the source of truth for schema now,
+  not Supabase. Every schema change is a new numbered migration file,
+  committed, then run manually in the SQL Editor — never made directly
+  against the live database with no migration to show for it.
 
 ### 2026-09-09 (later)
 Permissions model rebuilt around capability flags, plus a security
