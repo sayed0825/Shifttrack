@@ -680,12 +680,8 @@ as $function$
     and (r.is_admin or pl.location_id = p_location_id);
 $function$;
 
--- Cascading staff removal. NOTE (baseline capture): this only checks
--- is_manager() for the caller's own permission gate, and separately
--- confirms the target is in the caller's org — it does not call
--- manages_person(), so a location-scoped Manager can currently delete
--- staff outside the locations they manage via this RPC. Flagged, not
--- fixed, as part of this snapshot.
+-- Cascading staff removal, scoped by manages_person(): a location-scoped
+-- Manager can only delete staff at a location they manage.
 create or replace function public.delete_staff_member(p_user_id uuid)
  returns void
  language plpgsql
@@ -1470,12 +1466,13 @@ create policy profiles_manager_all on public.profiles for all
 -- ---------------------------------------------------------------------------
 -- locations
 --
--- NOTE (baseline capture): locations_manager_all's USING lets a Manager
--- touch a location they manage, but its WITH CHECK requires is_admin()
--- unconditionally — so only an Administrator can actually save an edit to
--- any location, regardless of scope. locations_manager_update duplicates
--- that same is_admin()-only behaviour for UPDATE specifically. Recorded as
--- found; not changed here.
+-- Deliberate, not a bug: locations_manager_all's USING lets a Manager see
+-- (and would let them target) a location they manage, but its WITH CHECK
+-- requires is_admin() unconditionally, so only an Administrator can
+-- actually save an edit — editing a location moves its geofence, which
+-- changes where staff can clock in, so that is administrators only.
+-- locations_manager_update duplicates the same is_admin()-only behaviour
+-- for UPDATE specifically.
 -- ---------------------------------------------------------------------------
 create policy locations_select_org on public.locations for select
   to authenticated
