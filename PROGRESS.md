@@ -18,20 +18,24 @@ permissions rebuild (2b), full schema baseline dumped to
 `supabase/migrations/0001_baseline.sql` (2c). The repo is now the source
 of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. Real-device check of the branding + visual redesign pass pushed this
-   session (see log below) — NOT YET REVIEWED on a real device, unlike
+1. SMTP with a verified domain — **the current blocker.** Supabase's
+   built-in mailer caps at a few emails an hour, nowhere near enough for
+   60 staff, and has now blocked invite testing twice.
+2. Invited staff appear in the staff list before they have accepted the
+   invite or set a password. Should show as pending, or not appear until
+   the account is active.
+3. Note in CLAUDE.md: the Supabase Site URL setting has to be saved with
+   the `https://` prefix, or it is treated as a relative path.
+4. Real-device check of the branding + visual redesign pass pushed
+   2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-2. Wire `organisations.primary_colour` into actual theming — it's
+5. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-3. Migrate hosting from Netlify to Cloudflare Pages (unlimited builds —
-   Netlify's free tier build-minute cap has already blocked deploys once,
-   see below) — still pending, not touched this session.
-4. The purged-photo fallback in Task History (a task older than the
+6. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
-   gracefully) hasn't actually been exercised — everything else this
-   session was verified on a real device. Needs a task old enough for
-   the purge to have already run against it.
+   gracefully) hasn't actually been exercised. Needs a task old enough
+   for the purge to have already run against it.
 
 Task module is complete and tested end to end on both sides (template
 creation, instance generation, employee completion with and without a
@@ -51,8 +55,9 @@ since grown well past the original spec — see the log below.
 - The purged-photo fallback in Task History — see "Next up" above.
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
   for a Bolt bug, must move to environment variables
-- SMTP not set up. Supabase's built-in mailer caps at a few emails per
-  hour, nowhere near enough for 60 staff
+- SMTP not set up — see "Next up" above, now the blocker.
+- Invited staff show in the staff list before their invite is accepted —
+  see "Next up" above.
 - MapTiler key not domain-restricted
 - `LiveMap` `DEFAULT_CENTER` is hardcoded to Essex — should derive from
   the org's own locations
@@ -63,6 +68,60 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-09 (even later)
+- **`role_at_clock_in`**: the payroll report grouped hours by a person's
+  *current* role, so a promotion silently rewrote which role earned past
+  hours. `supabase/migrations/0002_role_at_clock_in.sql` (run and
+  backfill confirmed) — the column already existed live but nothing set
+  or read it. Now set on every clock-in insert in
+  `EmployeeDashboard.handleClockIn`, from the profile's role at that
+  moment; the same payload object is reused for the offline-queue
+  `enqueue()` call, so a queued clock-in already carries the
+  time-of-clock-in role before it ever reaches `offlineQueue.js` — that
+  file needed no change. `PayrollReportModal` now reads
+  `role_at_clock_in`, falling back to the profile's current role only
+  when null, and the role filter/grouping both use it.
+- **`invite-staff` Edge Function**: rejected Administrators outright —
+  it checked `profile.role !== "Manager"`, a literal string stale since
+  the role rename. Replaced with an `is_manager()` RPC call made as the
+  caller (their own JWT, not the service-role key). Also added: location
+  ids on an invite are validated against `my_managed_locations()` for
+  that caller and rejected if any fall outside it (managers are
+  location-scoped now); `org_id` is now taken from `my_org_id()` for the
+  inviter rather than trusted from the request body. That last one
+  incidentally fixed a real cross-tenant bug — nothing had ever set
+  `org_id` anywhere in this function, so every invite was silently
+  falling through `tg_handle_new_user`'s hardcoded fallback and landing
+  in org `org-1` regardless of the inviter's actual org. Not deployed by
+  this session (no linked Supabase CLI session here, and the MCP
+  connection is read-only) — needs `supabase functions deploy
+  invite-staff` run manually.
+- **`notify_org_managers()` / `tg_task_comment_notify()`**: both also
+  compared `profiles.role` to the literal `'Manager'`, so since the
+  rename both matched nobody — manager notifications for shift swaps,
+  overtime claims, unavailability requests, open-shift applications,
+  submitted tasks, and non-manager task comments had been going out to
+  no one. `supabase/migrations/0003_manager_notify_capability.sql` (run)
+  fixes both to join `roles` and check `can_manage`, matching
+  `notify_location_managers()`'s existing correct pattern (checked
+  whether the two should call each other — no, `notify_location_managers`
+  needs a location id and would silently drop location-scoped Managers
+  if called with none). Audited every remaining function in the baseline
+  for any other role-name comparison: everything else is either the
+  correct capability-join pattern, or legitimate role-as-label matching
+  (task `assigned_role` / shift `required_role` assignment, same-role
+  swap eligibility) unrelated to permissions — left alone. One
+  wording-only leftover, not fixed: `tg_protect_profile_role()`'s
+  exception text still reads "Only a Manager may change role".
+- Both migrations run against the live database and `0001_baseline.sql`
+  updated to match (the two corrected function bodies, each flagged with
+  a comment pointing at 0003; the `role_at_clock_in` column already
+  existed there, just documented with a `COMMENT ON COLUMN`).
+- **Hosting moved from Netlify to Cloudflare** — the long-pending item
+  from the "Next up" list above, done this session (build-minute cap on
+  Netlify's free tier had already blocked a deploy once, see the
+  2026-09-07 entry below).
 
 ### 2026-09-09 (yet later)
 Phase 2c: the entire database schema — every table, RLS policy,
