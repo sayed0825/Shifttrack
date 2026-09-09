@@ -30,6 +30,7 @@ import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
+import { usePermissions } from '../hooks/usePermissions';
 import { isLate, minutesLate } from '../lib/lateness';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
@@ -214,7 +215,7 @@ function fromLocalInput(value: string): string | null {
  * fallback; a scheduled Postgres job is the durable version of this, since a
  * dashboard that nobody opens never runs the sweep.
  */
-async function runAutoClockOut(viewer: Profile): Promise<number> {
+async function runAutoClockOut(viewer: Profile, canManage: boolean): Promise<number> {
   const nowIso = new Date().toISOString();
 
   let query = supabase
@@ -222,7 +223,7 @@ async function runAutoClockOut(viewer: Profile): Promise<number> {
     .select('id, user_id, location_id, shift_id, clock_in, clock_out, notes')
     .is('clock_out', null);
 
-  if (viewer.role !== 'Manager') query = query.eq('user_id', viewer.id);
+  if (!canManage) query = query.eq('user_id', viewer.id);
 
   const { data: openLogs, error } = await query.returns<Omit<TimeLogRow, 'profiles'>[]>();
   if (error || !openLogs?.length) return 0;
@@ -295,6 +296,7 @@ export default function ManagerDashboard(): ReactNode {
 
   const { roles } = useRoles();
   const { organisation } = useOrganisation();
+  const { canManage, isAdmin } = usePermissions();
 
   const sweepRan = useRef(false);
 
@@ -330,11 +332,11 @@ export default function ManagerDashboard(): ReactNode {
         const profile: Profile = profileResult.data;
         setViewer(profile);
         setLocations(locationResult.data ?? []);
-        setTab(profile.role === 'Manager' ? 'map' : 'timesheets');
+        setTab(canManage ? 'map' : 'timesheets');
 
         if (!sweepRan.current) {
           sweepRan.current = true;
-          const closed = await runAutoClockOut(profile);
+          const closed = await runAutoClockOut(profile, canManage);
           if (!cancelled && closed > 0) {
             setNotice(
               `${closed} shift${closed === 1 ? '' : 's'} left open past the scheduled end were closed automatically.`
@@ -353,8 +355,7 @@ export default function ManagerDashboard(): ReactNode {
     };
   }, []);
 
-  const isManager = viewer?.role === 'Manager';
-  const visibleTabs = useMemo(() => (isManager ? TABS : TABS.filter((entry) => entry.id === 'timesheets')), [isManager]);
+  const visibleTabs = useMemo(() => (canManage ? TABS : TABS.filter((entry) => entry.id === 'timesheets')), [canManage]);
 
   if (booting) {
     return (
@@ -486,7 +487,7 @@ export default function ManagerDashboard(): ReactNode {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4">
-        {tab === 'map' && isManager && (
+        {tab === 'map' && canManage && (
           <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[1fr_20rem]">
             {/* isolate contains Leaflet's internal z-index (panes/controls go up to
                 1000) so it can never compete with page-level chrome like a modal. */}
@@ -497,13 +498,14 @@ export default function ManagerDashboard(): ReactNode {
           </div>
         )}
 
-        {tab === 'scheduler' && isManager && <ManagerScheduler />}
+        {tab === 'scheduler' && canManage && <ManagerScheduler />}
 
-        {tab === 'tasks' && isManager && <ManagerTasks locations={locations} />}
+        {tab === 'tasks' && canManage && <ManagerTasks locations={locations} />}
 
         {tab === 'timesheets' && (
           <TimesheetsPanel
             viewer={viewer}
+            canManage={canManage}
             weekStart={weekStart}
             locationFilter={locationFilter}
             roleFilter={roleFilter}
@@ -511,8 +513,8 @@ export default function ManagerDashboard(): ReactNode {
           />
         )}
 
-        {tab === 'more' && isManager && (
-          <ManagerMoreTab profile={viewer} locations={locations} viewerId={viewer.id} />
+        {tab === 'more' && canManage && (
+          <ManagerMoreTab profile={viewer} locations={locations} viewerId={viewer.id} isAdmin={isAdmin} />
         )}
       </main>
 
@@ -771,12 +773,14 @@ function RosterSidebar({
 
 function TimesheetsPanel({
   viewer,
+  canManage,
   weekStart,
   locationFilter,
   roleFilter,
   locations,
 }: {
   viewer: Profile;
+  canManage: boolean;
   weekStart: Date;
   locationFilter: LocationFilter;
   roleFilter: RoleFilter;
@@ -788,7 +792,6 @@ function TimesheetsPanel({
   const [editing, setEditing] = useState<TimeLogRow | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
 
-  const isManager = viewer.role === 'Manager';
   const { graceMinutes } = useLateGrace();
 
   const load = useCallback(async () => {
@@ -806,7 +809,7 @@ function TimesheetsPanel({
 
     // RLS already scopes staff to their own rows; the explicit filter keeps the
     // query cheap and makes the intent readable.
-    if (!isManager) query = query.eq('user_id', viewer.id);
+    if (!canManage) query = query.eq('user_id', viewer.id);
     if (locationFilter !== 'all') query = query.eq('location_id', locationFilter);
 
     const { data, error: queryError } = await query.returns<TimeLogWithShift[]>();
@@ -815,7 +818,7 @@ function TimesheetsPanel({
     else setLogs((data ?? []).filter((log) => roleFilter === 'all' || log.profiles?.role === roleFilter));
 
     setLoading(false);
-  }, [viewer.id, isManager, weekStart, locationFilter, roleFilter]);
+  }, [viewer.id, canManage, weekStart, locationFilter, roleFilter]);
 
   useEffect(() => {
     void load();
@@ -865,7 +868,7 @@ function TimesheetsPanel({
 
   return (
     <div className="space-y-4">
-      {isManager && (
+      {canManage && (
         <div className="flex justify-end">
           <button
             type="button"
@@ -883,8 +886,8 @@ function TimesheetsPanel({
         <SummaryCard label="Week of" value={formatWeekRange(weekStart)} Icon={Calendar} />
         <SummaryCard label="Total hours" value={formatHours(weekTotal)} Icon={Clock} />
         <SummaryCard
-          label={isManager ? 'Staff with hours' : 'Entries'}
-          value={String(isManager ? summaries.length : logs.length)}
+          label={canManage ? 'Staff with hours' : 'Entries'}
+          value={String(canManage ? summaries.length : logs.length)}
           Icon={Users}
         />
       </div>
@@ -948,7 +951,7 @@ function TimesheetsPanel({
                     <span className="text-sm font-medium tabular-nums text-ink">
                       {formatHours(durationHours(log.clock_in, log.clock_out))}
                     </span>
-                    {isManager && (
+                    {canManage && (
                       <button
                         type="button"
                         onClick={() => setEditing(log)}
@@ -971,7 +974,7 @@ function TimesheetsPanel({
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
                 <th scope="col">Hours</th>
-                {isManager && <th scope="col">Actions</th>}
+                {canManage && <th scope="col">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -1007,7 +1010,7 @@ function TimesheetsPanel({
                   <td className="px-2 py-2.5 text-right tabular-nums font-medium text-ink">
                     {formatHours(durationHours(log.clock_in, log.clock_out))}
                   </td>
-                  {isManager && (
+                  {canManage && (
                     <td className="px-4 py-2.5 text-right">
                       <button
                         type="button"

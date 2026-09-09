@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Lock, LogIn } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import { usePermissions } from './hooks/usePermissions';
 import ManagerDashboard from './components/ManagerDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import type { Profile } from './components/ManagerDashboard';
@@ -12,6 +13,7 @@ type Session = {
 
 export default function App() {
   const [session, setSession] = useState<Session | undefined>(undefined);
+  const { canManage, loading: permissionsLoading } = usePermissions();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -223,7 +225,7 @@ export default function App() {
     );
   }
 
-  if (session === undefined) {
+  if (session === undefined || (session && permissionsLoading)) {
     return (
       <div className="flex h-dvh items-center justify-center bg-bg text-primary">
         <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -290,7 +292,7 @@ export default function App() {
     );
   }
 
-  if (session.profile.role === 'Manager') {
+  if (canManage) {
     return (
       <div className="h-dvh">
         <ManagerDashboard />

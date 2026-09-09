@@ -57,10 +57,12 @@ export default function ManagerMoreTab({
   profile,
   locations,
   viewerId,
+  isAdmin,
 }: {
   profile: Profile;
   locations: Array<{ id: string; name: string }>;
   viewerId: string;
+  isAdmin: boolean;
 }): ReactNode {
   const [unavailabilityCount, setUnavailabilityCount] = useState(0);
   const [overtimeCount, setOvertimeCount] = useState(0);
@@ -136,9 +138,20 @@ export default function ManagerMoreTab({
     { id: 'staff', title: 'Staff', icon: Users, render: () => <StaffManager locations={locations} viewerId={viewerId} /> },
     { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
     { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
-    { id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> },
-    { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
-    { id: 'grace-period', title: 'Late clock-in grace period', icon: Timer, render: () => <GracePeriodCard /> },
+    // Admin-only: a location-scoped Manager doesn't see these rows at all,
+    // not just a blocked drill-in.
+    ...(isAdmin
+      ? [
+          { id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> },
+          { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
+          {
+            id: 'grace-period',
+            title: 'Late clock-in grace period',
+            icon: Timer,
+            render: () => <GracePeriodCard />,
+          },
+        ]
+      : []),
   ];
 
   return <MoreTabSections sections={sections} />;
