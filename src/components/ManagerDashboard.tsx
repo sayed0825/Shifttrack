@@ -391,7 +391,7 @@ export default function ManagerDashboard(): ReactNode {
                 className="h-8 max-w-[9rem] shrink-0 object-contain object-left"
               />
             ) : (
-              <span className="truncate text-lg font-semibold text-white">
+              <span className="truncate font-display text-lg tracking-tight text-white">
                 {organisation?.name ?? ' '}
               </span>
             )}

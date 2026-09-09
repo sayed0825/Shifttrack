@@ -166,7 +166,7 @@ export default function EmployeeTasks({ profile }: { profile: Profile }): ReactN
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-ink">Tasks</h2>
+      <h2 className="font-display text-lg tracking-tight text-ink">Tasks</h2>
 
       {notice && (
         <div className="flex items-center gap-2 rounded-lg bg-secondary/10 px-3 py-2 text-sm text-secondary">

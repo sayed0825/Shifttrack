@@ -199,7 +199,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
                 className="h-7 max-w-[8rem] shrink-0 object-contain object-left"
               />
             ) : (
-              <span className="truncate text-sm font-semibold text-white">
+              <span className="truncate font-display text-lg tracking-tight text-white">
                 {organisation?.name ?? ' '}
               </span>
             )}
@@ -588,7 +588,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
           <div className="mt-3 space-y-3">
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-lg font-semibold text-ink">{shift.title ?? 'Shift'}</h2>
+                <h2 className="font-display text-lg tracking-tight text-ink">{shift.title ?? 'Shift'}</h2>
                 <p className="mt-0.5 text-sm text-ink/60">
                   {shift.locations?.name ?? 'No location assigned'}
                 </p>
@@ -672,7 +672,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
               <div className="mt-4 rounded-lg bg-bg p-4">
                 <div className="flex items-baseline justify-between">
                   <div>
-                    <span className="font-mono text-2xl font-semibold tabular-nums text-ink">
+                    <span className="text-xl font-semibold tabular-nums text-ink">
                       {fence?.distance == null ? '––' : Math.round(fence.distance)}
                     </span>
                     <span className="ml-1 text-sm font-medium text-ink/60">m from site</span>
@@ -823,7 +823,7 @@ function MyScheduleTab(): ReactNode {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-ink">My schedule</h2>
+        <h2 className="font-display text-lg tracking-tight text-ink">My schedule</h2>
         <div className="flex items-center rounded-lg border border-border bg-surface">
           <button
             type="button"
@@ -923,7 +923,7 @@ function MyTimesheetsTab(): ReactNode {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-ink">My timesheets</h2>
+        <h2 className="font-display text-lg tracking-tight text-ink">My timesheets</h2>
         <div className="flex items-center rounded-lg border border-border bg-surface">
           <button
             type="button"
@@ -1253,7 +1253,7 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
 
   return (
     <div>
-      <h2 className="mb-4 text-lg font-semibold text-ink">More</h2>
+      <h2 className="mb-4 font-display text-lg tracking-tight text-ink">More</h2>
       <MoreTabSections sections={sections} />
     </div>
   );

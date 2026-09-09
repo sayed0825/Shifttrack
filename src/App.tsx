@@ -168,7 +168,7 @@ export default function App() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <Lock className="h-6 w-6 text-primary" aria-hidden="true" />
             </div>
-            <h1 className="text-xl font-semibold text-ink">Set your password</h1>
+            <h1 className="font-display text-xl tracking-tight text-ink">Set your password</h1>
             <p className="mt-1 text-sm text-ink/60">Choose a password to finish setting up your account.</p>
           </div>
 
@@ -236,7 +236,7 @@ export default function App() {
       <div className="flex h-dvh items-center justify-center bg-bg px-4">
         <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-sm">
           <div className="mb-5 text-center">
-            <h1 className="text-xl font-semibold text-ink">Sign in to your account</h1>
+            <h1 className="font-display text-xl tracking-tight text-ink">Sign in to your account</h1>
           </div>
 
           <form onSubmit={handleSignIn} className="space-y-4">

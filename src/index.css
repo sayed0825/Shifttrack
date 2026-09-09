@@ -1,7 +1,8 @@
-@import "@fontsource/archivo/400.css";
-@import "@fontsource/archivo/500.css";
-@import "@fontsource/archivo/600.css";
-@import "@fontsource/archivo/700.css";
+@import "@fontsource/instrument-sans/400.css";
+@import "@fontsource/instrument-sans/500.css";
+@import "@fontsource/instrument-sans/600.css";
+@import "@fontsource/instrument-sans/700.css";
+@import "@fontsource/instrument-serif/400.css";
 @import "tailwindcss";
 
 /*
@@ -9,29 +10,39 @@
  * not hardcode raw Tailwind palette values or one-off sizes.
  */
 @theme {
-  /* Typeface: self-hosted Archivo everywhere, not a system-font fallback. */
-  --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /*
+   * Two-family pairing, self-hosted, never a system-font fallback as the
+   * primary face:
+   * - Interface (--font-sans / Instrument Sans): everything — body copy,
+   *   labels, buttons, form fields, and every number (times, durations,
+   *   hours, dates, counts). This is the app's default typeface.
+   * - Display (--font-display / Instrument Serif): section headings, the
+   *   organisation name in the header, and large standalone numbers where
+   *   it reads well. Never below --text-lg — its high stroke contrast
+   *   falls apart at small sizes, and this app is read on phones
+   *   mid-service. Pair it with tracking-tight and let its own generous
+   *   line-height do the work; it only comes in one weight (400), so
+   *   don't reach for font-semibold/font-bold on it.
+   */
+  --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: 'Instrument Serif', ui-serif, Georgia, serif;
 
   /*
-   * Deliberate type scale, not Tailwind's stock sizes. Sized down a touch at
-   * the low end (this is a dense, mobile-first, numbers-heavy app) and
-   * opened up at the high end, so headings actually read as dominant
-   * instead of everything sitting within one narrow band.
+   * Five sizes, not seven — restraint is the point. Small jumps low in the
+   * scale (this is a dense, mobile-first, numbers-heavy app) opening into
+   * large jumps at the top, so a heading actually reads as a heading
+   * instead of sitting one notch above body text.
    */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
-  --text-sm: 0.8125rem;
+  --text-sm: 0.875rem;
   --text-sm--line-height: 1.25rem;
-  --text-base: 0.9375rem;
-  --text-base--line-height: 1.4rem;
-  --text-lg: 1.0625rem;
-  --text-lg--line-height: 1.5rem;
-  --text-xl: 1.25rem;
-  --text-xl--line-height: 1.75rem;
-  --text-2xl: 1.625rem;
-  --text-2xl--line-height: 2rem;
-  --text-3xl: 2rem;
-  --text-3xl--line-height: 2.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.375rem;
+  --text-lg--line-height: 2rem;
+  --text-xl: 2rem;
+  --text-xl--line-height: 2.5rem;
 
   /*
    * Exactly two border radii. Large for sheets, modals and the cards that

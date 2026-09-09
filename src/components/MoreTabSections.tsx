@@ -25,7 +25,7 @@ export default function MoreTabSections({ sections }: { sections: MoreTabSection
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Back
         </button>
-        <h2 className="mb-4 mt-1 flex items-center gap-2 text-lg font-semibold text-ink">
+        <h2 className="mb-4 mt-1 flex items-center gap-2 font-display text-lg tracking-tight text-ink">
           <ActiveIcon className="h-5 w-5 text-ink/50" aria-hidden="true" />
           {active.title}
         </h2>

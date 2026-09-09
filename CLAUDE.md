@@ -154,13 +154,30 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
 Defined in `src/index.css` under `@theme`. Change the look there, not with
 one-off values on a screen.
 
-- Font is Archivo, self-hosted via `@fontsource/archivo` (400/500/600/700
-  imported in index.css), set as `--font-sans` so it's the default
-  everywhere — never a CDN, never a bare system-font fallback.
-- Type scale is custom (`--text-xs` … `--text-3xl` + paired
-  `--line-height`s in `@theme`), not Tailwind's stock sizes. Every time,
-  duration, date and hours value gets `tabular-nums` — this app is half
-  numbers and they need to align in columns.
+- Two-family pairing, both self-hosted in index.css — never a CDN, never
+  a bare system-font fallback:
+  - **Interface** — Instrument Sans, via `@fontsource/instrument-sans`
+    (400/500/600/700), set as `--font-sans` so it's the default
+    everywhere. Use it for body copy, labels, buttons, form fields, and
+    every number: times, durations, hours, dates, counts. Every one of
+    those gets `tabular-nums` — this app is half numbers and they need
+    to align in columns.
+  - **Display** — Instrument Serif, via `@fontsource/instrument-serif`
+    (400 only — it has no bold, so never pair it with `font-semibold`/
+    `font-bold`), set as `--font-display` (`font-display` utility).
+    Use it only for section headings, the organisation name in the
+    header, and large standalone numbers where it reads well — paired
+    with `tracking-tight`. Never below `text-lg`: its high stroke
+    contrast falls apart under 16px, and this app gets read on phones
+    mid-service.
+- Type scale is custom and deliberately short — five sizes (`--text-xs`
+  … `--text-xl` + paired `--line-height`s in `@theme`), not Tailwind's
+  stock sizes and not more tiers than that. Small jumps low in the scale,
+  opening into large jumps at the top, so a heading actually reads as a
+  heading instead of sitting one notch above body text. `--text-lg` and
+  `--text-xl` are where display-font headings live, but the tiers
+  themselves aren't display-only — large numbers use them too, in the
+  interface font.
 - Exactly two border radii: `rounded-lg` (small — controls: buttons,
   inputs, chips, nested rows) and `rounded-2xl` (large — sheets, modals,
   cards that genuinely group content). Both are redefined in `@theme`
@@ -168,7 +185,7 @@ one-off values on a screen.
   `rounded-md`, or a bare `rounded` — there's nowhere in the scale for
   them to mean anything, and they'll get merged away again.
   `rounded-full` stays default, for pills/dots only.
-- Colour: `bg-primary` (#14532D, royal green) is brand only — the header
+- Colour: `bg-primary` (#0B3B1F, deep green) is brand only — the header
   bar, primary buttons. Status has its own set, deliberately not brand
   green or secondary orange: `success`/`warning`/`danger` for
   approved/attention/rejected outcomes, and `active` (teal) specifically
