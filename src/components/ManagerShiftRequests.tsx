@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { ArrowLeftRight, CalendarPlus, Check, Loader2, Trash2, UserCheck } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 import { friendlyError } from '../lib/friendlyError';
 
 interface ShiftLite {
@@ -61,7 +62,17 @@ export default function ManagerShiftRequests({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fault, setFault] = useState<string | null>(null);
 
-  const [locationId, setLocationId] = useState(locations[0]?.id ?? '');
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
+  // Never offer a location the database would reject the viewer for
+  // choosing. An Administrator manages every org location, so this is a
+  // no-op for them.
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => managedLocationSet.has(l.id)),
+    [locations, managedLocationSet]
+  );
+
+  const [locationId, setLocationId] = useState(visibleLocations[0]?.id ?? '');
   const [role, setRole] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('17:00');
@@ -74,6 +85,15 @@ export default function ManagerShiftRequests({
       setRole(roles[0].name);
     }
   }, [roles, role]);
+
+  // Managed locations load asynchronously, so the initial useState default
+  // can miss them — backfill once they arrive rather than leaving the
+  // picker stuck on no selection.
+  useEffect(() => {
+    if (visibleLocations.length > 0 && !locationId) {
+      setLocationId(visibleLocations[0].id);
+    }
+  }, [visibleLocations, locationId]);
 
   const load = useCallback(async () => {
     setFault(null);
@@ -260,7 +280,7 @@ export default function ManagerShiftRequests({
                 onChange={(e) => setLocationId(e.target.value)}
                 className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
               >
-                {locations.map((l) => (
+                {visibleLocations.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}</option>
                 ))}
               </select>

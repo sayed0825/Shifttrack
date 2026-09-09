@@ -31,6 +31,7 @@ import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { usePermissions } from '../hooks/usePermissions';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
 import FilterButton from './FilterButton';
@@ -298,6 +299,15 @@ export default function ManagerDashboard(): ReactNode {
   const { roles } = useRoles();
   const { organisation } = useOrganisation();
   const { canManage, isAdmin } = usePermissions();
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
+  // What the location filter/pickers can offer — never a location the
+  // database would reject the viewer for choosing. An Administrator manages
+  // every org location, so this is a no-op for them.
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => managedLocationSet.has(l.id)),
+    [locations, managedLocationSet]
+  );
 
   const sweepRan = useRef(false);
 
@@ -438,7 +448,7 @@ export default function ManagerDashboard(): ReactNode {
                   fullWidth
                   options={[
                     { value: 'all', label: 'All locations' },
-                    ...locations.map((location) => ({ value: location.id, label: location.name })),
+                    ...visibleLocations.map((location) => ({ value: location.id, label: location.name })),
                   ]}
                 />
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertCircle, Check, Download, FileSpreadsheet, Loader2, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 
 interface TimeLogRow {
   id: string;
@@ -48,6 +49,15 @@ export default function PayrollReportModal({
   onClose: () => void;
 }): ReactNode {
   const { roles, loading: rolesLoading } = useRoles();
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
+  // Never offer a location the database would reject the viewer for
+  // choosing. An Administrator manages every org location, so this is a
+  // no-op for them.
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => managedLocationSet.has(l.id)),
+    [locations, managedLocationSet]
+  );
 
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -64,8 +74,8 @@ export default function PayrollReportModal({
 
   // Both multi-selects default to everything, once their options load.
   useEffect(() => {
-    setSelectedLocations(new Set(locations.map((l) => l.id)));
-  }, [locations]);
+    setSelectedLocations(new Set(visibleLocations.map((l) => l.id)));
+  }, [visibleLocations]);
   useEffect(() => {
     setSelectedRoles(new Set(roles.map((r) => r.name)));
   }, [roles]);
@@ -242,7 +252,7 @@ export default function PayrollReportModal({
           <div>
             <p className="text-sm font-medium text-ink">Locations</p>
             <div className="mt-1.5 flex flex-wrap gap-2">
-              {locations.map((loc) => {
+              {visibleLocations.map((loc) => {
                 const on = selectedLocations.has(loc.id);
                 return (
                   <button

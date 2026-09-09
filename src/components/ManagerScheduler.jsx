@@ -18,6 +18,7 @@ import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
 import { friendlyError } from '../lib/friendlyError';
 import { useRoles } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 import FilterButton from './FilterButton';
 
 const PRESET_TIMES = [
@@ -149,6 +150,15 @@ export default function ManagerScheduler() {
   const [notice, setNotice] = useState(null);
 
   const { roles, loading: rolesLoading } = useRoles();
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
+  // Never offer a location the database would reject the viewer for
+  // choosing. An Administrator manages every org location, so this is a
+  // no-op for them.
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => managedLocationSet.has(l.id)),
+    [locations, managedLocationSet]
+  );
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
@@ -286,7 +296,7 @@ export default function ManagerScheduler() {
                 className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <option value="all">All locations</option>
-                {locations.map((location) => (
+                {visibleLocations.map((location) => (
                   <option key={location.id} value={location.id}>
                     {location.name}
                   </option>
@@ -438,7 +448,7 @@ export default function ManagerScheduler() {
       {modalOpen && (
         <ShiftModal
           seed={modalSeed}
-          locations={locations}
+          locations={visibleLocations}
           onClose={() => setModalOpen(false)}
           onSaved={async ({ inserted, skipped }) => {
             setModalOpen(false);
@@ -491,6 +501,15 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
     const [year, month, day] = startDate.split('-').map(Number);
     setWeekdays([new Date(year, month - 1, day).getDay()]);
   }, [recurring, startDate]);
+
+  // Managed locations can still be loading when this modal opens, so the
+  // initial useState default can miss them — backfill once they arrive
+  // rather than leaving the picker stuck on no selection.
+  useEffect(() => {
+    if (locations.length > 0 && !locationId) {
+      setLocationId(locations[0].id);
+    }
+  }, [locations, locationId]);
 
   // Staff for the selected location, via the profile_locations join.
   useEffect(() => {

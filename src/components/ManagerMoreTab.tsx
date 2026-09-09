@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { friendlyError } from '../lib/friendlyError';
@@ -415,6 +416,16 @@ function LocationsCard(): ReactNode {
   const [editForm, setEditForm] = useState<LocationRow | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
+  // Never offer a location the database would reject the viewer for
+  // choosing. An Administrator manages every org location, so this is a
+  // no-op for them.
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => managedLocationSet.has(l.id)),
+    [locations, managedLocationSet]
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -479,7 +490,7 @@ function LocationsCard(): ReactNode {
       )}
 
       <div className="space-y-3">
-        {locations.map((loc) => (
+        {visibleLocations.map((loc) => (
           <div key={loc.id} className="rounded-lg border border-border">
             {editingId === loc.id && editForm ? (
               <div className="space-y-3 p-4">

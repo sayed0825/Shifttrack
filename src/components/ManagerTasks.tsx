@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   Camera,
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 import { friendlyError } from '../lib/friendlyError';
 import CollapsibleSection from './CollapsibleSection';
 import FilterButton from './FilterButton';
@@ -115,6 +116,15 @@ export default function ManagerTasks({
   locations: Array<{ id: string; name: string }>;
 }): ReactNode {
   const [userId, setUserId] = useState<string | null>(null);
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
+  // Never offer a location the database would reject the viewer for
+  // choosing. An Administrator manages every org location, so this is a
+  // no-op for them.
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => managedLocationSet.has(l.id)),
+    [locations, managedLocationSet]
+  );
 
   useEffect(() => {
     void (async () => {
@@ -128,8 +138,8 @@ export default function ManagerTasks({
   return (
     <div className="space-y-4">
       <ReviewSection userId={userId} />
-      <TaskSetupSection userId={userId} locations={locations} />
-      <HistorySection locations={locations} />
+      <TaskSetupSection userId={userId} locations={visibleLocations} />
+      <HistorySection locations={visibleLocations} />
     </div>
   );
 }
@@ -850,6 +860,13 @@ function TemplateFormModal({
     if (staff.length > 0 && !staffId) setStaffId(staff[0].id);
   }, [staff, staffId]);
 
+  // Managed locations can still be loading when this modal opens, so the
+  // initial useState default can miss them — backfill once they arrive
+  // rather than leaving the picker stuck on no selection.
+  useEffect(() => {
+    if (locations.length > 0 && !locationId) setLocationId(locations[0].id);
+  }, [locations, locationId]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -1088,6 +1105,13 @@ function OneOffFormModal({
   useEffect(() => {
     if (staff.length > 0 && !staffId) setStaffId(staff[0].id);
   }, [staff, staffId]);
+
+  // Managed locations can still be loading when this modal opens, so the
+  // initial useState default can miss them — backfill once they arrive
+  // rather than leaving the picker stuck on no selection.
+  useEffect(() => {
+    if (locations.length > 0 && !locationId) setLocationId(locations[0].id);
+  }, [locations, locationId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
