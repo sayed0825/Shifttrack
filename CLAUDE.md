@@ -89,6 +89,13 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
 - Timesheet data is payroll data. Never delete or overwrite a time_log
   without an explicit instruction. Deactivate staff rather than delete —
   deleting a profile cascades to time_logs and erases payroll history.
+- time_logs.role_at_clock_in records the role a person held at the moment
+  they clocked in, set on every clock-in insert (including a queued one in
+  src/lib/offlineQueue.js — captured when the clock-in happens, not when it
+  later syncs). Payroll reporting (PayrollReportModal) groups and filters
+  by this, falling back to the profile's current role only when it is
+  null, so a promotion never silently rewrites which role earned past
+  hours.
 - Every recurring shift occurrence must be built from calendar fields and
   converted per-occurrence. Never generate one Date and add 7 * 86400000 ms
   per week — that shifts every date past a DST boundary by an hour.

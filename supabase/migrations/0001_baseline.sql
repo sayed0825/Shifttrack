@@ -181,6 +181,7 @@ create table public.time_logs (
   constraint time_logs_time_order check (clock_out is null or clock_out > clock_in)
 );
 comment on column public.time_logs.is_geofenced_valid is 'True when the clock-in coordinates fell within the location geofence.';
+comment on column public.time_logs.role_at_clock_in is 'The role held at clock-in, set on insert (see 0002_role_at_clock_in.sql). Payroll reporting groups by this rather than a profile''s current role, so a promotion does not rewrite which role earned past hours.';
 
 -- ---------------------------------------------------------------------------
 -- live_locations — single latest ping per user; clients UPSERT on user_id
