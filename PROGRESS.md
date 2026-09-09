@@ -15,10 +15,16 @@ Newest entries at the top.
 
 **Phase:** 2 complete — multi-tenancy schema and RLS
 **Next up:**
-1. Migrate hosting from Netlify to Cloudflare Pages (unlimited builds —
+1. Real-device check of the branding + visual redesign pass pushed this
+   session (see log below) — NOT YET REVIEWED on a real device, unlike
+   everything else in this file so far.
+2. Wire `organisations.primary_colour` into actual theming — it's
+   fetched by `useOrganisation` but nothing consumes it yet; the app is
+   still hardcoded to brand green (#14532D) everywhere.
+3. Migrate hosting from Netlify to Cloudflare Pages (unlimited builds —
    Netlify's free tier build-minute cap has already blocked deploys once,
    see below) — still pending, not touched this session.
-2. The purged-photo fallback in Task History (a task older than the
+4. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised — everything else this
    session was verified on a real device. Needs a task old enough for
@@ -31,6 +37,14 @@ and approval all verified against real data). Manager task tooling has
 since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
+- Branding (logo upload, org name, `useOrganisation`) and the visual
+  redesign pass (design tokens, header bar, status colour, Archivo) are
+  pushed but UNREVIEWED — no real device check yet. Also: the
+  per-screen restraint pass (checking every screen actually follows the
+  new design-system rules, not just the ones touched directly) was not
+  exhaustive.
+- `organisations.primary_colour` is fetched by `useOrganisation` but not
+  wired into theming anywhere yet.
 - The purged-photo fallback in Task History — see "Next up" above.
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
   for a Bolt bug, must move to environment variables
@@ -46,6 +60,35 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-09
+Org branding + a full visual redesign pass. Pushed but **not yet
+reviewed on a real device** — unlike the rest of this log, treat this
+entry as unverified until that check happens.
+
+- **Branding**: new `src/hooks/useOrganisation.ts` (module-scoped cache,
+  same pattern as `useRoles.ts`) reading the org's `name`, `logo_url`,
+  and `primary_colour` via `my_org_id()`. Branding card in
+  `ManagerMoreTab` for logo upload (png/jpg/svg, 1MB cap, public
+  `org-logos` bucket at `${orgId}/logo.<ext>`, cache-busted URL) and
+  editable org name. Both dashboard headers now show the logo, falling
+  back to the org name in text when `logo_url` is null. Removed every
+  hardcoded "ShiftTrack" from the UI, including the sign-in screen.
+  `organisations.primary_colour` is fetched by the hook but **not wired
+  into theming anywhere yet** — the app is still hardcoded to brand
+  green (#14532D).
+- **Design system**, defined in `src/index.css` and then applied
+  app-wide rather than screen-by-screen: Archivo self-hosted via
+  `@fontsource/archivo` as `--font-sans`; custom type scale
+  (`--text-xs`…`--text-3xl` with paired line-heights); border radius
+  collapsed to exactly two tiers (`rounded-lg`, `rounded-2xl`) via a
+  mechanical find/replace of every `rounded-xl`/`rounded-md`/bare
+  `rounded` across `.tsx`/`.jsx`; new `active` (teal) status colour kept
+  separate from `success` green and brand green.
+- Known gap from this pass: the per-screen restraint pass (confirming
+  every screen actually follows the new rules, not just the ones edited
+  directly) was **not exhaustive** — expect stragglers.
+- **Not yet done:** real-device check of any of the above.
 
 ### 2026-09-07 (later still)
 Manager-side task tooling and navigation, largely driven by using the
