@@ -41,14 +41,24 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const { data: profile } = await adminClient
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (!profile || profile.role !== "Manager") {
+    // Capability check, not a role-name check: permissions live on
+    // roles.can_manage/is_admin now, and the old "Manager" role was
+    // renamed Administrator. Calling is_manager() through userClient (the
+    // caller's own JWT, not the service-role key) runs it as the caller,
+    // so it reads the exact same auth.uid() the RLS policies would.
+    const { data: canManage, error: canManageError } = await userClient.rpc("is_manager");
+    if (canManageError || !canManage) {
       return new Response(JSON.stringify({ error: "Only managers can send invites" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // org_id always comes from the inviter's own profile, never the
+    // request body — a client can send whatever it likes.
+    const { data: orgId, error: orgIdError } = await userClient.rpc("my_org_id");
+    if (orgIdError || !orgId) {
+      return new Response(JSON.stringify({ error: "Could not determine your organisation" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -71,11 +81,46 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Managers are location-scoped now: an invite can only assign
+    // locations the inviter actually manages (an Administrator manages
+    // every org location, so this is a no-op for them). Validated against
+    // the submitted ids, not silently filtered, so a rejected id surfaces
+    // as an error rather than a silently-dropped assignment.
+    const requestedLocationIds: string[] = [
+      ...(primaryLocationId ? [primaryLocationId] : []),
+      ...(Array.isArray(additionalLocationIds) ? additionalLocationIds : []),
+    ];
+
+    if (requestedLocationIds.length > 0) {
+      const { data: managedLocationIds, error: managedLocationsError } =
+        await userClient.rpc("my_managed_locations");
+
+      if (managedLocationsError) {
+        return new Response(JSON.stringify({ error: "Could not verify your managed locations" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const managedSet = new Set<string>(managedLocationIds ?? []);
+      const outOfScope = requestedLocationIds.filter((id) => !managedSet.has(id));
+      if (outOfScope.length > 0) {
+        return new Response(
+          JSON.stringify({ error: "You cannot assign a location you do not manage" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const appUrl = (typeof redirectBase === 'string' && redirectBase) ||
       req.headers.get('origin') || '';
     const { data: inviteData, error: inviteError } =
       await adminClient.auth.admin.inviteUserByEmail(email, {
         redirectTo: appUrl,
+        // tg_handle_new_user falls back to a hardcoded default org when it
+        // finds no org_id here — passing it explicitly is what keeps a
+        // new invite in the inviter's own org instead.
+        data: { org_id: orgId },
       });
 
     if (inviteError) {
@@ -89,6 +134,7 @@ Deno.serve(async (req: Request) => {
 
     const { error: profileError } = await adminClient.from("profiles").upsert({
       id: newUserId,
+      org_id: orgId,
       role,
       first_name: firstName?.trim() || null,
       full_name: fullName?.trim() || null,
@@ -108,6 +154,7 @@ Deno.serve(async (req: Request) => {
         profile_id: newUserId,
         location_id: locationId,
         is_primary: locationId === primaryLocationId,
+        org_id: orgId,
       }));
 
       const { error: locError } = await adminClient.from("profile_locations").upsert(rows, { onConflict: "profile_id,location_id" });
