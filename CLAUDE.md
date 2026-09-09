@@ -45,6 +45,8 @@ There is no application server. Components call the Supabase JS client (`src/sup
 
 **Only two of the many tables/functions the app depends on have migrations checked in** (`supabase/migrations/`): `profile_locations`, `unavailability_requests`, `notifications`, plus a `profiles.role` rework. Tables like `profiles`, `locations`, `shifts`, `time_logs`, `shift_swaps`, `shift_applications`, `overtime_claims`, `live_locations`, and the RPC functions above exist in the live database but were created outside this migrations folder (e.g. directly via the Supabase dashboard/SQL editor). When changing schema-dependent code, don't assume `supabase/migrations/` is the full picture of the schema — check actual RPC/table usage across `src/` (`grep "\.from('" -r src` / `grep "\.rpc("`) as the source of truth for shape, and add new schema changes as new migration files here going forward.
 
+A Supabase MCP server is connected, **read-only**. Use it to check the actual live schema (tables, columns, RLS policies) before writing queries, instead of assuming column names from this file or from grepping `src/` alone — the migrations folder is incomplete (see above) and the live schema can have drifted further since this was written. Because the connection is read-only, it cannot apply schema changes: migrations still go to the user to run manually.
+
 `src/supabaseClient.js` hardcodes the project URL and anon key rather than reading `import.meta.env` (a `.env` with `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` exists but isn't consumed). The anon key is safe to expose by design; RLS policies (see migrations) are what actually restrict access.
 
 `supabase/functions/invite-staff` is the one Edge Function: it verifies the caller is a Manager, uses the service-role key to invite a user by email (`auth.admin.inviteUserByEmail`), upserts their `profiles` row and `profile_locations`. This is the only place a service-role key is used — everything else goes through the anon key + RLS.
@@ -121,9 +123,12 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   `${orgId}/logo.<ext>` (png/jpg/svg, 1MB cap, enforced client-side in
   ManagerMoreTab's Branding card). See src/hooks/useOrganisation.ts.
 - `employee_notes` (id, org_id, employee_id, manager_id, note_text,
-  created_at) — manager notes on an employee's profile. Manager-only RLS,
-  append-only: no UPDATE or DELETE policy exists for anyone, including
-  managers. See src/components/EmployeeNotes.tsx.
+  created_at, deleted_at, deleted_by) — manager notes on an employee's
+  profile. Manager-only RLS. Notes cannot be edited, and there is still no
+  hard DELETE policy for anyone. It is no longer strictly append-only,
+  though: an Administrator can soft-delete a note, setting deleted_at and
+  deleted_by. The row stays — the UI renders it as a tombstone rather than
+  removing it. See src/components/EmployeeNotes.tsx.
 - Task module:
   - `task_templates` (id, org_id, location_id, title, description,
     assigned_role, assigned_user_id, requires_photo, recurrence,
