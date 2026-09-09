@@ -139,11 +139,13 @@ export default function ManagerMoreTab({
     },
     { id: 'staff', title: 'Staff', icon: Users, render: () => <StaffManager locations={locations} viewerId={viewerId} /> },
     { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
-    { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
     // Admin-only: a location-scoped Manager doesn't see these rows at all,
-    // not just a blocked drill-in.
+    // not just a blocked drill-in. Locations belongs here too — editing a
+    // geofence changes where staff can clock in, which isn't a location
+    // manager's call.
     ...(isAdmin
       ? [
+          { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
           { id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> },
           { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
           {
