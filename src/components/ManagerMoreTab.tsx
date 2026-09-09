@@ -30,6 +30,7 @@ import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { useOrganisation } from '../hooks/useOrganisation';
+import { friendlyError } from '../lib/friendlyError';
 import InviteStaffModal from './InviteStaffModal';
 import ManagerShiftRequests from './ManagerShiftRequests';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
@@ -789,7 +790,7 @@ function RolesCard(): ReactNode {
     });
 
     if (insertError) {
-      setAddFault(insertError.message || 'Could not add role.');
+      setAddFault(friendlyError(insertError, 'Could not add role.'));
     } else {
       setNewName('');
       await refresh();
@@ -820,7 +821,7 @@ function RolesCard(): ReactNode {
     const { error: updateError } = await supabase.from('roles').update({ name }).eq('id', role.id);
 
     if (updateError) {
-      setRowFault(updateError.message || 'Could not rename role.');
+      setRowFault(friendlyError(updateError, 'Could not rename role.'));
     } else {
       setEditingId(null);
       setEditName('');
@@ -838,7 +839,7 @@ function RolesCard(): ReactNode {
       .update({ can_view_map: !role.can_view_map })
       .eq('id', role.id);
 
-    if (updateError) setRowFault(updateError.message || 'Could not update role.');
+    if (updateError) setRowFault(friendlyError(updateError, 'Could not update role.'));
     else await refresh();
     setBusyId(null);
   };
@@ -889,7 +890,7 @@ function RolesCard(): ReactNode {
 
     const { error: deleteError } = await supabase.from('roles').delete().eq('id', confirmingDelete.role.id);
 
-    if (deleteError) setRowFault(deleteError.message || 'Could not delete role.');
+    if (deleteError) setRowFault(friendlyError(deleteError, 'Could not delete role.'));
     else await refresh();
 
     setConfirmingDelete(null);
@@ -1177,7 +1178,7 @@ function BrandingCard(): ReactNode {
 
     setSaving(false);
     if (error) {
-      setFault(error.message || 'Could not save the name.');
+      setFault(friendlyError(error, 'Could not save the name.'));
     } else {
       setSaved(true);
       await refresh();
@@ -1207,7 +1208,7 @@ function BrandingCard(): ReactNode {
 
     if (uploadError) {
       setUploading(false);
-      setFault(uploadError.message || 'Could not upload the logo.');
+      setFault(friendlyError(uploadError, 'Could not upload the logo.'));
       return;
     }
 
@@ -1224,7 +1225,7 @@ function BrandingCard(): ReactNode {
 
     setUploading(false);
     if (updateError) {
-      setFault(updateError.message || 'Logo uploaded, but could not be saved.');
+      setFault(friendlyError(updateError, 'Logo uploaded, but could not be saved.'));
       return;
     }
     await refresh();
@@ -1238,7 +1239,7 @@ function BrandingCard(): ReactNode {
     const { error } = await supabase.from('organisations').update({ logo_url: null }).eq('id', organisation.id);
 
     setUploading(false);
-    if (error) setFault(error.message || 'Could not remove the logo.');
+    if (error) setFault(friendlyError(error, 'Could not remove the logo.'));
     else await refresh();
   };
 
@@ -1371,7 +1372,7 @@ function GracePeriodCard(): ReactNode {
       .eq('id', orgId);
 
     if (updateError) {
-      setFault(updateError.message || 'Could not save the grace period.');
+      setFault(friendlyError(updateError, 'Could not save the grace period.'));
     } else {
       setSaved(true);
       await refresh();

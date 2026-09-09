@@ -32,6 +32,7 @@ import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { usePermissions } from '../hooks/usePermissions';
 import { isLate, minutesLate } from '../lib/lateness';
+import { friendlyError } from '../lib/friendlyError';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
@@ -344,7 +345,7 @@ export default function ManagerDashboard(): ReactNode {
           }
         }
       } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'The dashboard could not load.');
+        if (!cancelled) setError(friendlyError(cause, 'The dashboard could not load.'));
       } finally {
         if (!cancelled) setBooting(false);
       }

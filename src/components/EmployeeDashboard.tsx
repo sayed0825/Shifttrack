@@ -34,6 +34,7 @@ import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
+import { friendlyError } from '../lib/friendlyError';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
@@ -407,7 +408,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
       } else if (geoError?.code === 3) {
         setFault('Location timed out. Try again near a window or outside.');
       } else {
-        setFault(err instanceof Error ? err.message : 'Could not verify your location.');
+        setFault(friendlyError(err, 'Could not verify your location.'));
       }
     } finally {
       setChecking(false);
@@ -527,7 +528,7 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
         });
       }
     } catch (err) {
-      setFault(err instanceof Error ? err.message : 'Clock in failed.');
+      setFault(friendlyError(err, 'Clock in failed.'));
     } finally {
       setBusy(false);
     }

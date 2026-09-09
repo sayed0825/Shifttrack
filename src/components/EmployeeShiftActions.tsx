@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, ArrowLeftRight, CalendarPlus, Check, Loader2, Send, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { friendlyError } from '../lib/friendlyError';
 
 interface ShiftLite {
   id: string;
@@ -110,7 +111,7 @@ export default function EmployeeShiftActions({
     setBusyId(id);
     setFault(null);
     const { error } = await fn();
-    if (error) setFault(error instanceof Error ? error.message : 'That did not go through. Try again.');
+    if (error) setFault(friendlyError(error, 'That did not go through. Try again.'));
     else await load();
     setBusyId(null);
   };

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
+import { friendlyError } from '../lib/friendlyError';
 import CollapsibleSection from './CollapsibleSection';
 import FilterButton from './FilterButton';
 
@@ -244,7 +245,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
       .from('tasks')
       .update({ status: 'approved', reviewed_by: userId, reviewed_at: new Date().toISOString() })
       .eq('id', task.id);
-    if (updateError) setFault(updateError.message || 'Could not approve this task.');
+    if (updateError) setFault(friendlyError(updateError, 'Could not approve this task.'));
     else await load();
     setBusyId(null);
   };
@@ -265,7 +266,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
       .from('task_comments')
       .insert({ task_id: rejecting.id, sender_id: userId, comment_text });
     if (commentError) {
-      setRejecting({ ...rejecting, fault: commentError.message || 'Could not save the comment.' });
+      setRejecting({ ...rejecting, fault: friendlyError(commentError, 'Could not save the comment.') });
       setBusyId(null);
       return;
     }
@@ -490,7 +491,7 @@ function TaskSetupSection({
       .from('task_templates')
       .update({ is_active: !template.is_active })
       .eq('id', template.id);
-    if (updateError) setFault(updateError.message || 'Could not update the template.');
+    if (updateError) setFault(friendlyError(updateError, 'Could not update the template.'));
     else await loadTemplates();
     setBusyId(null);
   };
@@ -499,7 +500,7 @@ function TaskSetupSection({
     setBusyId(template.id);
     setFault(null);
     const { error: deleteError } = await supabase.from('task_templates').delete().eq('id', template.id);
-    if (deleteError) setFault(deleteError.message || 'Could not delete the template.');
+    if (deleteError) setFault(friendlyError(deleteError, 'Could not delete the template.'));
     else await loadTemplates();
     setConfirmDeleteId(null);
     setBusyId(null);
@@ -889,7 +890,7 @@ function TemplateFormModal({
     });
 
     if (error) {
-      setFault(error.message || 'Could not save the template.');
+      setFault(friendlyError(error, 'Could not save the template.'));
       setSaving(false);
       return;
     }
@@ -1123,7 +1124,7 @@ function OneOffFormModal({
     });
 
     if (error) {
-      setFault(error.message || 'Could not create the task.');
+      setFault(friendlyError(error, 'Could not create the task.'));
       setSaving(false);
       return;
     }

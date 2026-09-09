@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
+import { friendlyError } from '../lib/friendlyError';
 import type { Profile } from './ManagerDashboard';
 
 type TaskStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
@@ -458,7 +459,7 @@ function TaskDetailSheet({
 
       onConflict();
     } catch (err) {
-      setCompleteFault(err instanceof Error ? err.message : 'Could not submit the task.');
+      setCompleteFault(friendlyError(err, 'Could not submit the task.'));
     } finally {
       setCompleting(false);
     }

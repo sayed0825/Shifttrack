@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
+import { friendlyError } from '../lib/friendlyError';
 import { useRoles } from '../hooks/useRoles';
 import FilterButton from './FilterButton';
 
@@ -651,7 +652,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
 
       await onSaved({ inserted: fresh.length, skipped: rows.length - fresh.length });
     } catch (error) {
-      setFault(error?.message ?? 'The shifts could not be saved. Check your connection and try again.');
+      setFault(friendlyError(error, 'The shifts could not be saved. Check your connection and try again.'));
     } finally {
       setSaving(false);
     }

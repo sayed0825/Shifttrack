@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { AlertCircle, Loader2, NotebookPen, Send, Trash2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { usePermissions } from '../hooks/usePermissions';
+import { friendlyError } from '../lib/friendlyError';
 
 interface NoteRow {
   id: string;
@@ -122,7 +123,7 @@ export default function EmployeeNotes({
     if (insertError || !data) {
       setNotes((prev) => prev.filter((n) => n.id !== tempId));
       setDraft(note);
-      setSaveFault(insertError?.message || 'Could not save the note.');
+      setSaveFault(friendlyError(insertError, 'Could not save the note.'));
     } else {
       setNotes((prev) => prev.map((n) => (n.id === tempId ? data : n)));
     }

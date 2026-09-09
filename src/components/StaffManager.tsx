@@ -5,6 +5,9 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
+import { usePermissions } from '../hooks/usePermissions';
+import { friendlyError } from '../lib/friendlyError';
 import EmployeeNotes from './EmployeeNotes';
 
 interface StaffRow {
@@ -62,6 +65,9 @@ export default function StaffManager({
   const [fault, setFault] = useState<string | null>(null);
 
   const { roles, loading: rolesLoading, error: rolesError } = useRoles();
+  const { isAdmin } = usePermissions();
+  const { locationIds: managedLocationIds, loading: managedLocationsLoading } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
 
   const [confirming, setConfirming] = useState<{
     person: StaffRow;
@@ -104,9 +110,20 @@ export default function StaffManager({
     void load();
   }, [load]);
 
+  // Only staff the viewer actually manages — sharing at least one location
+  // with them, or everyone if they're an Administrator. Writes to people
+  // outside this set (role changes, deactivate, notes) are rejected by RLS
+  // regardless, but showing the control at all just to fail it with a raw
+  // policy error is the bug: hiding them here means that panel is never
+  // reached in the first place.
+  const visibleStaff = useMemo(() => {
+    if (isAdmin) return staff;
+    return staff.filter((p) => (assigned[p.id] ?? []).some((l) => managedLocationSet.has(l.id)));
+  }, [staff, assigned, isAdmin, managedLocationSet]);
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return staff.filter((p) => {
+    return visibleStaff.filter((p) => {
       if (roleFilter !== 'all' && p.role !== roleFilter) return false;
       if (locationFilter !== 'all' && !(assigned[p.id] ?? []).some((l) => l.id === locationFilter)) {
         return false;
@@ -116,18 +133,14 @@ export default function StaffManager({
         .toLowerCase()
         .includes(needle);
     });
-  }, [staff, query, roleFilter, locationFilter, assigned]);
+  }, [visibleStaff, query, roleFilter, locationFilter, assigned]);
 
   const run = async (id: string, fn: () => Promise<{ error: unknown }>) => {
     setBusyId(id);
     setFault(null);
     const { error } = await fn();
     if (error) {
-      const message =
-        typeof error === 'object' && error && 'message' in error
-          ? String((error as { message: string }).message)
-          : 'That change did not save.';
-      setFault(message);
+      setFault(friendlyError(error, 'That change did not save.'));
     } else {
       await load();
     }
@@ -210,7 +223,7 @@ export default function StaffManager({
     setFault(null);
 
     const { error } = await supabase.rpc('delete_staff_member', { p_user_id: confirming.person.id });
-    if (error) setFault(error.message);
+    if (error) setFault(friendlyError(error));
     else await load();
 
     setConfirming(null);
@@ -286,7 +299,7 @@ export default function StaffManager({
               }}
               className="mt-2 text-xs font-medium text-ink/60 underline underline-offset-2"
             >
-              Clear filters · showing {filtered.length} of {staff.length}
+              Clear filters · showing {filtered.length} of {visibleStaff.length}
             </button>
           )}
 
@@ -297,7 +310,7 @@ export default function StaffManager({
             </p>
           )}
 
-          {loading ? (
+          {loading || managedLocationsLoading ? (
             <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               Loading staff…

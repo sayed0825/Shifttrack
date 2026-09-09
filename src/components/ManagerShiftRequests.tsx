@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { ArrowLeftRight, CalendarPlus, Check, Loader2, Trash2, UserCheck } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { friendlyError } from '../lib/friendlyError';
 
 interface ShiftLite {
   id: string;
@@ -132,11 +133,7 @@ export default function ManagerShiftRequests({
     setFault(null);
     const { error } = await fn();
     if (error) {
-      const message =
-        typeof error === 'object' && error && 'message' in error
-          ? String((error as { message: string }).message)
-          : 'That did not go through.';
-      setFault(message);
+      setFault(friendlyError(error, 'That did not go through.'));
     } else {
       await load();
     }

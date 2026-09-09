@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Check, Clock, Loader2, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { friendlyError } from '../lib/friendlyError';
 
 interface ClaimRow {
   id: string;
@@ -64,7 +65,7 @@ export default function OvertimeApprovals(): ReactNode {
       p_claim_id: id,
       p_approve: approve,
     });
-    if (error) setFault(error.message);
+    if (error) setFault(friendlyError(error));
     else await load();
     setBusyId(null);
   };
