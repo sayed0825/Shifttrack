@@ -13,27 +13,22 @@ Newest entries at the top.
 
 ## Current state
 
-**Phase:** 2c complete — multi-tenancy schema and RLS (2a), capability-flag
+**Phase:** 2d complete — multi-tenancy schema and RLS (2a), capability-flag
 permissions rebuild (2b), full schema baseline dumped to
-`supabase/migrations/0001_baseline.sql` (2c). The repo is now the source
-of truth for schema, not Supabase — see CLAUDE.md.
+`supabase/migrations/0001_baseline.sql` (2c), SMTP + Cloudflare hosting +
+custom domain + pending-invite handling all live and verified (2d). The
+repo is now the source of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. Verify the Pending-invite UI on a real device — badge, Resend
-   control, and the scheduler/task/swap-picker exclusion were all pushed
-   2026-09-11 but not yet visually verified.
-2. Point `app.kitescheduling.com` at the Cloudflare Worker/Pages
-   deployment and update the Supabase Site URL / redirect URLs to match
-   (remember: the Site URL has to be saved with the `https://` prefix,
-   or it is treated as a relative path — still needs its own note added
-   to CLAUDE.md, see "Known broken" below).
-3. Then Phase 3 hardening.
-4. Real-device check of the branding + visual redesign pass pushed
+1. **Phase 3 hardening**: Supabase Pro for point-in-time backups, Sentry
+   for error alerts, UptimeRobot, an index review, and a security review.
+2. **Phase 4 testing**, starting with automated RLS tests.
+3. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-5. Wire `organisations.primary_colour` into actual theming — it's
+4. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-6. The purged-photo fallback in Task History (a task older than the
+5. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised. Needs a task old enough
    for the purge to have already run against it.
@@ -56,10 +51,9 @@ since grown well past the original spec — see the log below.
 - The purged-photo fallback in Task History — see "Next up" above.
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
   for a Bolt bug, must move to environment variables
-- CLAUDE.md still needs the note that the Supabase Site URL has to be
-  saved with the `https://` prefix — see "Next up" above.
-- Pending-invite UI (badge, Resend, picker exclusion) pushed but not yet
-  visually verified — see "Next up" above.
+- A new sending domain (kitescheduling.com, via Resend) lands in spam
+  until its reputation builds — tell staff to check junk during
+  onboarding until that settles.
 - MapTiler key not domain-restricted
 - `LiveMap` `DEFAULT_CENTER` is hardcoded to Essex — should derive from
   the org's own locations
@@ -70,6 +64,34 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-11 (later)
+Phase 2d complete — the infrastructure and pending-invite loose ends
+from Phase 2 are closed out and verified, not just pushed.
+
+- **SMTP confirmed live**: Resend, on the `kitescheduling.com` domain,
+  sending from `hello@kitescheduling.com`. Invites deliver. A new
+  sending domain lands in spam until its reputation builds — tell staff
+  to check junk during onboarding (see "Known broken" above) until that
+  settles.
+- **Hosting moved Netlify → Cloudflare, confirmed end to end**: custom
+  domain `app.kitescheduling.com` is live, and the Supabase Site URL and
+  Redirect URLs are updated to match it. Added the `https://`-prefix
+  trap to CLAUDE.md's Known traps — saved without it, Supabase treats
+  the value as a relative path and every invite/magic-link email goes
+  out with a broken redirect.
+- **Migration 0004 run, and the pending-invite feature verified
+  working**: `profiles.accepted_at` mirrors
+  `auth.users.email_confirmed_at`; the Pending badge, Resend invite
+  control, and exclusion from the scheduler/task/swap pickers all
+  confirmed working (previously pushed 2026-09-11 but unverified — see
+  the entry below this one).
+- **`role_at_clock_in`** wired through clock-in, the offline queue, and
+  the payroll report (previously logged in detail below — recapping here
+  since it closes out under this same phase).
+- **`0001_baseline.sql` frozen as of 2026-09-09** — every schema change
+  since lives only in its own numbered migration (previously logged in
+  detail below).
 
 ### 2026-09-11
 - **SMTP live**: Resend, on the `kitescheduling.com` domain, sending from

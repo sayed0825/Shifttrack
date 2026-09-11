@@ -233,3 +233,7 @@ one-off values on a screen.
   components that never rendered.
 - Supabase credentials are currently hardcoded in src/supabaseClient.js as a
   workaround for a Bolt bug. This must move back to environment variables.
+- Supabase's Site URL setting (Authentication → URL Configuration) must
+  include the `https://` prefix. Saved without it, Supabase treats the
+  value as a relative path instead of an absolute origin, and every
+  invite/magic-link email goes out with a broken redirect link.
