@@ -10,7 +10,13 @@ interface ShiftLite {
   end_time: string;
   assigned_user_id: string | null;
   locations: { name: string } | null;
-  profiles: { id: string; first_name: string | null; full_name: string | null; role: string | null } | null;
+  profiles: {
+    id: string;
+    first_name: string | null;
+    full_name: string | null;
+    role: string | null;
+    accepted_at: string | null;
+  } | null;
 }
 
 interface SwapRow {
@@ -23,7 +29,7 @@ interface SwapRow {
 }
 
 const SHIFT_FIELDS =
-  'id, title, start_time, end_time, assigned_user_id, locations ( name ), profiles:assigned_user_id ( id, first_name, full_name, role )';
+  'id, title, start_time, end_time, assigned_user_id, locations ( name ), profiles:assigned_user_id ( id, first_name, full_name, role, accepted_at )';
 
 function when(shift: ShiftLite | null): string {
   if (!shift) return '—';
@@ -84,8 +90,14 @@ export default function EmployeeShiftActions({
     const all = (shiftRes.data ?? []) as unknown as ShiftLite[];
     setMyShifts(all.filter((s) => s.assigned_user_id === profile.id));
     setPeerShifts(
+      // A peer who has not accepted their invite yet cannot sign in, so a
+      // swap could never actually reach them.
       all.filter(
-        (s) => s.assigned_user_id && s.assigned_user_id !== profile.id && s.profiles?.role === profile.role
+        (s) =>
+          s.assigned_user_id &&
+          s.assigned_user_id !== profile.id &&
+          s.profiles?.role === profile.role &&
+          s.profiles?.accepted_at
       )
     );
 

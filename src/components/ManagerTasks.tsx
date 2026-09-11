@@ -487,6 +487,9 @@ function TaskSetupSection({
         .from('profiles')
         .select('id, first_name, full_name')
         .eq('is_active', true)
+        // Someone who has not accepted their invite yet cannot sign in, so
+        // cannot be assigned a task.
+        .not('accepted_at', 'is', null)
         .order('full_name')
         .returns<StaffLite[]>();
       setStaff(data ?? []);

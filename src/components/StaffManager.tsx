@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  AlertTriangle, Check, Filter, Loader2, MapPin,
+  AlertTriangle, Check, Filter, Loader2, Mail, MapPin,
   Search, Trash2, UserMinus, UserPlus, Users,
 } from 'lucide-react';
-import { supabase } from '../supabaseClient';
+import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { usePermissions } from '../hooks/usePermissions';
@@ -17,6 +17,7 @@ interface StaffRow {
   email: string | null;
   role: string | null;
   is_active: boolean;
+  accepted_at: string | null;
 }
 
 interface UpcomingShift {
@@ -74,12 +75,16 @@ export default function StaffManager({
     shifts: UpcomingShift[];
     mode: 'deactivate' | 'delete';
   } | null>(null);
+  const [resentId, setResentId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const weekStart = startOfWeek(new Date());
 
     const [staffRes, locRes, logRes] = await Promise.all([
-      supabase.from('profiles').select('id, first_name, full_name, email, role, is_active').order('full_name'),
+      supabase
+        .from('profiles')
+        .select('id, first_name, full_name, email, role, is_active, accepted_at')
+        .order('full_name'),
       supabase.from('profile_locations').select('profile_id, location_id, is_primary'),
       supabase
         .from('time_logs')
@@ -120,6 +125,11 @@ export default function StaffManager({
     if (isAdmin) return staff;
     return staff.filter((p) => (assigned[p.id] ?? []).some((l) => managedLocationSet.has(l.id)));
   }, [staff, assigned, isAdmin, managedLocationSet]);
+
+  const pendingCount = useMemo(
+    () => visibleStaff.filter((p) => !p.accepted_at).length,
+    [visibleStaff]
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -233,12 +243,65 @@ export default function StaffManager({
   const reactivate = (person: StaffRow) =>
     run(person.id, async () => supabase.from('profiles').update({ is_active: true }).eq('id', person.id));
 
+  const resendInvite = async (person: StaffRow) => {
+    if (!person.email) {
+      setFault('There is no email on file to resend an invite to.');
+      return;
+    }
+
+    setBusyId(person.id);
+    setFault(null);
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error('Your session has expired. Sign in again.');
+
+      const theirLocations = assigned[person.id] ?? [];
+      const primary = theirLocations.find((l) => l.isPrimary) ?? theirLocations[0];
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/invite-staff`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({
+          email: person.email,
+          role: person.role,
+          firstName: person.first_name,
+          fullName: person.full_name,
+          primaryLocationId: primary?.id ?? null,
+          additionalLocationIds: theirLocations.filter((l) => l.id !== primary?.id).map((l) => l.id),
+          redirectBase: window.location.origin,
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Could not resend the invite.');
+
+      setResentId(person.id);
+      setTimeout(() => setResentId((current) => (current === person.id ? null : current)), 3000);
+    } catch (err) {
+      setFault(err instanceof Error ? err.message : 'Could not resend the invite.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const activeFilters = (locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0);
 
   return (
     <>
     <div className="rounded-2xl border border-border bg-surface p-5">
-          <div className="relative">
+          <p className="text-xs font-medium text-ink/60">
+            {visibleStaff.length - pendingCount} staff
+            {pendingCount > 0 && `, ${pendingCount} pending`}
+          </p>
+
+          <div className="mt-2 relative">
             <Search
               className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/50"
               aria-hidden="true"
@@ -323,6 +386,7 @@ export default function StaffManager({
                 const open = editing === person.id;
                 const theirs = assigned[person.id] ?? [];
                 const isSelf = person.id === viewerId;
+                const isPending = !person.accepted_at;
 
                 return (
                   <li key={person.id} className="py-3">
@@ -332,13 +396,20 @@ export default function StaffManager({
                       className="flex w-full items-center gap-3 text-left"
                     >
                       <span
-                        className={`h-2 w-2 shrink-0 rounded-full ${person.is_active ? 'bg-success' : 'bg-border'}`}
+                        className={`h-2 w-2 shrink-0 rounded-full ${
+                          person.is_active && !isPending ? 'bg-success' : 'bg-border'
+                        }`}
                         aria-hidden="true"
                       />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-ink">
-                          {person.full_name ?? person.first_name ?? 'Unnamed'}
-                          {isSelf && <span className="ml-1 text-xs text-ink/50">(you)</span>}
+                        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-ink">
+                          <span className="truncate">{person.full_name ?? person.first_name ?? 'Unnamed'}</span>
+                          {isSelf && <span className="text-xs text-ink/50">(you)</span>}
+                          {isPending && (
+                            <span className="shrink-0 rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
+                              Pending
+                            </span>
+                          )}
                         </span>
                         {person.email && (
                           <span className="block truncate text-xs text-ink/50">{person.email}</span>
@@ -346,6 +417,7 @@ export default function StaffManager({
                         <span className="block truncate text-xs text-ink/60">
                           {person.role ? person.role : <span className="italic text-ink/40">No role</span>}
                           {!person.is_active && ' · deactivated'}
+                          {person.is_active && isPending && ' · invite not yet accepted'}
                         </span>
                       </span>
                       <span className="shrink-0 text-right">
@@ -432,6 +504,22 @@ export default function StaffManager({
                             The first location added is their primary site.
                           </p>
                         </div>
+
+                        {isPending && (
+                          <button
+                            type="button"
+                            onClick={() => void resendInvite(person)}
+                            disabled={busyId === person.id}
+                            className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-ink hover:bg-surface disabled:opacity-60"
+                          >
+                            {busyId === person.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <Mail className="h-4 w-4" aria-hidden="true" />
+                            )}
+                            {resentId === person.id ? 'Invite sent' : 'Resend invite'}
+                          </button>
+                        )}
 
                         {!isSelf && (
                           <div className="space-y-2">

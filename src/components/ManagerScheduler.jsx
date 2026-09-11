@@ -522,14 +522,16 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
     (async () => {
       const { data } = await supabase
         .from('profile_locations')
-        .select('profile_id, profiles ( id, first_name, full_name, role, is_active )')
+        .select('profile_id, profiles ( id, first_name, full_name, role, is_active, accepted_at )')
         .eq('location_id', locationId);
 
       if (cancelled) return;
       setStaff(
         (data ?? [])
           .map((row) => row.profiles)
-          .filter((p) => p && p.is_active !== false)
+          // Someone who has not accepted their invite yet cannot sign in,
+          // so cannot be scheduled to work a shift.
+          .filter((p) => p && p.is_active !== false && p.accepted_at)
           .sort((a, b) =>
             (a.full_name ?? a.first_name ?? '').localeCompare(b.full_name ?? b.first_name ?? '')
           )
