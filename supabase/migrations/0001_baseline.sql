@@ -90,17 +90,20 @@ create table public.roles (
 -- roles), matched against roles.name at read time by is_admin()/is_manager().
 -- ---------------------------------------------------------------------------
 create table public.profiles (
-  id          uuid primary key references auth.users(id) on delete cascade,
-  full_name   text,
-  first_name  text,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
-  role        text default 'Employee'::text,
-  is_active   boolean not null default true,
-  org_id      uuid not null references public.organisations(id) on delete cascade,
-  email       text
+  id           uuid primary key references auth.users(id) on delete cascade,
+  full_name    text,
+  first_name   text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  role         text default 'Employee'::text,
+  is_active    boolean not null default true,
+  org_id       uuid not null references public.organisations(id) on delete cascade,
+  email        text,
+  -- Added by 0004_pending_invites.sql.
+  accepted_at  timestamptz
 );
 comment on table public.profiles is 'Application profile for each auth user. role drives all RLS decisions.';
+comment on column public.profiles.accepted_at is 'Mirrors auth.users.email_confirmed_at (see tg_sync_profile_accepted_at). Null means the invite has not been accepted / no password has been set yet.';
 
 -- ---------------------------------------------------------------------------
 -- locations — geofenced sites. org_id default attached later (needs
@@ -1004,6 +1007,24 @@ begin
   return new;
 end; $function$;
 
+-- Added by 0004_pending_invites.sql. sync_profile_email is AFTER UPDATE OF
+-- email specifically, so it never fires when only email_confirmed_at
+-- changes — this is a separate trigger/function pair rather than an
+-- extension of that one.
+create or replace function public.tg_sync_profile_accepted_at()
+ returns trigger
+ language plpgsql
+ security definer
+ set search_path to ''
+as $function$
+begin
+  update public.profiles set accepted_at = new.email_confirmed_at where id = new.id;
+  return new;
+end; $function$;
+
+-- Updated by 0004_pending_invites.sql to also carry email_confirmed_at
+-- through, so an account already confirmed at creation (e.g. one made
+-- directly in the dashboard) is not wrongly marked pending.
 create or replace function public.tg_handle_new_user()
  returns trigger
  language plpgsql
@@ -1018,13 +1039,14 @@ begin
     (select id from public.organisations where slug = 'org-1')
   );
 
-  insert into public.profiles (id, org_id, email, full_name, first_name)
+  insert into public.profiles (id, org_id, email, full_name, first_name, accepted_at)
   values (
     new.id,
     v_org,
     new.email,
     new.raw_user_meta_data ->> 'full_name',
-    new.raw_user_meta_data ->> 'first_name'
+    new.raw_user_meta_data ->> 'first_name',
+    new.email_confirmed_at
   )
   on conflict (id) do nothing;
   return new;
@@ -1366,6 +1388,8 @@ alter table public.task_comments            alter column org_id set default publ
 -- auth.users — Supabase-managed table; these are this project's additions.
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.tg_handle_new_user();
 create trigger sync_profile_email after update of email on auth.users for each row execute function public.tg_sync_profile_email();
+-- Added by 0004_pending_invites.sql.
+create trigger sync_profile_accepted_at after update of email_confirmed_at on auth.users for each row execute function public.tg_sync_profile_accepted_at();
 
 create trigger protect_profile_role before update on public.profiles for each row execute function public.tg_protect_profile_role();
 create trigger set_updated_at before update on public.profiles for each row execute function public.tg_set_updated_at();
