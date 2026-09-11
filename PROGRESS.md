@@ -18,14 +18,15 @@ permissions rebuild (2b), full schema baseline dumped to
 `supabase/migrations/0001_baseline.sql` (2c). The repo is now the source
 of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. SMTP with a verified domain — **the current blocker.** Supabase's
-   built-in mailer caps at a few emails an hour, nowhere near enough for
-   60 staff, and has now blocked invite testing twice.
-2. Invited staff appear in the staff list before they have accepted the
-   invite or set a password. Should show as pending, or not appear until
-   the account is active.
-3. Note in CLAUDE.md: the Supabase Site URL setting has to be saved with
-   the `https://` prefix, or it is treated as a relative path.
+1. Verify the Pending-invite UI on a real device — badge, Resend
+   control, and the scheduler/task/swap-picker exclusion were all pushed
+   2026-09-11 but not yet visually verified.
+2. Point `app.kitescheduling.com` at the Cloudflare Worker/Pages
+   deployment and update the Supabase Site URL / redirect URLs to match
+   (remember: the Site URL has to be saved with the `https://` prefix,
+   or it is treated as a relative path — still needs its own note added
+   to CLAUDE.md, see "Known broken" below).
+3. Then Phase 3 hardening.
 4. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
@@ -55,9 +56,10 @@ since grown well past the original spec — see the log below.
 - The purged-photo fallback in Task History — see "Next up" above.
 - Hardcoded Supabase credentials in `src/supabaseClient.js` — workaround
   for a Bolt bug, must move to environment variables
-- SMTP not set up — see "Next up" above, now the blocker.
-- Invited staff show in the staff list before their invite is accepted —
-  see "Next up" above.
+- CLAUDE.md still needs the note that the Supabase Site URL has to be
+  saved with the `https://` prefix — see "Next up" above.
+- Pending-invite UI (badge, Resend, picker exclusion) pushed but not yet
+  visually verified — see "Next up" above.
 - MapTiler key not domain-restricted
 - `LiveMap` `DEFAULT_CENTER` is hardcoded to Essex — should derive from
   the org's own locations
@@ -68,6 +70,31 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-11
+- **SMTP live**: Resend, on the `kitescheduling.com` domain, sending from
+  `hello@kitescheduling.com`. Invites now actually deliver — the
+  long-standing blocker (Supabase's built-in mailer capped at a few
+  emails an hour) is cleared. Known wrinkle: a brand-new sending domain
+  lands in spam until its reputation builds, so early invites may need
+  telling people to check there.
+- **Hosting confirmed on Cloudflare.**
+- **`profiles.accepted_at`** (`0004_pending_invites.sql`) run and
+  verified: mirrors `auth.users.email_confirmed_at`, so the app can tell
+  a genuinely-active account from one that has never accepted its
+  invite.
+- Pushed the app side of pending invites: a muted "Pending" badge and a
+  Resend control in `StaffManager` (re-POSTs to the `invite-staff` Edge
+  Function for that email), the section header now reading "N staff, M
+  pending" instead of one lumped count, and exclusion of anyone with a
+  null `accepted_at` from the scheduler's Add-shift staff picker, task
+  assignment, and swap targets — nobody can work a shift they cannot
+  sign in for. **Not yet visually verified** — see "Next up".
+- **`0001_baseline.sql` is now frozen as of 2026-09-09.** It had drifted
+  into being kept "current" across the role_at_clock_in, notify-capability,
+  and pending-invites migrations; reverted that and marked it frozen in
+  both the file header and CLAUDE.md — every change from here on lives
+  only in its own later numbered migration.
 
 ### 2026-09-09 (even later)
 - **`role_at_clock_in`**: the payroll report grouped hours by a person's
