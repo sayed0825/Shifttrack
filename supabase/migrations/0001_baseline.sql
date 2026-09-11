@@ -39,6 +39,14 @@
 -- files in supabase/migrations, committed to the repo, and then run
 -- manually in the SQL Editor. See CLAUDE.md. Never make a schema change
 -- that exists only in Supabase again.
+--
+-- This file is FROZEN as of 2026-09-09 and must not be edited again. A
+-- snapshot that is kept perpetually current is a snapshot of nothing, and
+-- running this file followed by 0002 onward against an empty database
+-- would double-apply anything folded back in here. Every schema change
+-- since 2026-09-09 — including ones that touch a table, function, or
+-- trigger defined below — lives only in its own later numbered migration
+-- (0002, 0003, ...), layered on top of this file, never edited into it.
 -- ============================================================================
 
 
@@ -90,20 +98,17 @@ create table public.roles (
 -- roles), matched against roles.name at read time by is_admin()/is_manager().
 -- ---------------------------------------------------------------------------
 create table public.profiles (
-  id           uuid primary key references auth.users(id) on delete cascade,
-  full_name    text,
-  first_name   text,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now(),
-  role         text default 'Employee'::text,
-  is_active    boolean not null default true,
-  org_id       uuid not null references public.organisations(id) on delete cascade,
-  email        text,
-  -- Added by 0004_pending_invites.sql.
-  accepted_at  timestamptz
+  id          uuid primary key references auth.users(id) on delete cascade,
+  full_name   text,
+  first_name  text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  role        text default 'Employee'::text,
+  is_active   boolean not null default true,
+  org_id      uuid not null references public.organisations(id) on delete cascade,
+  email       text
 );
 comment on table public.profiles is 'Application profile for each auth user. role drives all RLS decisions.';
-comment on column public.profiles.accepted_at is 'Mirrors auth.users.email_confirmed_at (see tg_sync_profile_accepted_at). Null means the invite has not been accepted / no password has been set yet.';
 
 -- ---------------------------------------------------------------------------
 -- locations — geofenced sites. org_id default attached later (needs
@@ -184,7 +189,6 @@ create table public.time_logs (
   constraint time_logs_time_order check (clock_out is null or clock_out > clock_in)
 );
 comment on column public.time_logs.is_geofenced_valid is 'True when the clock-in coordinates fell within the location geofence.';
-comment on column public.time_logs.role_at_clock_in is 'The role held at clock-in, set on insert (see 0002_role_at_clock_in.sql). Payroll reporting groups by this rather than a profile''s current role, so a promotion does not rewrite which role earned past hours.';
 
 -- ---------------------------------------------------------------------------
 -- live_locations — single latest ping per user; clients UPSERT on user_id
@@ -655,10 +659,6 @@ begin
 end;
 $function$;
 
--- Fixed by 0003_manager_notify_capability.sql: originally compared
--- p.role to the literal 'Manager', stale since that role was renamed
--- Administrator — matched nobody, so these notifications went out to no
--- one. Below is the corrected, capability-flag version.
 create or replace function public.notify_org_managers(p_org_id uuid, p_type text, p_title text, p_body text)
  returns void
  language sql
@@ -668,8 +668,7 @@ as $function$
   insert into public.notifications (user_id, org_id, type, title, body)
   select p.id, p_org_id, p_type, p_title, p_body
   from public.profiles p
-  join public.roles r on r.org_id = p.org_id and r.name = p.role
-  where p.org_id = p_org_id and r.can_manage and p.is_active;
+  where p.org_id = p_org_id and p.role = 'Manager' and p.is_active;
 $function$;
 
 create or replace function public.notify_location_managers(p_org_id uuid, p_location_id uuid, p_type text, p_title text, p_body text)
@@ -1007,24 +1006,6 @@ begin
   return new;
 end; $function$;
 
--- Added by 0004_pending_invites.sql. sync_profile_email is AFTER UPDATE OF
--- email specifically, so it never fires when only email_confirmed_at
--- changes — this is a separate trigger/function pair rather than an
--- extension of that one.
-create or replace function public.tg_sync_profile_accepted_at()
- returns trigger
- language plpgsql
- security definer
- set search_path to ''
-as $function$
-begin
-  update public.profiles set accepted_at = new.email_confirmed_at where id = new.id;
-  return new;
-end; $function$;
-
--- Updated by 0004_pending_invites.sql to also carry email_confirmed_at
--- through, so an account already confirmed at creation (e.g. one made
--- directly in the dashboard) is not wrongly marked pending.
 create or replace function public.tg_handle_new_user()
  returns trigger
  language plpgsql
@@ -1039,14 +1020,13 @@ begin
     (select id from public.organisations where slug = 'org-1')
   );
 
-  insert into public.profiles (id, org_id, email, full_name, first_name, accepted_at)
+  insert into public.profiles (id, org_id, email, full_name, first_name)
   values (
     new.id,
     v_org,
     new.email,
     new.raw_user_meta_data ->> 'full_name',
-    new.raw_user_meta_data ->> 'first_name',
-    new.email_confirmed_at
+    new.raw_user_meta_data ->> 'first_name'
   )
   on conflict (id) do nothing;
   return new;
@@ -1273,10 +1253,6 @@ begin
   return new;
 end; $function$;
 
--- Fixed by 0003_manager_notify_capability.sql: v_sender_is_manager
--- originally compared p.role to the literal 'Manager', stale since that
--- role was renamed Administrator. Below is the corrected,
--- capability-flag version.
 create or replace function public.tg_task_comment_notify()
  returns trigger
  language plpgsql
@@ -1288,11 +1264,8 @@ declare
   v_sender_is_manager boolean;
 begin
   select * into v_task from public.tasks where id = new.task_id;
-
-  select coalesce(r.can_manage, false) into v_sender_is_manager
-  from public.profiles p
-  left join public.roles r on r.org_id = p.org_id and r.name = p.role
-  where p.id = new.sender_id;
+  select (p.role = 'Manager') into v_sender_is_manager
+  from public.profiles p where p.id = new.sender_id;
 
   if v_sender_is_manager then
     -- Prefer whoever did the work; fall back to the assignee.
@@ -1388,8 +1361,6 @@ alter table public.task_comments            alter column org_id set default publ
 -- auth.users — Supabase-managed table; these are this project's additions.
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.tg_handle_new_user();
 create trigger sync_profile_email after update of email on auth.users for each row execute function public.tg_sync_profile_email();
--- Added by 0004_pending_invites.sql.
-create trigger sync_profile_accepted_at after update of email_confirmed_at on auth.users for each row execute function public.tg_sync_profile_accepted_at();
 
 create trigger protect_profile_role before update on public.profiles for each row execute function public.tg_protect_profile_role();
 create trigger set_updated_at before update on public.profiles for each row execute function public.tg_set_updated_at();
