@@ -26,14 +26,14 @@ repo is now the source of truth for schema, not Supabase — see CLAUDE.md.
 2. **Phase 3 hardening, remaining**: Supabase Pro for point-in-time
    backups, UptimeRobot, an index review. The security review found 18
    issues (3 CRITICAL, 2 HIGH, 8 MEDIUM, 5 LOW/hygiene). Fixed so far
-   (migrations 0006–0008, see log below): both HIGH findings, one of the
-   three CRITICALs (profile_locations location-scoping), and both LOW
-   grant-hygiene findings. **Two CRITICALs are still open and unfixed**:
-   task-photos storage has no org/task scoping (any authenticated user on
-   the platform can read or overwrite another org's task photos), and
-   notify_org_managers()/notify_location_managers() are still callable by
-   anon with arbitrary org_id and attacker-controlled title/body — these
-   are the next priority, ahead of the remaining MEDIUM/LOW items.
+   (migrations 0006–0009, see log below): both HIGH findings, two of the
+   three CRITICALs (profile_locations location-scoping; task-photos
+   storage read/write scoped to whoever can see the task, via
+   can_see_task()), and both LOW grant-hygiene findings. **One CRITICAL
+   is still open and unfixed**: notify_org_managers()/
+   notify_location_managers() are still callable by anon with an
+   arbitrary org_id and attacker-controlled title/body — next priority,
+   ahead of the remaining MEDIUM/LOW items.
 3. **Phase 4 testing**, starting with automated RLS tests.
 4. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
@@ -77,6 +77,16 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-12 (later)
+- Migrations 0008 and 0009 run and verified via the MCP.
+  `proflocs_manager_all` now carries `manages_location(location_id)` in
+  both USING and CHECK (finding 3, CRITICAL — fixed). `task_photos_read`/
+  `task_photos_write` now resolve the object path back to a task and
+  gate on `can_see_task()`, regex-guarded before the uuid cast (finding
+  1, CRITICAL — fixed). Confirmed `authenticated` still has EXECUTE on
+  both `can_see_task` and `manages_location` post-migration, so neither
+  policy fails closed. One CRITICAL remains open — see "Next up" above.
 
 ### 2026-09-12
 - **Sentry error monitoring added** (`@sentry/react`, initialised in
