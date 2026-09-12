@@ -51,6 +51,8 @@ A Supabase MCP server is connected, **read-only**. Use it to check the actual li
 
 `src/supabaseClient.js` hardcodes the project URL and anon key rather than reading `import.meta.env` (a `.env` with `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` exists but isn't consumed). The anon key is safe to expose by design; RLS policies (see migrations) are what actually restrict access.
 
+Sentry (`@sentry/react`) is initialised in `src/main.tsx`, reading `VITE_SENTRY_DSN` from the environment — the one place this app actually does consume a `.env` value. Session replay is deliberately never enabled (this app shows payroll data, employee locations and manager notes on screen); tracing runs at a 10% sample rate. `src/lib/sentryScrub.ts`'s `beforeSend`/`beforeSendTransaction` strips emails, names, coordinates and `employee_notes` content from every event before it leaves the browser — extend its `SENSITIVE_KEYS` set if a new column carrying similar data gets added elsewhere. `VITE_SENTRY_DSN` must also be set in Cloudflare Pages' build environment variables, or production builds silently run with error reporting disabled.
+
 `supabase/functions/invite-staff` is the one Edge Function: it verifies the caller is a Manager, uses the service-role key to invite a user by email (`auth.admin.inviteUserByEmail`), upserts their `profiles` row and `profile_locations`. This is the only place a service-role key is used — everything else goes through the anon key + RLS.
 
 ### Employee-side flow (`EmployeeDashboard.tsx` + helpers)

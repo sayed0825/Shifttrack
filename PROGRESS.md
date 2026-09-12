@@ -19,16 +19,29 @@ permissions rebuild (2b), full schema baseline dumped to
 custom domain + pending-invite handling all live and verified (2d). The
 repo is now the source of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. **Phase 3 hardening**: Supabase Pro for point-in-time backups, Sentry
-   for error alerts, UptimeRobot, an index review, and a security review.
-2. **Phase 4 testing**, starting with automated RLS tests.
-3. Real-device check of the branding + visual redesign pass pushed
+1. **Set `VITE_SENTRY_DSN` in Cloudflare Pages' build environment
+   variables** — Sentry is wired up in the app (see log below) but the
+   production build has no DSN until this is set there; until then it
+   builds with error reporting silently disabled.
+2. **Phase 3 hardening, remaining**: Supabase Pro for point-in-time
+   backups, UptimeRobot, an index review. The security review found 18
+   issues (3 CRITICAL, 2 HIGH, 8 MEDIUM, 5 LOW/hygiene). Fixed so far
+   (migrations 0006–0008, see log below): both HIGH findings, one of the
+   three CRITICALs (profile_locations location-scoping), and both LOW
+   grant-hygiene findings. **Two CRITICALs are still open and unfixed**:
+   task-photos storage has no org/task scoping (any authenticated user on
+   the platform can read or overwrite another org's task photos), and
+   notify_org_managers()/notify_location_managers() are still callable by
+   anon with arbitrary org_id and attacker-controlled title/body — these
+   are the next priority, ahead of the remaining MEDIUM/LOW items.
+3. **Phase 4 testing**, starting with automated RLS tests.
+4. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-4. Wire `organisations.primary_colour` into actual theming — it's
+5. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-5. The purged-photo fallback in Task History (a task older than the
+6. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised. Needs a task old enough
    for the purge to have already run against it.
@@ -64,6 +77,35 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-12
+- **Sentry error monitoring added** (`@sentry/react`, initialised in
+  `src/main.tsx` before the app renders). `environment` set from
+  `import.meta.env.MODE`; tracing at a 10% sample rate; session replay
+  deliberately never enabled — this app shows payroll data, employee
+  locations and manager notes on screen, and replay records what a user
+  does. `src/lib/sentryScrub.ts` strips emails, names, coordinates, and
+  `employee_notes` content out of every event (`beforeSend` and
+  `beforeSendTransaction`) before it leaves the browser, since Sentry is
+  a third party. The whole app is wrapped in `Sentry.ErrorBoundary`
+  (`src/components/ErrorFallback.tsx`) showing a plain "Something went
+  wrong, please reload" instead of a blank screen on a crash. DSN reads
+  from `VITE_SENTRY_DSN` (`.env`, gitignored; `.env.example` added to
+  document it) — **still needs setting in Cloudflare Pages' build
+  environment variables**, or the production build has no DSN and runs
+  with error reporting silently disabled.
+- **Phase 3 security review fixes** (migrations 0006–0008, run against
+  the live database; not separately logged when they landed, so
+  recorded here): the two HIGH findings (five pg_cron-only functions
+  reachable by anon with no permission check, destructively in two
+  cases; org-logos storage writes with no org scoping) and one of three
+  CRITICALs (profile_locations writes with no manages_location() check
+  at all, letting a location-scoped Manager reassign any staff member to
+  any location) are fixed. A least-privilege grants pass
+  (migration 0007) also revoked anon/PUBLIC execute from every internal
+  helper function that had it, down to authenticated-only where the app
+  or an RLS policy actually needs it, or no grant at all where neither
+  does. Two CRITICALs remain open — see "Next up" above.
 
 ### 2026-09-11 (later)
 Phase 2d complete — the infrastructure and pending-invite loose ends
