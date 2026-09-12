@@ -16,18 +16,26 @@ Newest entries at the top.
 **Phase:** 3 complete — capability-flag permissions and full schema
 baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
 pending-invite handling (2d), and now the Phase 3 security review, Sentry,
-and UptimeRobot (3). Supabase Pro (point-in-time backups) is deliberately
-deferred until ready to pay — see "Known broken" below. The repo is now
-the source of truth for schema, not Supabase — see CLAUDE.md.
+and UptimeRobot (3). Migrations 0015 (orders/cleanup) and 0016
+(App Store account-deletion compliance) are run and verified. Supabase
+Pro (point-in-time backups) is deliberately deferred until ready to pay —
+see "Known broken" below. The repo is now the source of truth for
+schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. **Phase 4 testing**, starting with automated RLS tests.
-2. Real-device check of the branding + visual redesign pass pushed
+1. **Delete Account UI** in Profile settings — `delete_my_account()` RPC
+   is live (migration 0016); the app side has not been built yet. Needs
+   a section visible to every role stating plainly, before confirmation,
+   that login and personal details are removed permanently, worked hours
+   are retained for payroll/legal reasons, and the action cannot be
+   undone, gated behind typing `DELETE` to confirm.
+2. **Phase 4 testing**, starting with automated RLS tests.
+3. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-3. Wire `organisations.primary_colour` into actual theming — it's
+4. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-4. The purged-photo fallback in Task History (a task older than the
+5. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised. Needs a task old enough
    for the purge to have already run against it.
@@ -78,6 +86,49 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-12 (still later)
+Migrations 0015 and 0016 run and verified.
+
+- **0015 — orders and cleanup**: `roles.tracks_orders` (capability flag,
+  set true for each org's Driver role, so a renamed role keeps the
+  behaviour); `time_logs.orders_count`/`extra_miles`, nullable, driving a
+  "still owes an entry" prompt for anyone whose role tracks orders; a new
+  `time_logs_update_own_orders` RLS policy letting a driver set only
+  those two columns on their own already-closed log — a `to_jsonb()` row
+  diff in `WITH CHECK` locks every other column, including `clock_in`/
+  `clock_out` themselves, so this can't be used to edit anything else.
+  Every location's `radius_meters` set to 75m. The unused `Employee` role
+  deleted — confirmed zero profiles held it, in any org, before including
+  the delete.
+- **0016 — delete_my_account() for App Store compliance**: Apple requires
+  in-app account deletion, not just deactivation. Anonymises the caller's
+  profile (name/email cleared, `is_active` false) rather than deleting
+  it, deletes their own `live_locations`/`profile_locations`/
+  `notifications` rows and any still-pending requests, then deletes
+  `auth.users` — leaving `time_logs`, `shifts`, and `employee_notes`
+  intact under payroll/legal retention. Refuses if the caller is their
+  org's only administrator, so the org can't be orphaned.
+  - Found while writing it: `profiles.id` had `references auth.users(id)
+    on delete cascade` — deleting `auth.users` would have immediately
+    cascade-deleted the just-anonymised profile row too, and everything
+    under it. Dropped that FK entirely; `profiles.id` no longer requires
+    a live `auth.users` row. `delete_staff_member()` relied on exactly
+    that cascade to wipe a profile, so it now explicitly deletes
+    `public.profiles` itself first — same end result, no longer
+    dependent on the FK just removed.
+  - Also found, fixed in the same migration: `overtime_claims.decided_by`
+    and `unavailability_requests.decided_by` referenced `profiles(id)`
+    with no `ON DELETE` action at all, which would have blocked deleting
+    any profile that had ever approved/denied one of those, independent
+    of the account-deletion work above. Both changed to `ON DELETE SET
+    NULL` — the decision stands as a historical record once the manager
+    who made it is gone. Audited all 24 FKs referencing `profiles(id)`
+    for the same gap: these two were the only ones; everything else
+    already correctly used `SET NULL` (every `created_by`/
+    `assigned_user_id`/`reviewed_by`/`completed_by`-shaped column, plus
+    `employee_notes.manager_id`/`deleted_by`) or `CASCADE` (only where
+    the row is meaningless without the person it belongs to).
 
 ### 2026-09-12 (yet later)
 **Phase 3 security review complete.** 18 findings total; 11 fixed
