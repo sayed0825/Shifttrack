@@ -13,35 +13,21 @@ Newest entries at the top.
 
 ## Current state
 
-**Phase:** 2d complete — multi-tenancy schema and RLS (2a), capability-flag
-permissions rebuild (2b), full schema baseline dumped to
-`supabase/migrations/0001_baseline.sql` (2c), SMTP + Cloudflare hosting +
-custom domain + pending-invite handling all live and verified (2d). The
-repo is now the source of truth for schema, not Supabase — see CLAUDE.md.
+**Phase:** 3 complete — capability-flag permissions and full schema
+baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
+pending-invite handling (2d), and now the Phase 3 security review, Sentry,
+and UptimeRobot (3). Supabase Pro (point-in-time backups) is deliberately
+deferred until ready to pay — see "Known broken" below. The repo is now
+the source of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. **Set `VITE_SENTRY_DSN` in Cloudflare Pages' build environment
-   variables** — Sentry is wired up in the app (see log below) but the
-   production build has no DSN until this is set there; until then it
-   builds with error reporting silently disabled.
-2. **Phase 3 hardening, remaining**: Supabase Pro for point-in-time
-   backups, UptimeRobot, an index review. The security review found 18
-   issues (3 CRITICAL, 2 HIGH, 8 MEDIUM, 5 LOW/hygiene). Fixed so far
-   (migrations 0006–0009, see log below): both HIGH findings, two of the
-   three CRITICALs (profile_locations location-scoping; task-photos
-   storage read/write scoped to whoever can see the task, via
-   can_see_task()), and both LOW grant-hygiene findings. **One CRITICAL
-   is still open and unfixed**: notify_org_managers()/
-   notify_location_managers() are still callable by anon with an
-   arbitrary org_id and attacker-controlled title/body — next priority,
-   ahead of the remaining MEDIUM/LOW items.
-3. **Phase 4 testing**, starting with automated RLS tests.
-4. Real-device check of the branding + visual redesign pass pushed
+1. **Phase 4 testing**, starting with automated RLS tests.
+2. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-5. Wire `organisations.primary_colour` into actual theming — it's
+3. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-6. The purged-photo fallback in Task History (a task older than the
+4. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised. Needs a task old enough
    for the purge to have already run against it.
@@ -67,6 +53,21 @@ since grown well past the original spec — see the log below.
 - A new sending domain (kitescheduling.com, via Resend) lands in spam
   until its reputation builds — tell staff to check junk during
   onboarding until that settles.
+- No point-in-time backups — Supabase Pro deferred until ready to pay.
+- Phase 3 security review: 7 of 18 findings still open, none urgent
+  (all CRITICAL/HIGH, and 4 of 8 MEDIUM, are fixed — see log below).
+  MEDIUM: `is_clocked_in(p_user_id)` has no org scoping on the argument
+  (an authenticated user in any org can learn whether an arbitrary user
+  id elsewhere on the platform is clocked in); `proflocs_select_org`
+  lets every org member read the full org-wide staff↔location map, not
+  just their own; `time_logs` and `tasks` are each missing an index for
+  a real query pattern (org-wide date-range reporting; the
+  `notify_overdue_tasks()` cron scan) and will increasingly sequential-
+  scan as they grow. LOW/hygiene: `profiles_select_own` is dead policy
+  (fully subsumed by `profiles_select_org`); a duplicate index on
+  `notifications` (`idx_notifications_user_created` and
+  `notifications_user_created_idx`); 11 of 17 tables have RLS enabled
+  but not forced.
 - MapTiler key not domain-restricted
 - `LiveMap` `DEFAULT_CENTER` is hardcoded to Essex — should derive from
   the org's own locations
@@ -77,6 +78,44 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-12 (yet later)
+**Phase 3 security review complete.** 18 findings total; 11 fixed
+(all 3 CRITICAL, both HIGH, 4 of 8 MEDIUM) across migrations 0006–0014,
+run and verified via the MCP at each step:
+
+- Anon-callable destructive `pg_cron`-only functions
+  (`purge_expired_open_shifts`, `purge_old_task_photos`, plus
+  `generate_task_instances`/`sweep_open_shifts`/`notify_overdue_tasks`,
+  same class) — revoked from anon/authenticated/PUBLIC entirely, guarded
+  against ever being callable outside `pg_cron` (0006, guard corrected in
+  0010 after discovering `current_user` doesn't work inside a
+  `SECURITY DEFINER` function — `session_user` does).
+- `task-photos` storage had no org/task scoping at all — any
+  authenticated user on the platform could read or overwrite another
+  org's task-completion photos (0009).
+- `profile_locations` writes had no `manages_location()` check — a
+  privilege-escalation path, since a location-scoped Manager could
+  reassign an out-of-scope employee onto a location they do manage and
+  thereby gain `manages_person()` over them (0008).
+- `notify_org_managers()`/`notify_location_managers()` — anon-callable
+  with an arbitrary org_id and attacker-controlled title/body, no check
+  at all (0010).
+- `swaps_manager_all` now requires managing both sides of a swap, not
+  just the requester (0011); `notif_manager_insert` now requires
+  managing the notification's recipient (0012); `can_see_task()`'s
+  manager branch now requires `manages_location()`, not bare
+  `is_manager()` — this also fixes `task_comments`, which had the same
+  gap all along (0014).
+- **Composite foreign keys** now tie `location_id` to its own `org_id`
+  on `profile_locations`, `shifts`, `tasks` and `task_templates` (0013)
+  — cross-tenant separation no longer rests on RLS alone, which can be
+  bypassed by any `SECURITY DEFINER` function. Confirmed zero existing
+  rows violated this before the migration ran.
+
+Sentry and UptimeRobot are live. Supabase Pro (point-in-time backups)
+deliberately deferred until ready to pay. 7 findings remain open, none
+urgent — see "Known broken" above.
 
 ### 2026-09-12 (later)
 - Migrations 0008 and 0009 run and verified via the MCP.
