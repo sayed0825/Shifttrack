@@ -26,12 +26,40 @@
 -- same end result as before, no longer dependent on the FK just
 -- dropped.
 --
--- Not fixed here, found in passing: unavailability_requests.decided_by
--- and overtime_claims.decided_by reference profiles(id) with no ON
--- DELETE action (default NO ACTION) -- deleting a profiles row that
--- ever approved/denied a request as a manager already fails today,
--- before this migration, independent of anything here.
+-- Also fixed here: unavailability_requests.decided_by and
+-- overtime_claims.decided_by referenced profiles(id) with no ON DELETE
+-- action at all (default NO ACTION) -- deleting a profiles row that
+-- ever approved/denied a request as a manager already failed today,
+-- before this migration, independent of everything above. Both changed
+-- to SET NULL: the decision stands as a historical record even once the
+-- manager who made it is gone, the same choice already made for every
+-- comparable "who acted on this" column (shifts.created_by,
+-- tasks.created_by/reviewed_by/completed_by, task_templates.created_by,
+-- employee_notes.manager_id/deleted_by all already SET NULL).
+--
+-- Checked every other foreign key referencing profiles(id) in the
+-- schema (24 total) for the same missing-action problem: these two were
+-- the only ones. Every other one already has an explicit action, and
+-- each already reads as the deliberate right choice -- SET NULL
+-- wherever the record should survive without its author (every
+-- created_by/assigned_user_id/reviewed_by/completed_by column, plus
+-- employee_notes.manager_id/deleted_by), CASCADE only where the row is
+-- meaningless without the person it belongs to (time_logs, shifts to
+-- one's own live_locations/profile_locations/notifications, shift_swaps
+-- and shift_applications by the requesting/target user, overtime_claims
+-- and unavailability_requests by the requesting user, employee_notes by
+-- the employee it is about, task_comments by its sender).
 -- ============================================================================
+
+alter table public.overtime_claims
+  drop constraint overtime_claims_decided_by_fkey,
+  add constraint overtime_claims_decided_by_fkey
+    foreign key (decided_by) references public.profiles (id) on delete set null;
+
+alter table public.unavailability_requests
+  drop constraint unavailability_requests_decided_by_fkey,
+  add constraint unavailability_requests_decided_by_fkey
+    foreign key (decided_by) references public.profiles (id) on delete set null;
 
 alter table public.profiles drop constraint profiles_id_fkey;
 
