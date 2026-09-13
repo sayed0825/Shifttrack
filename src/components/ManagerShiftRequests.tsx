@@ -78,7 +78,9 @@ export default function ManagerShiftRequests({
   const [startTime, setStartTime] = useState('17:00');
   const [endTime, setEndTime] = useState('22:00');
 
-  const { roles, loading: rolesLoading, error: rolesError } = useRoles();
+  const { roles: allRoles, loading: rolesLoading, error: rolesError } = useRoles();
+  // You cannot post an open shift for an administrator.
+  const roles = useMemo(() => allRoles.filter((r) => !r.is_admin), [allRoles]);
 
   useEffect(() => {
     if (roles.length > 0 && !role) {

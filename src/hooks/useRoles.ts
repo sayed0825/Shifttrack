@@ -9,6 +9,7 @@ export interface Role {
   sort_order: number;
   is_protected: boolean;
   can_view_map: boolean;
+  is_admin: boolean;
 }
 
 interface RolesState {
@@ -56,7 +57,7 @@ async function load(): Promise<void> {
     setState({ error: null });
     const { data, error: queryError } = await supabase
       .from('roles')
-      .select('id, org_id, name, sort_order, is_protected, can_view_map')
+      .select('id, org_id, name, sort_order, is_protected, can_view_map, is_admin')
       .order('sort_order', { ascending: true })
       .returns<Role[]>();
 
