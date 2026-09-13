@@ -19,7 +19,6 @@ import {
   Radio,
   RefreshCw,
   User,
-  UserCog,
   X,
 } from 'lucide-react';
 import {
@@ -41,6 +40,7 @@ import EmployeeShiftActions from './EmployeeShiftActions';
 import EmployeeTasks from './EmployeeTasks';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeClaim from './OvertimeClaim';
+import ProfileSettingsCard from './ProfileSettingsCard';
 import type { Profile } from './ManagerDashboard';
 
 type TabId = 'clock' | 'schedule' | 'shifts' | 'tasks' | 'timesheets' | 'more';
@@ -1057,200 +1057,8 @@ function MyTimesheetsTab(): ReactNode {
 // ===========================================================================
 
 function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
-  const [firstName, setFirstName] = useState(profile.first_name ?? '');
-  const [fullName, setFullName] = useState(profile.full_name ?? '');
-  const [email, setEmail] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [profileSaved, setProfileSaved] = useState(false);
-  const [profileFault, setProfileFault] = useState<string | null>(null);
-
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [passwordSaved, setPasswordSaved] = useState(false);
-  const [passwordFault, setPasswordFault] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.email) setEmail(user.email);
-    })();
-  }, []);
-
-  const handleSaveProfile = async () => {
-    setSavingProfile(true);
-    setProfileSaved(false);
-    setProfileFault(null);
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ first_name: firstName.trim() || null, full_name: fullName.trim() || null })
-      .eq('id', profile.id);
-
-    if (profileError) {
-      setProfileFault('Could not save profile. Try again.');
-      setSavingProfile(false);
-      return;
-    }
-
-    if (email) {
-      const { error: emailError } = await supabase.auth.updateUser({ email });
-      if (emailError) {
-        setProfileFault('Profile saved, but email could not be updated.');
-        setSavingProfile(false);
-        return;
-      }
-    }
-
-    setProfileSaved(true);
-    setSavingProfile(false);
-  };
-
-  const handleChangePassword = async () => {
-    setPasswordFault(null);
-    if (newPassword.length < 6) {
-      setPasswordFault('Password must be at least 6 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordFault('Passwords do not match.');
-      return;
-    }
-
-    setSavingPassword(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setSavingPassword(false);
-
-    if (error) {
-      setPasswordFault(error.message);
-    } else {
-      setPasswordSaved(true);
-      setNewPassword('');
-      setConfirmPassword('');
-    }
-  };
-
   const sections: MoreTabSection[] = [
-    {
-      id: 'profile',
-      title: 'Profile settings',
-      icon: User,
-      render: () => (
-        <div className="rounded-2xl border border-border bg-surface p-5">
-          <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="emp-first-name" className="block text-sm font-medium text-ink">
-                First name
-              </label>
-              <input
-                id="emp-first-name"
-                type="text"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              />
-            </div>
-            <div>
-              <label htmlFor="emp-full-name" className="block text-sm font-medium text-ink">
-                Full name
-              </label>
-              <input
-                id="emp-full-name"
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="emp-email" className="block text-sm font-medium text-ink">
-              Email
-            </label>
-            <input
-              id="emp-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
-          <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm">
-            <span className="text-ink/60">Role:</span>
-            <span className="font-medium text-ink">{roleLabel(profile.role)}</span>
-          </div>
-
-          {profileFault && (
-            <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{profileFault}</p>
-          )}
-          {profileSaved && !profileFault && (
-            <p className="text-sm text-success">Profile saved.</p>
-          )}
-
-          <button
-            type="button"
-            onClick={() => void handleSaveProfile()}
-            disabled={savingProfile}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
-          >
-            {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
-            Save profile
-          </button>
-          </div>
-        </div>
-      ),
-    },
-    {
-      id: 'password',
-      title: 'Change password',
-      icon: UserCog,
-      render: () => (
-        <div className="rounded-2xl border border-border bg-surface p-5">
-          <div className="space-y-3">
-          <div>
-            <label htmlFor="emp-new-password" className="block text-sm font-medium text-ink">
-              New password
-            </label>
-            <input
-              id="emp-new-password"
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
-          <div>
-            <label htmlFor="emp-confirm-password" className="block text-sm font-medium text-ink">
-              Confirm new password
-            </label>
-            <input
-              id="emp-confirm-password"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
-          {passwordFault && (
-            <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{passwordFault}</p>
-          )}
-          {passwordSaved && (
-            <p className="text-sm text-success">Password updated.</p>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleChangePassword()}
-            disabled={savingPassword || !newPassword}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
-          >
-            {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
-            Update password
-          </button>
-          </div>
-        </div>
-      ),
-    },
+    { id: 'profile', title: 'Profile settings', icon: User, render: () => <ProfileSettingsCard profile={profile} /> },
     { id: 'overtime', title: 'Overtime', icon: Clock, render: () => <OvertimeClaim profileId={profile.id} /> },
     { id: 'unavailability', title: 'Unavailability', icon: CalendarX, render: () => <UnavailabilityCard profileId={profile.id} /> },
   ];

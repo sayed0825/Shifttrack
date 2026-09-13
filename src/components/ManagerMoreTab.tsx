@@ -21,7 +21,6 @@ import {
   Trash2,
   Upload,
   User,
-  UserCog,
   UserPlus,
   Users,
   X,
@@ -36,6 +35,7 @@ import InviteStaffModal from './InviteStaffModal';
 import ManagerShiftRequests from './ManagerShiftRequests';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeApprovals from './OvertimeApprovals';
+import ProfileSettingsCard from './ProfileSettingsCard';
 import StaffManager from './StaffManager';
 import type { Profile } from './ManagerDashboard';
 
@@ -113,9 +113,21 @@ export default function ManagerMoreTab({
     })();
   }, []);
 
+  // Staff's own sub-list. Roles and the grace period are Administrator-only —
+  // same gating as Locations/Branding below, just relocated: a location-scoped
+  // Manager doesn't see these rows at all, not just a blocked drill-in.
+  const staffSections: MoreTabSection[] = [
+    { id: 'staff-list', title: 'Staff list', icon: Users, render: () => <StaffManager locations={locations} viewerId={viewerId} /> },
+    ...(isAdmin ? [{ id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> }] : []),
+    { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
+    ...(isAdmin
+      ? [{ id: 'grace-period', title: 'Late clock-in grace period', icon: Timer, render: () => <GracePeriodCard /> }]
+      : []),
+  ];
+
   const sections: MoreTabSection[] = [
     { id: 'profile', title: 'Profile settings', icon: User, render: () => <ProfileSettingsCard profile={profile} /> },
-    { id: 'password', title: 'Change password', icon: UserCog, render: () => <ChangePasswordCard /> },
+    { id: 'staff', title: 'Staff', icon: Users, sections: staffSections },
     {
       id: 'unavailability',
       title: 'Unavailability requests',
@@ -124,21 +136,19 @@ export default function ManagerMoreTab({
       render: () => <UnavailabilityApprovalsCard managerId={profile.id} />,
     },
     {
-      id: 'shift-requests',
-      title: 'Shift requests',
-      icon: ArrowLeftRight,
-      count: pendingBadge(shiftRequestCount),
-      render: () => <ManagerShiftRequests locations={locations} />,
-    },
-    {
       id: 'overtime',
       title: 'Overtime claims',
       icon: Clock,
       count: pendingBadge(overtimeCount),
       render: () => <OvertimeApprovals />,
     },
-    { id: 'staff', title: 'Staff', icon: Users, render: () => <StaffManager locations={locations} viewerId={viewerId} /> },
-    { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
+    {
+      id: 'shift-requests',
+      title: 'Shift requests',
+      icon: ArrowLeftRight,
+      count: pendingBadge(shiftRequestCount),
+      render: () => <ManagerShiftRequests locations={locations} />,
+    },
     // Admin-only: a location-scoped Manager doesn't see these rows at all,
     // not just a blocked drill-in. Locations belongs here too — editing a
     // geofence changes where staff can clock in, which isn't a location
@@ -146,210 +156,12 @@ export default function ManagerMoreTab({
     ...(isAdmin
       ? [
           { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
-          { id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> },
           { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
-          {
-            id: 'grace-period',
-            title: 'Late clock-in grace period',
-            icon: Timer,
-            render: () => <GracePeriodCard />,
-          },
         ]
       : []),
   ];
 
   return <MoreTabSections sections={sections} />;
-}
-
-// ===========================================================================
-// Section 1 — Profile settings
-// ===========================================================================
-
-function ProfileSettingsCard({ profile }: { profile: Profile }): ReactNode {
-  const [firstName, setFirstName] = useState(profile.first_name ?? '');
-  const [fullName, setFullName] = useState(profile.full_name ?? '');
-  const [email, setEmail] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [fault, setFault] = useState<string | null>(null);
-
-  useEffect(() => {
-    void (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.email) setEmail(user.email);
-    })();
-  }, []);
-
-  const handleSave = async () => {
-    setSaving(true);
-    setSaved(false);
-    setFault(null);
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ first_name: firstName.trim() || null, full_name: fullName.trim() || null })
-      .eq('id', profile.id);
-
-    if (profileError) {
-      setFault('Could not save profile. Try again.');
-      setSaving(false);
-      return;
-    }
-
-    if (email) {
-      const { error: emailError } = await supabase.auth.updateUser({ email });
-      if (emailError) {
-        setFault('Profile saved, but email could not be updated.');
-        setSaving(false);
-        return;
-      }
-    }
-
-    setSaved(true);
-    setSaving(false);
-  };
-
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="more-first-name" className="block text-sm font-medium text-ink">First name</label>
-            <input
-              id="more-first-name"
-              type="text"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
-          <div>
-            <label htmlFor="more-full-name" className="block text-sm font-medium text-ink">Full name</label>
-            <input
-              id="more-full-name"
-              type="text"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
-        </div>
-        <div>
-          <label htmlFor="more-email" className="block text-sm font-medium text-ink">Email</label>
-          <input
-            id="more-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          />
-        </div>
-        <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm">
-          <span className="text-ink/60">Role:</span>
-          <span className="font-medium text-ink">
-            {profile.role ?? <span className="italic text-ink/50">No role</span>}
-          </span>
-        </div>
-
-        {fault && (
-          <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>
-        )}
-        {saved && !fault && (
-          <p className="text-sm text-success">Profile saved.</p>
-        )}
-
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
-          Save profile
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ===========================================================================
-// Section 2 — Change password
-// ===========================================================================
-
-function ChangePasswordCard(): ReactNode {
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [fault, setFault] = useState<string | null>(null);
-
-  const handleChange = async () => {
-    setFault(null);
-    if (newPassword.length < 6) {
-      setFault('Password must be at least 6 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setFault('Passwords do not match.');
-      return;
-    }
-
-    setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setSaving(false);
-
-    if (error) {
-      setFault(error.message);
-    } else {
-      setSaved(true);
-      setNewPassword('');
-      setConfirmPassword('');
-    }
-  };
-
-  return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <div className="space-y-3">
-        <div>
-          <label htmlFor="more-new-password" className="block text-sm font-medium text-ink">New password</label>
-          <input
-            id="more-new-password"
-            type="password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          />
-        </div>
-        <div>
-          <label htmlFor="more-confirm-password" className="block text-sm font-medium text-ink">Confirm new password</label>
-          <input
-            id="more-confirm-password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-          />
-        </div>
-
-        {fault && (
-          <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>
-        )}
-        {saved && (
-          <p className="text-sm text-success">Password updated.</p>
-        )}
-
-        <button
-          type="button"
-          onClick={() => void handleChange()}
-          disabled={saving || !newPassword}
-          className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
-          Update password
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // ===========================================================================
