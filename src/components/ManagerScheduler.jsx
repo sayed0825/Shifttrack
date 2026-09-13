@@ -159,6 +159,10 @@ export default function ManagerScheduler() {
     () => locations.filter((l) => managedLocationSet.has(l.id)),
     [locations, managedLocationSet]
   );
+  const locationNameById = useMemo(
+    () => new Map(locations.map((l) => [l.id, l.name])),
+    [locations]
+  );
 
   const weekDays = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)),
@@ -418,7 +422,9 @@ export default function ManagerScheduler() {
                             <p className="truncate text-sm font-medium text-ink">
                               {shift.profiles?.full_name ?? shift.profiles?.first_name ?? 'Unassigned'}
                             </p>
-                            <p className="text-xs text-ink/60">{shift.profiles?.role ?? '—'}</p>
+                            <p className="truncate text-xs text-ink/60">
+                              {shift.profiles?.role ?? '—'} · {locationNameById.get(shift.location_id) ?? 'No location'}
+                            </p>
                           </div>
                           <span className="shrink-0 text-xs tabular-nums text-ink/80">
                             {localHhmm(shift.start_time)} – {localHhmm(shift.end_time)}
