@@ -41,9 +41,13 @@ import EmployeeTasks from './EmployeeTasks';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeClaim from './OvertimeClaim';
 import ProfileSettingsCard from './ProfileSettingsCard';
+import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import type { Profile } from './ManagerDashboard';
 
 type TabId = 'clock' | 'schedule' | 'shifts' | 'tasks' | 'timesheets' | 'more';
+
+const TAB_STORAGE_KEY = 'shifttrack:employee-tab';
+const TAB_IDS: readonly TabId[] = ['clock', 'schedule', 'shifts', 'tasks', 'timesheets', 'more'];
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof Clock }> = [
   { id: 'clock', label: 'Clock-In', Icon: LogIn },
@@ -169,10 +173,14 @@ function formatDistance(meters: number | null | undefined): string {
 // ===========================================================================
 
 export default function EmployeeDashboard({ profile }: { profile: Profile }): ReactNode {
-  const [tab, setTab] = useState<TabId>('clock');
+  const [tab, setTab] = useState<TabId>(() => loadPersistedTab(TAB_STORAGE_KEY, TAB_IDS) ?? 'clock');
   const { roles } = useRoles();
   const { organisation } = useOrganisation();
   const canViewMap = roles.find((r) => r.name === profile.role)?.can_view_map ?? false;
+
+  useEffect(() => {
+    savePersistedTab(TAB_STORAGE_KEY, tab);
+  }, [tab]);
 
   if (profile.is_active === false) {
     return (

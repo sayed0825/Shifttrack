@@ -34,6 +34,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
+import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
@@ -119,6 +120,9 @@ export interface TimesheetSummary {
 type TabId = 'map' | 'scheduler' | 'tasks' | 'timesheets' | 'more';
 type RoleFilter = 'all' | string;
 type LocationFilter = 'all' | string;
+
+const TAB_STORAGE_KEY = 'shifttrack:manager-tab';
+const TAB_IDS: readonly TabId[] = ['map', 'scheduler', 'tasks', 'timesheets', 'more'];
 
 const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof MapPin }> = [
   { id: 'map', label: 'Live map', Icon: MapPin },
@@ -288,7 +292,7 @@ async function runAutoClockOut(viewer: Profile, canManage: boolean): Promise<num
 export default function ManagerDashboard(): ReactNode {
   const [viewer, setViewer] = useState<Profile | null>(null);
   const [locations, setLocations] = useState<LocationRow[]>([]);
-  const [tab, setTab] = useState<TabId>('map');
+  const [tab, setTab] = useState<TabId>(() => loadPersistedTab(TAB_STORAGE_KEY, TAB_IDS) ?? 'map');
   const [weekStart, setWeekStart] = useState<Date>(() => startOfWeek(new Date()));
   const [locationFilter, setLocationFilter] = useState<LocationFilter>('all');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -343,7 +347,6 @@ export default function ManagerDashboard(): ReactNode {
         const profile: Profile = profileResult.data;
         setViewer(profile);
         setLocations(locationResult.data ?? []);
-        setTab(canManage ? 'map' : 'timesheets');
 
         if (!sweepRan.current) {
           sweepRan.current = true;
@@ -367,6 +370,10 @@ export default function ManagerDashboard(): ReactNode {
   }, []);
 
   const visibleTabs = useMemo(() => (canManage ? TABS : TABS.filter((entry) => entry.id === 'timesheets')), [canManage]);
+
+  useEffect(() => {
+    savePersistedTab(TAB_STORAGE_KEY, tab);
+  }, [tab]);
 
   if (booting) {
     return (
