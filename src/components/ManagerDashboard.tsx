@@ -433,11 +433,12 @@ export default function ManagerDashboard(): ReactNode {
             {tab === 'timesheets' && <WeekSelector weekStart={weekStart} onChange={setWeekStart} />}
 
             {/* The scheduler has its own location + role filter, so these are
-                map and timesheets only. */}
+                map and timesheets only. The map only ever shows drivers, so
+                a role filter there would have nothing to do — location-only. */}
             {(tab === 'map' || tab === 'timesheets') && (
               <FilterButton
                 variant="inverted"
-                activeCount={(locationFilter !== 'all' ? 1 : 0) + (roleFilter !== 'all' ? 1 : 0)}
+                activeCount={(locationFilter !== 'all' ? 1 : 0) + (tab === 'timesheets' && roleFilter !== 'all' ? 1 : 0)}
               >
                 <FilterSelect
                   id="dash-location-filter"
@@ -452,18 +453,20 @@ export default function ManagerDashboard(): ReactNode {
                   ]}
                 />
 
-                <FilterSelect
-                  id="dash-role-filter"
-                  label="Role"
-                  value={roleFilter}
-                  onChange={setRoleFilter}
-                  Icon={Filter}
-                  fullWidth
-                  options={[
-                    { value: 'all', label: 'All roles' },
-                    ...roles.map((r) => ({ value: r.name, label: r.name })),
-                  ]}
-                />
+                {tab === 'timesheets' && (
+                  <FilterSelect
+                    id="dash-role-filter"
+                    label="Role"
+                    value={roleFilter}
+                    onChange={setRoleFilter}
+                    Icon={Filter}
+                    fullWidth
+                    options={[
+                      { value: 'all', label: 'All roles' },
+                      ...roles.map((r) => ({ value: r.name, label: r.name })),
+                    ]}
+                  />
+                )}
               </FilterButton>
             )}
 
@@ -505,7 +508,8 @@ export default function ManagerDashboard(): ReactNode {
             <div className="relative z-0 min-h-[24rem] isolate">
               <LiveMap locationFilter={locationFilter} />
             </div>
-            <RosterSidebar locationFilter={locationFilter} roleFilter={roleFilter} />
+            {/* No role filter control on this tab (see header) — always unfiltered by role. */}
+            <RosterSidebar locationFilter={locationFilter} roleFilter="all" />
           </div>
         )}
 
