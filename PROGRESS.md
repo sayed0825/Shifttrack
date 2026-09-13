@@ -15,27 +15,32 @@ Newest entries at the top.
 
 **Phase:** 3 complete — capability-flag permissions and full schema
 baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
-pending-invite handling (2d), and now the Phase 3 security review, Sentry,
+pending-invite handling (2d), and the Phase 3 security review, Sentry,
 and UptimeRobot (3). Migrations 0015 (orders/cleanup) and 0016
-(App Store account-deletion compliance) are run and verified. Supabase
-Pro (point-in-time backups) is deliberately deferred until ready to pay —
-see "Known broken" below. The repo is now the source of truth for
-schema, not Supabase — see CLAUDE.md.
+(App Store account-deletion compliance) are run and verified. **Week 1
+UI batch (10 items) complete and verified on the live site** — see log
+below. Supabase Pro (point-in-time backups) is deliberately deferred
+until ready to pay — see "Known broken" below. The repo is now the
+source of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:**
-1. **Delete Account UI** in Profile settings — `delete_my_account()` RPC
-   is live (migration 0016); the app side has not been built yet. Needs
-   a section visible to every role stating plainly, before confirmation,
-   that login and personal details are removed permanently, worked hours
-   are retained for payroll/legal reasons, and the action cannot be
-   undone, gated behind typing `DELETE` to confirm.
-2. **Phase 4 testing**, starting with automated RLS tests.
-3. Real-device check of the branding + visual redesign pass pushed
+1. **Add-shift availability warnings** — filter the Add-shift staff
+   picker by role, split into available/unavailable with a reason shown
+   for each unavailable person, and a proceed-anyway prompt rather than
+   a hard block. Must also cover recurring shifts (a person available for
+   the anchor date can still be unavailable for a later occurrence).
+2. **Driver order/mileage capture on clock-out** — prompt for
+   orders/extra-miles on clock-out for any role with `tracks_orders`
+   (schema already live, migration 0015), a timesheet column showing it,
+   and CSV export in `PayrollReportModal`.
+3. Then, in parallel: the Capacitor build (iOS/Android) and **Phase 4
+   testing**, starting with automated RLS tests.
+4. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-4. Wire `organisations.primary_colour` into actual theming — it's
+5. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-5. The purged-photo fallback in Task History (a task older than the
+6. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised. Needs a task old enough
    for the purge to have already run against it.
@@ -86,6 +91,36 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-14
+**Week 1 UI batch (10 items) complete and verified on the live site**:
+
+- **Delete Account** (App Store blocker) — Profile settings section in
+  both dashboards calling `delete_my_account()` (migration 0016),
+  stating plainly that login/personal details are erased while worked
+  hours are retained for payroll/legal reasons, gated behind typing
+  `DELETE`. Verified it correctly refuses when the caller is the only
+  administrator in their org.
+- Map role filter removed (location filter kept) — the live map only
+  ever shows drivers, so the role filter had nothing to do there.
+- Weekly hours removed from the staff list.
+- Staff submenu with two-level navigation (`MoreTabSections` now
+  supports a second nav level: Staff opens staff list / roles / invite
+  staff / grace period, Back returns one level at a time).
+- Change password folded into Profile settings instead of its own row.
+- Admin More list reordered: profile settings, staff, unavailability
+  requests, overtime claims, shift requests, locations, branding.
+- Administrator roles excluded from the open-shift required-role
+  picker — you cannot post an open shift for an administrator.
+- Active tab persisted to `sessionStorage` in both dashboards — fixes
+  iOS Safari resetting to the first tab when the backgrounded page's JS
+  context gets dropped and reloaded.
+- Location name shown on each shift in the manager schedule view
+  (previously staff name and role only).
+
+Still outstanding from the original list, not part of this batch:
+add-shift availability warnings and driver order/mileage capture on
+clock-out — see "Next up" above.
 
 ### 2026-09-12 (still later)
 Migrations 0015 and 0016 run and verified.
