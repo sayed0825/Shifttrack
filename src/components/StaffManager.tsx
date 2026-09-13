@@ -25,24 +25,6 @@ interface UpcomingShift {
   start_time: string;
 }
 
-function startOfWeek(date: Date): Date {
-  const r = new Date(date);
-  r.setHours(0, 0, 0, 0);
-  r.setDate(r.getDate() - ((r.getDay() + 6) % 7));
-  return r;
-}
-
-function addDays(date: Date, days: number): Date {
-  const r = new Date(date);
-  r.setDate(r.getDate() + days);
-  return r;
-}
-
-function formatHours(hours: number): string {
-  const whole = Math.floor(hours);
-  return `${whole}h ${String(Math.round((hours - whole) * 60)).padStart(2, '0')}m`;
-}
-
 function shortDate(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
@@ -56,7 +38,6 @@ export default function StaffManager({
 }): ReactNode {
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [assigned, setAssigned] = useState<Record<string, { id: string; isPrimary: boolean }[]>>({});
-  const [hours, setHours] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
   const [locationFilter, setLocationFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -78,19 +59,12 @@ export default function StaffManager({
   const [resentId, setResentId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const weekStart = startOfWeek(new Date());
-
-    const [staffRes, locRes, logRes] = await Promise.all([
+    const [staffRes, locRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, first_name, full_name, email, role, is_active, accepted_at')
         .order('full_name'),
       supabase.from('profile_locations').select('profile_id, location_id, is_primary'),
-      supabase
-        .from('time_logs')
-        .select('user_id, clock_in, clock_out')
-        .gte('clock_in', weekStart.toISOString())
-        .lt('clock_in', addDays(weekStart, 7).toISOString()),
     ]);
 
     setStaff((staffRes.data ?? []) as StaffRow[]);
@@ -100,14 +74,6 @@ export default function StaffManager({
       (locMap[row.profile_id] ??= []).push({ id: row.location_id, isPrimary: row.is_primary });
     }
     setAssigned(locMap);
-
-    const hourMap: Record<string, number> = {};
-    for (const log of logRes.data ?? []) {
-      const end = log.clock_out ? new Date(log.clock_out).getTime() : Date.now();
-      hourMap[log.user_id] =
-        (hourMap[log.user_id] ?? 0) + Math.max(0, (end - new Date(log.clock_in).getTime()) / 3_600_000);
-    }
-    setHours(hourMap);
     setLoading(false);
   }, []);
 
@@ -419,12 +385,6 @@ export default function StaffManager({
                           {!person.is_active && ' · deactivated'}
                           {person.is_active && isPending && ' · invite not yet accepted'}
                         </span>
-                      </span>
-                      <span className="shrink-0 text-right">
-                        <span className="block text-sm font-medium tabular-nums text-ink">
-                          {formatHours(hours[person.id] ?? 0)}
-                        </span>
-                        <span className="block text-xs text-ink/50">this week</span>
                       </span>
                     </button>
 
