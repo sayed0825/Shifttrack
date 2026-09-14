@@ -27,13 +27,14 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
-import { useRoles } from '../hooks/useRoles';
+import { useRoles, type Role } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { usePermissions } from '../hooks/usePermissions';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
+import { logNeedsOrdersReport, milesCellText, ordersCellText, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
@@ -96,6 +97,9 @@ export interface TimeLogRow {
   clock_out: string | null;
   notes: string | null;
   profiles: Profile | null;
+  orders_count?: number | null;
+  extra_miles?: number | null;
+  role_at_clock_in?: string | null;
 }
 
 export interface RosterEntry {
@@ -532,6 +536,7 @@ export default function ManagerDashboard(): ReactNode {
             locationFilter={locationFilter}
             roleFilter={roleFilter}
             locations={locations}
+            roles={roles}
           />
         )}
 
@@ -800,6 +805,7 @@ function TimesheetsPanel({
   locationFilter,
   roleFilter,
   locations,
+  roles,
 }: {
   viewer: Profile;
   canManage: boolean;
@@ -807,6 +813,7 @@ function TimesheetsPanel({
   locationFilter: LocationFilter;
   roleFilter: RoleFilter;
   locations: LocationRow[];
+  roles: Role[];
 }): ReactNode {
   const [logs, setLogs] = useState<TimeLogWithShift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -815,6 +822,8 @@ function TimesheetsPanel({
   const [reportOpen, setReportOpen] = useState(false);
 
   const { graceMinutes } = useLateGrace();
+  const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
+  const showOrdersColumns = orgTracksOrders(roles);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -823,7 +832,7 @@ function TimesheetsPanel({
     let query = supabase
       .from('time_logs')
       .select(
-        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, profiles:user_id ( id, first_name, full_name, role ), shifts:shift_id ( start_time )'
+        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, extra_miles, role_at_clock_in, profiles:user_id ( id, first_name, full_name, role ), shifts:shift_id ( start_time )'
       )
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
@@ -949,6 +958,7 @@ function TimesheetsPanel({
             {summary.logs.map((log) => {
               const shiftStart = log.shifts?.start_time ?? null;
               const late = isLate(log.clock_in, shiftStart, graceMinutes);
+              const needsReport = logNeedsOrdersReport(log.role_at_clock_in, summary.profile?.role, trackedRoleNames);
 
               return (
                 <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-2.5">
@@ -967,6 +977,13 @@ function TimesheetsPanel({
                       <span className="mt-1 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
                       </span>
+                    )}
+                    {needsReport && (
+                      <p className={`mt-1 text-xs ${log.orders_count == null ? 'font-medium text-warning' : 'text-ink/60'}`}>
+                        {ordersCellText(needsReport, log.orders_count ?? null)}
+                        {log.orders_count != null &&
+                          ` · ${milesCellText(needsReport, log.orders_count, log.extra_miles ?? null)} mi`}
+                      </p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
@@ -995,6 +1012,8 @@ function TimesheetsPanel({
                 <th scope="col">Day</th>
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
+                {showOrdersColumns && <th scope="col">Orders</th>}
+                {showOrdersColumns && <th scope="col">Extra miles</th>}
                 <th scope="col">Hours</th>
                 {canManage && <th scope="col">Actions</th>}
               </tr>
@@ -1003,6 +1022,7 @@ function TimesheetsPanel({
               {summary.logs.map((log) => {
                 const shiftStart = log.shifts?.start_time ?? null;
                 const late = isLate(log.clock_in, shiftStart, graceMinutes);
+                const needsReport = logNeedsOrdersReport(log.role_at_clock_in, summary.profile?.role, trackedRoleNames);
 
                 return (
                   <tr key={log.id}>
@@ -1029,6 +1049,20 @@ function TimesheetsPanel({
                       <span className="text-success">open</span>
                     )}
                   </td>
+                  {showOrdersColumns && (
+                    <td
+                      className={`px-2 py-2.5 tabular-nums ${
+                        needsReport && log.orders_count == null ? 'font-medium text-warning' : 'text-ink'
+                      }`}
+                    >
+                      {ordersCellText(needsReport, log.orders_count ?? null)}
+                    </td>
+                  )}
+                  {showOrdersColumns && (
+                    <td className="px-2 py-2.5 tabular-nums text-ink">
+                      {milesCellText(needsReport, log.orders_count ?? null, log.extra_miles ?? null)}
+                    </td>
+                  )}
                   <td className="px-2 py-2.5 text-right tabular-nums font-medium text-ink">
                     {formatHours(durationHours(log.clock_in, log.clock_out))}
                   </td>

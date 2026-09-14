@@ -33,6 +33,14 @@ import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
+import {
+  logNeedsOrdersReport,
+  milesCellText,
+  ordersCellText,
+  ORDERS_NOT_YET_REPORTED,
+  orgTracksOrders,
+  tracksOrdersRoleNames,
+} from '../lib/tracksOrders';
 import { friendlyError } from '../lib/friendlyError';
 import LiveMap from './LiveMap';
 import NotificationBell from './NotificationBell';
@@ -90,6 +98,9 @@ interface TimeLogRow {
   clock_out: string | null;
   notes: string | null;
   location_id: string | null;
+  orders_count?: number | null;
+  extra_miles?: number | null;
+  role_at_clock_in?: string | null;
 }
 
 /** A time log joined with its shift's start_time, for late detection. */
@@ -269,7 +280,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
           {tab === 'tasks' && <EmployeeTasks profile={profile} />}
-          {tab === 'timesheets' && <MyTimesheetsTab />}
+          {tab === 'timesheets' && <MyTimesheetsTab profile={profile} />}
           {tab === 'more' && <EmployeeMoreTab profile={profile} />}
         </div>
       </main>
@@ -930,11 +941,14 @@ function MyScheduleTab(): ReactNode {
 // Tab 3 — My Timesheets
 // ===========================================================================
 
-function MyTimesheetsTab(): ReactNode {
+function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [logs, setLogs] = useState<TimeLogWithShift[]>([]);
   const [loading, setLoading] = useState(true);
   const { graceMinutes } = useLateGrace();
+  const { roles } = useRoles();
+  const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
+  const showOrdersColumns = orgTracksOrders(roles);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -943,7 +957,9 @@ function MyTimesheetsTab(): ReactNode {
 
     const { data } = await supabase
       .from('time_logs')
-      .select('id, clock_in, clock_out, notes, location_id, shifts:shift_id ( start_time )')
+      .select(
+        'id, clock_in, clock_out, notes, location_id, orders_count, extra_miles, role_at_clock_in, shifts:shift_id ( start_time )'
+      )
       .eq('user_id', user.id)
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
@@ -1021,6 +1037,7 @@ function MyTimesheetsTab(): ReactNode {
             {logs.map((log) => {
               const shiftStart = log.shifts?.start_time ?? null;
               const late = isLate(log.clock_in, shiftStart, graceMinutes);
+              const needsReport = logNeedsOrdersReport(log.role_at_clock_in, profile.role, trackedRoleNames);
 
               return (
                 <li key={log.id} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -1034,6 +1051,13 @@ function MyTimesheetsTab(): ReactNode {
                       <span className="mt-1 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
                       </span>
+                    )}
+                    {needsReport && (
+                      <p className="mt-1 text-xs text-ink/60">
+                        {log.orders_count == null
+                          ? ORDERS_NOT_YET_REPORTED
+                          : `${log.orders_count} orders · ${milesCellText(needsReport, log.orders_count, log.extra_miles ?? null)} mi`}
+                      </p>
                     )}
                   </div>
                   <span className="shrink-0 text-sm font-medium tabular-nums text-ink">
@@ -1050,6 +1074,8 @@ function MyTimesheetsTab(): ReactNode {
                 <th scope="col">Day</th>
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
+                {showOrdersColumns && <th scope="col">Orders</th>}
+                {showOrdersColumns && <th scope="col">Extra miles</th>}
                 <th scope="col">Hours</th>
               </tr>
             </thead>
@@ -1057,6 +1083,7 @@ function MyTimesheetsTab(): ReactNode {
               {logs.map((log) => {
                 const shiftStart = log.shifts?.start_time ?? null;
                 const late = isLate(log.clock_in, shiftStart, graceMinutes);
+                const needsReport = logNeedsOrdersReport(log.role_at_clock_in, profile.role, trackedRoleNames);
 
                 return (
                   <tr key={log.id}>
@@ -1072,6 +1099,16 @@ function MyTimesheetsTab(): ReactNode {
                     <td className="px-2 py-3 tabular-nums text-ink">
                       {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
                     </td>
+                    {showOrdersColumns && (
+                      <td className="px-2 py-3 tabular-nums text-ink">
+                        {ordersCellText(needsReport, log.orders_count ?? null)}
+                      </td>
+                    )}
+                    {showOrdersColumns && (
+                      <td className="px-2 py-3 tabular-nums text-ink">
+                        {milesCellText(needsReport, log.orders_count ?? null, log.extra_miles ?? null)}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right tabular-nums font-medium text-ink">
                       {formatHours(durationHours(log.clock_in, log.clock_out))}
                     </td>

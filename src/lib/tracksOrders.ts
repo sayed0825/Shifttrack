@@ -25,3 +25,33 @@ export function logNeedsOrdersReport(
   const role = roleAtClockIn ?? currentRole;
   return role != null && trackedRoleNames.has(role);
 }
+
+export const ORDERS_NOT_YET_REPORTED = 'Orders not yet reported';
+
+/**
+ * Display text for a timesheet row's Orders cell. `orders_count` is only
+ * ever null on a log that still owes a report — once OwedOrdersModal
+ * submits one it's a required field — so null there, for a log whose role
+ * tracks orders, means exactly that: still owed, not zero.
+ */
+export function ordersCellText(needsReport: boolean, ordersCount: number | null): string {
+  if (!needsReport) return '—';
+  if (ordersCount == null) return ORDERS_NOT_YET_REPORTED;
+  return String(ordersCount);
+}
+
+/**
+ * Display text for a timesheet row's mileage cell. Unlike orders_count,
+ * extra_miles stays optional even once reported, so a null value there
+ * only reads as "still owed" while the Orders cell also says so.
+ */
+export function milesCellText(
+  needsReport: boolean,
+  ordersCount: number | null,
+  extraMiles: number | null
+): string {
+  if (!needsReport) return '—';
+  if (ordersCount == null) return ORDERS_NOT_YET_REPORTED;
+  if (extraMiles == null) return '—';
+  return extraMiles.toFixed(1);
+}
