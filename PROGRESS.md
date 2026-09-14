@@ -17,15 +17,12 @@ Newest entries at the top.
 baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
 pending-invite handling (2d), and the Phase 3 security review, Sentry,
 and UptimeRobot (3). Migrations 0015 (orders/cleanup), 0016 (App Store
-account-deletion compliance), and 0017 (time_logs recursion fix) are
-run and verified. **0018 (`staff_wage_rates`) and 0019
-(`organisations.order_rate`) are written and pushed but NOT YET
-CONFIRMED RUN** — the Supabase MCP connection is read-only and cannot
-apply them; see "Known broken" below. **Week 1 UI batch (10 items)
-complete and verified on the live site**, and this session's batch —
-add-shift availability warnings, driver order capture, wage rates,
-per-order pay, and a full responsiveness pass — is also done, pending
-those two migrations actually being run — see log below. Supabase Pro
+account-deletion compliance), 0017 (time_logs recursion fix), 0018
+(`staff_wage_rates`), and 0019 (`organisations.order_rate`) are all run
+and verified. **Week 1 UI batch (10 items) complete and verified on
+the live site**, and this session's batch — add-shift availability
+warnings, driver order capture, wage rates, per-order pay, and a full
+responsiveness pass — is also done and verified. Supabase Pro
 (point-in-time backups) is deliberately deferred until ready to pay —
 see "Known broken" below. The repo is now the
 source of truth for schema, not Supabase — see CLAUDE.md.
@@ -60,14 +57,6 @@ and approval all verified against real data). Manager task tooling has
 since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
-- Migrations 0018 (`staff_wage_rates`) and 0019
-  (`organisations.order_rate`) are written and pushed to the repo but
-  NOT CONFIRMED RUN against the live database — the Supabase MCP
-  connection is read-only and cannot apply them. Until run manually via
-  the SQL Editor, the Pay section in StaffManager, the Cost/Total
-  columns in Timesheets and the payroll report, and the order-rate
-  setting in the admin More tab will all fail against a database
-  missing the table/column/function they depend on.
 - Branding (logo upload, org name, `useOrganisation`) and the visual
   redesign pass (design tokens, header bar, status colour, Archivo) are
   pushed but UNREVIEWED — no real device check yet. Also: the
@@ -137,11 +126,12 @@ This session, on top of the Week 1 UI batch below:
   both Timesheets and the payroll CSV, editable by a manager. **Mileage
   was removed at the user's request** — `time_logs.extra_miles` stays
   in the schema, unused, rather than being migrated out.
-- **Wage rates** (migration 0018, `staff_wage_rates` — **NOT YET
-  CONFIRMED RUN**, see "Known broken" above) — effective-dated per
-  `(profile_id, effective_from)` rather than a column on `profiles`, so
-  a pay rise doesn't rewrite the cost of a past shift and a backdated
-  rise still recalculates correctly from its own start date. RLS is
+- **Wage rates** (migration 0018, `staff_wage_rates` — run and
+  verified: the Pay section 404'd until this was applied, then wage
+  history loaded correctly) — effective-dated per `(profile_id,
+  effective_from)` rather than a column on `profiles`, so a pay rise
+  doesn't rewrite the cost of a past shift and a backdated rise still
+  recalculates correctly from its own start date. RLS is
   `is_admin()`-only for every operation, no policy at all for anyone
   else; `wage_rate_at()` is the one sanctioned read path elsewhere in
   the schema — SECURITY DEFINER, but returns null unless the caller is
@@ -150,18 +140,20 @@ This session, on top of the Week 1 UI batch below:
   section on StaffManager's expanded staff row (admin only); a Cost
   column in Timesheets and the payroll report (hours × the rate
   effective on that shift's date, admin only).
-- **Per-order pay** (migration 0019, `organisations.order_rate` —
-  **NOT YET CONFIRMED RUN**, see "Known broken" above) — per-org, not
-  hardcoded, same access model as the existing `late_grace_minutes`
-  column (any org member reads, only an admin writes). A setting for it
-  sits next to the grace period in the admin More tab. The payroll
-  report gets a Total column per row (hours × wage rate + orders ×
-  order rate) and a per-person total for the whole selected period,
-  keyed by profile id rather than display name. The order rate used is
-  snapshotted at generation time and printed into both the on-screen
-  header and the CSV, so an exported file stays correct and
-  self-explanatory even after the setting later changes. Cost and
-  Total are both individually selectable in the CSV column picker.
+- **Per-order pay** (migration 0019, `organisations.order_rate` — run
+  and verified: the order-rate setting appeared in the admin More tab
+  after this was applied, and the Total column calculates correctly in
+  both the on-screen report and the CSV) — per-org, not hardcoded, same
+  access model as the existing `late_grace_minutes` column (any org
+  member reads, only an admin writes). A setting for it sits next to
+  the grace period in the admin More tab. The payroll report gets a
+  Total column per row (hours × wage rate + orders × order rate) and a
+  per-person total for the whole selected period, keyed by profile id
+  rather than display name. The order rate used is snapshotted at
+  generation time and printed into both the on-screen header and the
+  CSV, so an exported file stays correct and self-explanatory even
+  after the setting later changes. Cost and Total are both individually
+  selectable in the CSV column picker.
 - **Responsiveness pass** across everything built since the last one
   (the two-level More submenu, task history, the payroll report and
   its column picker, the pay section, the orders modal, add-shift
