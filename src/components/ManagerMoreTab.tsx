@@ -5,6 +5,7 @@ import {
   ArrowDown,
   ArrowLeftRight,
   ArrowUp,
+  Banknote,
   CalendarX,
   Check,
   Clock,
@@ -29,6 +30,7 @@ import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { useLateGrace } from '../hooks/useLateGrace';
+import { useOrderRate } from '../hooks/useOrderRate';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { friendlyError } from '../lib/friendlyError';
 import InviteStaffModal from './InviteStaffModal';
@@ -121,7 +123,10 @@ export default function ManagerMoreTab({
     ...(isAdmin ? [{ id: 'roles', title: 'Roles', icon: Tags, render: () => <RolesCard /> }] : []),
     { id: 'invite', title: 'Invite staff', icon: UserPlus, render: () => <InviteStaffCard /> },
     ...(isAdmin
-      ? [{ id: 'grace-period', title: 'Late clock-in grace period', icon: Timer, render: () => <GracePeriodCard /> }]
+      ? [
+          { id: 'grace-period', title: 'Late clock-in grace period', icon: Timer, render: () => <GracePeriodCard /> },
+          { id: 'order-rate', title: 'Pay per completed order', icon: Banknote, render: () => <OrderRateCard /> },
+        ]
       : []),
   ];
 
@@ -1250,6 +1255,102 @@ function GracePeriodCard(): ReactNode {
 
       {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
       {saved && !fault && <p className="mt-3 text-sm text-success">Grace period saved.</p>}
+    </div>
+  );
+}
+
+// ===========================================================================
+// Section 9 — Pay per completed order
+// ===========================================================================
+
+function OrderRateCard(): ReactNode {
+  const { orderRate, loading, refresh } = useOrderRate();
+  const [value, setValue] = useState('1.00');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [fault, setFault] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) setValue(orderRate.toFixed(2));
+  }, [loading, orderRate]);
+
+  const handleSave = async () => {
+    const rate = Number(value);
+    if (!Number.isFinite(rate) || rate < 0) {
+      setFault('Enter a valid amount, 0 or more.');
+      return;
+    }
+
+    setSaving(true);
+    setSaved(false);
+    setFault(null);
+
+    const { data: orgId, error: orgIdError } = await supabase.rpc('my_org_id');
+    if (orgIdError || !orgId) {
+      setFault('Could not determine your organisation.');
+      setSaving(false);
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from('organisations')
+      .update({ order_rate: Math.round(rate * 100) / 100 })
+      .eq('id', orgId);
+
+    if (updateError) {
+      setFault(friendlyError(updateError, 'Could not save the order rate.'));
+    } else {
+      setSaved(true);
+      await refresh();
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <p className="text-sm text-ink/60">
+        Pay per completed order — how much one completed order is worth. Used to calculate
+        order pay in the payroll report, alongside hourly wages.
+      </p>
+
+      {loading ? (
+        <div className="mt-4 flex items-center gap-2 text-sm text-ink/60">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          Loading…
+        </div>
+      ) : (
+        <div className="mt-4 flex items-end gap-3">
+          <div>
+            <label htmlFor="order-rate" className="block text-sm font-medium text-ink">
+              Pay per completed order (£)
+            </label>
+            <input
+              id="order-rate"
+              type="number"
+              min={0}
+              step={0.01}
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setSaved(false);
+              }}
+              className="mt-1.5 min-h-[44px] w-32 rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={saving}
+            className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
+            Save
+          </button>
+        </div>
+      )}
+
+      {fault && <p className="mt-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
+      {saved && !fault && <p className="mt-3 text-sm text-success">Order rate saved.</p>}
     </div>
   );
 }

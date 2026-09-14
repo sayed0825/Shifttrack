@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { usePermissions } from '../hooks/usePermissions';
+import { useOrderRate } from '../hooks/useOrderRate';
 import { orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import {
   WAGE_RATE_FIELDS,
@@ -30,6 +31,7 @@ interface ReportRow {
   location: string;
   role: string;
   name: string;
+  userId: string;
   hours: number;
   orders: number;
   // Sum of hours × the rate effective on each log's date. Stays 0 when the
@@ -37,9 +39,24 @@ interface ReportRow {
   // the same "missing rate contributes 0" choice in ManagerDashboard's
   // TimesheetsPanel.
   cost: number;
+  // cost + (orders × the org's order rate, captured at generation time —
+  // see reportOrderRate). Stays 0 for anyone but an Administrator.
+  total: number;
 }
 
-type ColumnKey = 'location' | 'role' | 'name' | 'hours' | 'orders' | 'cost';
+// A person's totals across every row for the whole selected period — not
+// just one location/role combination. Keyed by profile id (userId), not
+// display name, since two people can share a name.
+interface PersonTotal {
+  userId: string;
+  name: string;
+  hours: number;
+  orders: number;
+  cost: number;
+  total: number;
+}
+
+type ColumnKey = 'location' | 'role' | 'name' | 'hours' | 'orders' | 'cost' | 'total';
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
   location: 'Location',
@@ -48,7 +65,13 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   hours: 'Hours',
   orders: 'Orders',
   cost: 'Cost',
+  total: 'Total',
 };
+
+// Columns that make sense on a per-person summary — Location and Role don't,
+// since one person's total spans every location/role they worked in the
+// period.
+const PERSON_COLUMNS: ColumnKey[] = ['name', 'hours', 'orders', 'cost', 'total'];
 
 function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -82,6 +105,7 @@ export default function PayrollReportModal({
   const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
   const showOrdersColumns = orgTracksOrders(roles);
   const { isAdmin } = usePermissions();
+  const { orderRate } = useOrderRate();
   const { locationIds: managedLocationIds } = useManagedLocations();
   const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
   // Never offer a location the database would reject the viewer for
@@ -103,15 +127,20 @@ export default function PayrollReportModal({
   const [loading, setLoading] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [rows, setRows] = useState<ReportRow[] | null>(null);
+  const [personTotals, setPersonTotals] = useState<PersonTotal[] | null>(null);
+  // The order rate as it stood when this report was generated, so the
+  // figures stay correct even if the setting changes later — and so it can
+  // be printed into the report header/CSV, months later, self-explanatory.
+  const [reportOrderRate, setReportOrderRate] = useState<number | null>(null);
   const [excludedCount, setExcludedCount] = useState(0);
 
   // Which columns are available at all depends on the org (orders) and the
-  // viewer (cost, Administrator only) — cost is never even offered as an
-  // option to anyone else.
+  // viewer (cost/total, Administrator only) — neither is ever even offered
+  // as an option to anyone else.
   const availableColumns = useMemo<ColumnKey[]>(() => {
     const cols: ColumnKey[] = ['location', 'role', 'name', 'hours'];
     if (showOrdersColumns) cols.push('orders');
-    if (isAdmin) cols.push('cost');
+    if (isAdmin) cols.push('cost', 'total');
     return cols;
   }, [showOrdersColumns, isAdmin]);
   const [selectedColumns, setSelectedColumns] = useState<Set<ColumnKey>>(new Set());
@@ -175,6 +204,8 @@ export default function PayrollReportModal({
     setLoading(true);
     setFault(null);
     setRows(null);
+    setPersonTotals(null);
+    setReportOrderRate(null);
 
     // Rates are only ever fetched for an Administrator — staff_wage_rates
     // RLS would return nothing to anyone else, but this skips the request
@@ -203,6 +234,9 @@ export default function PayrollReportModal({
 
     const logs = data ?? [];
     const ratesByProfile = groupWageRatesByProfile(ratesResult.data ?? []);
+    // Snapshot the org's order rate at generation time — a later change to
+    // the setting must not silently rewrite an already-generated report.
+    const currentOrderRate = isAdmin ? orderRate : 0;
 
     // An open shift has no final duration and would understate or inflate
     // the total, so it's excluded — but silently dropping hours before
@@ -224,6 +258,8 @@ export default function PayrollReportModal({
     });
 
     const grouped = new Map<string, ReportRow>();
+    const personTotalsMap = new Map<string, PersonTotal>();
+
     for (const log of scoped) {
       const location = log.locations?.name ?? 'No location';
       const role = roleFor(log) ?? 'No role';
@@ -238,14 +274,37 @@ export default function PayrollReportModal({
       // happened. Missing rate contributes 0, same as an unset order count.
       const rate = isAdmin ? rateOnDate(ratesByProfile.get(log.user_id), localDateKeyFromIso(log.clock_in)) : null;
       const cost = rate === null ? 0 : rate * hours;
+      const orderPay = orders * currentOrderRate;
+      const rowTotal = cost + orderPay;
 
       const existing = grouped.get(key);
       if (existing) {
         existing.hours += hours;
         existing.orders += orders;
         existing.cost += cost;
+        existing.total += rowTotal;
       } else {
-        grouped.set(key, { location, role, name, hours, orders, cost });
+        grouped.set(key, { location, role, name, userId: log.user_id, hours, orders, cost, total: rowTotal });
+      }
+
+      // Across every row for this person in the period — not just this one
+      // location/role combination. Keyed by user_id, not name, since two
+      // people can share a display name.
+      if (isAdmin) {
+        const personExisting = personTotalsMap.get(log.user_id);
+        const personEntry: PersonTotal = personExisting ?? {
+          userId: log.user_id,
+          name,
+          hours: 0,
+          orders: 0,
+          cost: 0,
+          total: 0,
+        };
+        personEntry.hours += hours;
+        personEntry.orders += orders;
+        personEntry.cost += cost;
+        personEntry.total += rowTotal;
+        personTotalsMap.set(log.user_id, personEntry);
       }
     }
 
@@ -255,11 +314,18 @@ export default function PayrollReportModal({
           a.location.localeCompare(b.location) || a.role.localeCompare(b.role) || a.name.localeCompare(b.name)
       )
     );
+    setPersonTotals(
+      isAdmin
+        ? Array.from(personTotalsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+        : null
+    );
+    setReportOrderRate(isAdmin ? currentOrderRate : null);
   };
 
   const total = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.hours, 0), [rows]);
   const totalOrders = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.orders, 0), [rows]);
   const totalCost = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.cost, 0), [rows]);
+  const grandTotal = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.total, 0), [rows]);
 
   const downloadCsv = () => {
     if (!rows) return;
@@ -281,6 +347,8 @@ export default function PayrollReportModal({
           return trackedRoleNames.has(row.role) ? String(row.orders) : '';
         case 'cost':
           return row.cost.toFixed(2);
+        case 'total':
+          return row.total.toFixed(2);
       }
     };
     const totalFor = (col: ColumnKey): string => {
@@ -293,6 +361,8 @@ export default function PayrollReportModal({
           return String(totalOrders);
         case 'cost':
           return totalCost.toFixed(2);
+        case 'total':
+          return grandTotal.toFixed(2);
         default:
           return '';
       }
@@ -302,7 +372,44 @@ export default function PayrollReportModal({
     const rowLine = (row: ReportRow) => columns.map((col) => cellFor(row, col)).join(',');
     const totalLine = columns.map(totalFor).join(',');
 
-    const lines: string[] = [`${startDate},${endDate}`, '', header, ...rows.map(rowLine), totalLine];
+    const metaLines = [`${startDate},${endDate}`];
+    if (isAdmin && reportOrderRate !== null) {
+      metaLines.push(`Order rate per completed order,${reportOrderRate.toFixed(2)}`);
+    }
+
+    const lines: string[] = [...metaLines, '', header, ...rows.map(rowLine), totalLine];
+
+    // Per-person totals across the whole period, not just one row — a
+    // second table in the same file, using whichever of the same columns
+    // (minus Location/Role, which don't apply to a person spanning several)
+    // are selected.
+    if (isAdmin && personTotals && personTotals.length > 0) {
+      const personColumns = columns.filter((col): col is ColumnKey => PERSON_COLUMNS.includes(col));
+      if (personColumns.length > 0) {
+        const personCellFor = (person: PersonTotal, col: ColumnKey): string => {
+          switch (col) {
+            case 'name':
+              return csvField(person.name);
+            case 'hours':
+              return person.hours.toFixed(2);
+            case 'orders':
+              return String(person.orders);
+            case 'cost':
+              return person.cost.toFixed(2);
+            case 'total':
+              return person.total.toFixed(2);
+            default:
+              return '';
+          }
+        };
+        lines.push(
+          '',
+          'Per-person totals for this period',
+          personColumns.map((col) => COLUMN_LABELS[col]).join(','),
+          ...personTotals.map((person) => personColumns.map((col) => personCellFor(person, col)).join(','))
+        );
+      }
+    }
 
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -441,6 +548,15 @@ export default function PayrollReportModal({
             </p>
           )}
 
+          {/* Printed into the CSV too, so an exported file stays
+              self-explanatory months after the setting may have changed. */}
+          {rows && isAdmin && reportOrderRate !== null && (
+            <p className="rounded-lg bg-bg px-3 py-2 text-xs text-ink/60">
+              Cost and Total include order pay at {formatCurrencyAmount(reportOrderRate)} per completed
+              order — the rate in effect when this report was generated.
+            </p>
+          )}
+
           {rows &&
             (rows.length === 0 ? (
               <p className="text-sm text-ink/60">No completed time logs in this range for the selected filters.</p>
@@ -455,6 +571,7 @@ export default function PayrollReportModal({
                       <th className="px-3 py-2 text-right">Hours</th>
                       {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
                       {isAdmin && <th className="px-3 py-2 text-right">Cost</th>}
+                      {isAdmin && <th className="px-3 py-2 text-right">Total</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -478,6 +595,11 @@ export default function PayrollReportModal({
                             {formatCurrencyAmount(row.cost)}
                           </td>
                         )}
+                        {isAdmin && (
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
+                            {formatCurrencyAmount(row.total)}
+                          </td>
+                        )}
                       </tr>
                       );
                     })}
@@ -496,11 +618,56 @@ export default function PayrollReportModal({
                           {formatCurrencyAmount(totalCost)}
                         </td>
                       )}
+                      {isAdmin && (
+                        <td className="px-3 py-2 text-right tabular-nums text-ink">
+                          {formatCurrencyAmount(grandTotal)}
+                        </td>
+                      )}
                     </tr>
                   </tfoot>
                 </table>
               </div>
             ))}
+
+          {isAdmin && personTotals && personTotals.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-ink">
+                Per-person totals for this period
+              </p>
+              <div className="mt-1.5 overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-bg text-left text-xs font-semibold text-ink/50">
+                      <th className="px-3 py-2">Name</th>
+                      <th className="px-3 py-2 text-right">Hours</th>
+                      {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
+                      <th className="px-3 py-2 text-right">Cost</th>
+                      <th className="px-3 py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {personTotals.map((person) => (
+                      <tr key={person.userId}>
+                        <td className="px-3 py-2 text-ink">{person.name}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
+                          {person.hours.toFixed(2)}
+                        </td>
+                        {showOrdersColumns && (
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">{person.orders}</td>
+                        )}
+                        <td className="px-3 py-2 text-right tabular-nums text-ink">
+                          {formatCurrencyAmount(person.cost)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">
+                          {formatCurrencyAmount(person.total)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
 
         {rows && rows.length > 0 && (
