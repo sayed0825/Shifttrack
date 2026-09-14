@@ -3,6 +3,7 @@ import { AlertCircle, Check, Download, FileSpreadsheet, Loader2, X } from 'lucid
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
+import { orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 
 interface TimeLogRow {
   id: string;
@@ -10,6 +11,8 @@ interface TimeLogRow {
   clock_out: string | null;
   location_id: string | null;
   role_at_clock_in: string | null;
+  orders_count: number | null;
+  extra_miles: number | null;
   profiles: { full_name: string | null; first_name: string | null; role: string | null } | null;
   locations: { name: string } | null;
 }
@@ -19,6 +22,8 @@ interface ReportRow {
   role: string;
   name: string;
   hours: number;
+  orders: number;
+  extraMiles: number;
 }
 
 function localDateKey(date: Date): string {
@@ -50,6 +55,8 @@ export default function PayrollReportModal({
   onClose: () => void;
 }): ReactNode {
   const { roles, loading: rolesLoading } = useRoles();
+  const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
+  const showOrdersColumns = orgTracksOrders(roles);
   const { locationIds: managedLocationIds } = useManagedLocations();
   const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
   // Never offer a location the database would reject the viewer for
@@ -124,7 +131,7 @@ export default function PayrollReportModal({
     const { data, error } = await supabase
       .from('time_logs')
       .select(
-        'id, clock_in, clock_out, location_id, role_at_clock_in, profiles:user_id ( full_name, first_name, role ), locations:location_id ( name )'
+        'id, clock_in, clock_out, location_id, role_at_clock_in, orders_count, extra_miles, profiles:user_id ( full_name, first_name, role ), locations:location_id ( name )'
       )
       .gte('clock_in', localDayStartIso(startDate))
       .lt('clock_in', localDayEndExclusiveIso(endDate))
@@ -166,10 +173,19 @@ export default function PayrollReportModal({
       const name = log.profiles?.full_name ?? log.profiles?.first_name ?? 'Unknown';
       const key = `${location}|${role}|${name}`;
       const hours = (new Date(log.clock_out as string).getTime() - new Date(log.clock_in).getTime()) / 3_600_000;
+      // Nulls (still owed, or a role that never tracked orders) contribute
+      // nothing to the total rather than being treated as a hard zero.
+      const orders = log.orders_count ?? 0;
+      const extraMiles = log.extra_miles ?? 0;
 
       const existing = grouped.get(key);
-      if (existing) existing.hours += hours;
-      else grouped.set(key, { location, role, name, hours });
+      if (existing) {
+        existing.hours += hours;
+        existing.orders += orders;
+        existing.extraMiles += extraMiles;
+      } else {
+        grouped.set(key, { location, role, name, hours, orders, extraMiles });
+      }
     }
 
     setRows(
@@ -181,19 +197,26 @@ export default function PayrollReportModal({
   };
 
   const total = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.hours, 0), [rows]);
+  const totalOrders = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.orders, 0), [rows]);
+  const totalExtraMiles = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.extraMiles, 0), [rows]);
 
   const downloadCsv = () => {
     if (!rows) return;
 
-    const lines: string[] = [
-      `${startDate},${endDate}`,
-      '',
-      'Location,Role,Name,Hours',
-      ...rows.map((row) =>
-        [csvField(row.location), csvField(row.role), csvField(row.name), row.hours.toFixed(2)].join(',')
-      ),
-      ['Total', '', '', total.toFixed(2)].join(','),
-    ];
+    const header = showOrdersColumns ? 'Location,Role,Name,Hours,Orders,Extra miles' : 'Location,Role,Name,Hours';
+    const rowLine = (row: ReportRow) => {
+      const base = [csvField(row.location), csvField(row.role), csvField(row.name), row.hours.toFixed(2)];
+      if (showOrdersColumns) {
+        const rowTracksOrders = trackedRoleNames.has(row.role);
+        base.push(rowTracksOrders ? String(row.orders) : '', rowTracksOrders ? row.extraMiles.toFixed(1) : '');
+      }
+      return base.join(',');
+    };
+    const totalLine = showOrdersColumns
+      ? ['Total', '', '', total.toFixed(2), String(totalOrders), totalExtraMiles.toFixed(1)].join(',')
+      : ['Total', '', '', total.toFixed(2)].join(',');
+
+    const lines: string[] = [`${startDate},${endDate}`, '', header, ...rows.map(rowLine), totalLine];
 
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -344,10 +367,14 @@ export default function PayrollReportModal({
                       <th className="px-3 py-2">Role</th>
                       <th className="px-3 py-2">Name</th>
                       <th className="px-3 py-2 text-right">Hours</th>
+                      {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
+                      {showOrdersColumns && <th className="px-3 py-2 text-right">Extra miles</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {rows.map((row) => (
+                    {rows.map((row) => {
+                      const rowTracksOrders = trackedRoleNames.has(row.role);
+                      return (
                       <tr key={`${row.location}-${row.role}-${row.name}`}>
                         <td className="px-3 py-2 text-ink/80">{row.location}</td>
                         <td className="px-3 py-2 text-ink/80">{row.role}</td>
@@ -355,8 +382,19 @@ export default function PayrollReportModal({
                         <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
                           {row.hours.toFixed(2)}
                         </td>
+                        {showOrdersColumns && (
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">
+                            {rowTracksOrders ? row.orders : '—'}
+                          </td>
+                        )}
+                        {showOrdersColumns && (
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">
+                            {rowTracksOrders ? row.extraMiles.toFixed(1) : '—'}
+                          </td>
+                        )}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-border font-semibold">
@@ -364,6 +402,12 @@ export default function PayrollReportModal({
                         Total
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-ink">{total.toFixed(2)}</td>
+                      {showOrdersColumns && (
+                        <td className="px-3 py-2 text-right tabular-nums text-ink">{totalOrders}</td>
+                      )}
+                      {showOrdersColumns && (
+                        <td className="px-3 py-2 text-right tabular-nums text-ink">{totalExtraMiles.toFixed(1)}</td>
+                      )}
                     </tr>
                   </tfoot>
                 </table>
