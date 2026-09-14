@@ -220,7 +220,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
     <div className="flex h-dvh flex-col bg-bg">
       <header className="bg-primary text-white">
         <div className="flex flex-wrap items-center gap-4 px-3 py-2">
-          <div className="flex min-w-0 shrink-0 items-center">
+          <div className="flex min-w-0 items-center">
             {organisation?.logo_url ? (
               <img
                 src={organisation.logo_url}

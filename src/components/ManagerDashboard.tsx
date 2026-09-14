@@ -417,7 +417,7 @@ export default function ManagerDashboard(): ReactNode {
     <div className="flex h-full flex-col bg-bg">
       <header className="bg-primary text-white">
         <div className="flex flex-wrap items-center gap-4 px-4 py-3">
-          <div className="flex min-w-0 shrink-0 items-center">
+          <div className="flex min-w-0 items-center">
             {organisation?.logo_url ? (
               <img
                 src={organisation.logo_url}
@@ -524,7 +524,7 @@ export default function ManagerDashboard(): ReactNode {
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4">
         {tab === 'map' && canManage && (
-          <div className="grid h-full min-h-0 gap-4 lg:grid-cols-[1fr_20rem]">
+          <div className="grid h-full min-h-0 gap-4 md:grid-cols-[1fr_16rem] lg:grid-cols-[1fr_20rem]">
             {/* isolate contains Leaflet's internal z-index (panes/controls go up to
                 1000) so it can never compete with page-level chrome like a modal. */}
             <div className="relative z-0 min-h-[24rem] isolate">

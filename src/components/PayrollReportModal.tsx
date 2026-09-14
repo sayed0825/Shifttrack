@@ -561,110 +561,158 @@ export default function PayrollReportModal({
             (rows.length === 0 ? (
               <p className="text-sm text-ink/60">No completed time logs in this range for the selected filters.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-bg text-left text-xs font-semibold text-ink/50">
-                      <th className="px-3 py-2">Location</th>
-                      <th className="px-3 py-2">Role</th>
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2 text-right">Hours</th>
-                      {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
-                      {isAdmin && <th className="px-3 py-2 text-right">Cost</th>}
-                      {isAdmin && <th className="px-3 py-2 text-right">Total</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {rows.map((row) => {
-                      const rowTracksOrders = trackedRoleNames.has(row.role);
-                      return (
-                      <tr key={`${row.location}-${row.role}-${row.name}`}>
-                        <td className="px-3 py-2 text-ink/80">{row.location}</td>
-                        <td className="px-3 py-2 text-ink/80">{row.role}</td>
-                        <td className="px-3 py-2 text-ink">{row.name}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
-                          {row.hours.toFixed(2)}
-                        </td>
-                        {showOrdersColumns && (
-                          <td className="px-3 py-2 text-right tabular-nums text-ink">
-                            {rowTracksOrders ? row.orders : '—'}
-                          </td>
-                        )}
-                        {isAdmin && (
-                          <td className="px-3 py-2 text-right tabular-nums text-ink">
-                            {formatCurrencyAmount(row.cost)}
-                          </td>
-                        )}
-                        {isAdmin && (
-                          <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
-                            {formatCurrencyAmount(row.total)}
-                          </td>
-                        )}
+              <div className="rounded-lg border border-border">
+                {/* Below sm: stacked cards, no sideways scroll. sm and up: a real
+                    table — same split as ManagerDashboard's TimesheetsPanel, so a
+                    manager sees the same pattern in both places. */}
+                <ul className="divide-y divide-border sm:hidden">
+                  {rows.map((row) => {
+                    const rowTracksOrders = trackedRoleNames.has(row.role);
+                    return (
+                      <li key={`${row.location}-${row.role}-${row.name}`} className="flex items-start justify-between gap-3 px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-ink">{row.name}</p>
+                          <p className="truncate text-xs text-ink/60">
+                            {row.role} · {row.location}
+                          </p>
+                          {showOrdersColumns && rowTracksOrders && (
+                            <p className="mt-1 text-xs text-ink/60">{row.orders} orders</p>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-sm font-medium tabular-nums text-ink">{row.hours.toFixed(2)}h</p>
+                          {isAdmin && (
+                            <>
+                              <p className="text-xs tabular-nums text-ink/60">{formatCurrencyAmount(row.cost)}</p>
+                              <p className="text-xs font-semibold tabular-nums text-ink">
+                                {formatCurrencyAmount(row.total)}
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-bg text-left text-xs font-semibold text-ink/50">
+                        <th className="px-3 py-2">Location</th>
+                        <th className="px-3 py-2">Role</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2 text-right">Hours</th>
+                        {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
+                        {isAdmin && <th className="px-3 py-2 text-right">Cost</th>}
+                        {isAdmin && <th className="px-3 py-2 text-right">Total</th>}
                       </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-border font-semibold">
-                      <td className="px-3 py-2 text-ink" colSpan={3}>
-                        Total
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-ink">{total.toFixed(2)}</td>
-                      {showOrdersColumns && (
-                        <td className="px-3 py-2 text-right tabular-nums text-ink">{totalOrders}</td>
-                      )}
-                      {isAdmin && (
-                        <td className="px-3 py-2 text-right tabular-nums text-ink">
-                          {formatCurrencyAmount(totalCost)}
-                        </td>
-                      )}
-                      {isAdmin && (
-                        <td className="px-3 py-2 text-right tabular-nums text-ink">
-                          {formatCurrencyAmount(grandTotal)}
-                        </td>
-                      )}
-                    </tr>
-                  </tfoot>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {rows.map((row) => {
+                        const rowTracksOrders = trackedRoleNames.has(row.role);
+                        return (
+                        <tr key={`${row.location}-${row.role}-${row.name}`}>
+                          <td className="max-w-[12rem] truncate px-3 py-2 text-ink/80">{row.location}</td>
+                          <td className="max-w-[10rem] truncate px-3 py-2 text-ink/80">{row.role}</td>
+                          <td className="max-w-[14rem] truncate px-3 py-2 text-ink">{row.name}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
+                            {row.hours.toFixed(2)}
+                          </td>
+                          {showOrdersColumns && (
+                            <td className="px-3 py-2 text-right tabular-nums text-ink">
+                              {rowTracksOrders ? row.orders : '—'}
+                            </td>
+                          )}
+                          {isAdmin && (
+                            <td className="px-3 py-2 text-right tabular-nums text-ink">
+                              {formatCurrencyAmount(row.cost)}
+                            </td>
+                          )}
+                          {isAdmin && (
+                            <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
+                              {formatCurrencyAmount(row.total)}
+                            </td>
+                          )}
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ))}
+
+          {rows && rows.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-bg px-3 py-2 text-sm font-semibold text-ink">
+              <span>Total</span>
+              <span className="flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
+                <span>{total.toFixed(2)}h</span>
+                {showOrdersColumns && <span>{totalOrders} orders</span>}
+                {isAdmin && <span>{formatCurrencyAmount(totalCost)} cost</span>}
+                {isAdmin && <span>{formatCurrencyAmount(grandTotal)} total</span>}
+              </span>
+            </div>
+          )}
 
           {isAdmin && personTotals && personTotals.length > 0 && (
             <div>
               <p className="text-sm font-medium text-ink">
                 Per-person totals for this period
               </p>
-              <div className="mt-1.5 overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-bg text-left text-xs font-semibold text-ink/50">
-                      <th className="px-3 py-2">Name</th>
-                      <th className="px-3 py-2 text-right">Hours</th>
-                      {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
-                      <th className="px-3 py-2 text-right">Cost</th>
-                      <th className="px-3 py-2 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {personTotals.map((person) => (
-                      <tr key={person.userId}>
-                        <td className="px-3 py-2 text-ink">{person.name}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
-                          {person.hours.toFixed(2)}
-                        </td>
+              <div className="mt-1.5 rounded-lg border border-border">
+                <ul className="divide-y divide-border sm:hidden">
+                  {personTotals.map((person) => (
+                    <li key={person.userId} className="flex items-start justify-between gap-3 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">{person.name}</p>
                         {showOrdersColumns && (
-                          <td className="px-3 py-2 text-right tabular-nums text-ink">{person.orders}</td>
+                          <p className="text-xs text-ink/60">{person.orders} orders</p>
                         )}
-                        <td className="px-3 py-2 text-right tabular-nums text-ink">
-                          {formatCurrencyAmount(person.cost)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-medium tabular-nums text-ink">{person.hours.toFixed(2)}h</p>
+                        <p className="text-xs tabular-nums text-ink/60">{formatCurrencyAmount(person.cost)}</p>
+                        <p className="text-xs font-semibold tabular-nums text-ink">
                           {formatCurrencyAmount(person.total)}
-                        </td>
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="hidden overflow-x-auto sm:block">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-bg text-left text-xs font-semibold text-ink/50">
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2 text-right">Hours</th>
+                        {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
+                        <th className="px-3 py-2 text-right">Cost</th>
+                        <th className="px-3 py-2 text-right">Total</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {personTotals.map((person) => (
+                        <tr key={person.userId}>
+                          <td className="max-w-[14rem] truncate px-3 py-2 text-ink">{person.name}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
+                            {person.hours.toFixed(2)}
+                          </td>
+                          {showOrdersColumns && (
+                            <td className="px-3 py-2 text-right tabular-nums text-ink">{person.orders}</td>
+                          )}
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">
+                            {formatCurrencyAmount(person.cost)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">
+                            {formatCurrencyAmount(person.total)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

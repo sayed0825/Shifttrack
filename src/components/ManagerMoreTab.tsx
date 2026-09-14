@@ -769,7 +769,7 @@ function RolesCard(): ReactNode {
                     onClick={() => void move(index, -1)}
                     disabled={index === 0 || isBusy}
                     aria-label={`Move ${role.name} up`}
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
@@ -778,7 +778,7 @@ function RolesCard(): ReactNode {
                     onClick={() => void move(index, 1)}
                     disabled={index === roles.length - 1 || isBusy}
                     aria-label={`Move ${role.name} down`}
-                    className="flex h-[22px] w-[22px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-ink/50 hover:bg-bg hover:text-ink disabled:cursor-not-allowed disabled:opacity-30"
                   >
                     <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
