@@ -113,6 +113,13 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
 - Supabase Postgres with RLS enabled and forced on every table.
 - is_manager() and my_role() are SECURITY DEFINER helpers used inside
   policies to avoid RLS recursion on profiles.
+- Never query a table from inside its own RLS policy -- e.g. a WITH CHECK
+  that selects the stored row to diff it against the new one. Postgres
+  re-evaluates the policy on that select and recurses (error 42P17). Use
+  a SECURITY DEFINER helper (like is_manager()/my_org_id()) for a lookup
+  in another table, or a BEFORE trigger for a check that needs the OLD
+  row of the same table -- see the time_logs_update_own_orders /
+  tg_protect_own_time_log split in 0017_fix_time_logs_orders_recursion.sql.
 - Approvals that change two rows (shift swaps) go through SECURITY DEFINER
   RPCs so both rows move together or neither does.
 - The protect_profile_role trigger blocks role changes when auth.uid() is
