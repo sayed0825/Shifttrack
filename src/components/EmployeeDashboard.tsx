@@ -40,6 +40,7 @@ import EmployeeShiftActions from './EmployeeShiftActions';
 import EmployeeTasks from './EmployeeTasks';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeClaim from './OvertimeClaim';
+import OwedOrdersModal from './OwedOrdersModal';
 import ProfileSettingsCard from './ProfileSettingsCard';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import type { Profile } from './ManagerDashboard';
@@ -178,9 +179,19 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
   const { organisation } = useOrganisation();
   const canViewMap = roles.find((r) => r.name === profile.role)?.can_view_map ?? false;
 
+  // Bumped on mount (checks "on login" regardless of which tab last
+  // persisted), whenever the Clock or Tasks tab becomes active, and right
+  // after a successful clock-out — each forces OwedOrdersModal to re-check.
+  const [ordersCheckSignal, setOrdersCheckSignal] = useState(0);
+  const recheckOwedOrders = useCallback(() => setOrdersCheckSignal((n) => n + 1), []);
+
   useEffect(() => {
     savePersistedTab(TAB_STORAGE_KEY, tab);
   }, [tab]);
+
+  useEffect(() => {
+    if (tab === 'clock' || tab === 'tasks') recheckOwedOrders();
+  }, [tab, recheckOwedOrders]);
 
   if (profile.is_active === false) {
     return (
@@ -248,9 +259,13 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
         </div>
       </header>
 
+      <OwedOrdersModal profile={profile} checkSignal={ordersCheckSignal} />
+
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-md px-4 py-4 pb-[calc(4rem+env(safe-area-inset-bottom))] md:max-w-3xl md:px-6 md:pb-6 lg:max-w-4xl">
-          {tab === 'clock' && <ClockInTab profile={profile} canViewMap={canViewMap} />}
+          {tab === 'clock' && (
+            <ClockInTab profile={profile} canViewMap={canViewMap} onClockedOut={recheckOwedOrders} />
+          )}
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
           {tab === 'tasks' && <EmployeeTasks profile={profile} />}
@@ -288,7 +303,15 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
 // Tab 1 — Clock-In
 // ===========================================================================
 
-function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boolean }): ReactNode {
+function ClockInTab({
+  profile,
+  canViewMap,
+  onClockedOut,
+}: {
+  profile: Profile;
+  canViewMap: boolean;
+  onClockedOut: () => void;
+}): ReactNode {
   const [shift, setShift] = useState<ShiftRow | null>(null);
   const [openLog, setOpenLog] = useState<TimeLogRow | null>(null);
   const [loading, setLoading] = useState(true);
@@ -560,6 +583,9 @@ function ClockInTab({ profile, canViewMap }: { profile: Profile; canViewMap: boo
         .eq('id', openLog.id);
       if (error) throw error;
       setOpenLog(null);
+      // Closed for real (not just queued) — an orders/mileage entry may now
+      // be owed for this shift.
+      onClockedOut();
     } catch {
       enqueue({
         type: 'clock_out',
