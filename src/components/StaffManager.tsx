@@ -9,6 +9,7 @@ import { useManagedLocations } from '../hooks/useManagedLocations';
 import { usePermissions } from '../hooks/usePermissions';
 import { friendlyError } from '../lib/friendlyError';
 import EmployeeNotes from './EmployeeNotes';
+import WageRatesPanel from './WageRatesPanel';
 
 interface StaffRow {
   id: string;
@@ -523,6 +524,13 @@ export default function StaffManager({
                           employeeId={person.id}
                           employeeName={person.full_name ?? person.first_name ?? 'Unnamed'}
                         />
+
+                        {isAdmin && (
+                          <WageRatesPanel
+                            profileId={person.id}
+                            profileName={person.full_name ?? person.first_name ?? 'Unnamed'}
+                          />
+                        )}
                       </div>
                     )}
                   </li>

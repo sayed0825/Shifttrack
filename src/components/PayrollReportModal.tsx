@@ -3,10 +3,20 @@ import { AlertCircle, Check, Download, FileSpreadsheet, Loader2, X } from 'lucid
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
+import { usePermissions } from '../hooks/usePermissions';
 import { orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
+import {
+  WAGE_RATE_FIELDS,
+  formatCurrencyAmount,
+  groupWageRatesByProfile,
+  localDateKeyFromIso,
+  rateOnDate,
+  type WageRateRow,
+} from '../lib/wageRates';
 
 interface TimeLogRow {
   id: string;
+  user_id: string;
   clock_in: string;
   clock_out: string | null;
   location_id: string | null;
@@ -22,7 +32,23 @@ interface ReportRow {
   name: string;
   hours: number;
   orders: number;
+  // Sum of hours × the rate effective on each log's date. Stays 0 when the
+  // viewer isn't an Administrator, or no rate is on file for a date — see
+  // the same "missing rate contributes 0" choice in ManagerDashboard's
+  // TimesheetsPanel.
+  cost: number;
 }
+
+type ColumnKey = 'location' | 'role' | 'name' | 'hours' | 'orders' | 'cost';
+
+const COLUMN_LABELS: Record<ColumnKey, string> = {
+  location: 'Location',
+  role: 'Role',
+  name: 'Name',
+  hours: 'Hours',
+  orders: 'Orders',
+  cost: 'Cost',
+};
 
 function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -55,6 +81,7 @@ export default function PayrollReportModal({
   const { roles, loading: rolesLoading } = useRoles();
   const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
   const showOrdersColumns = orgTracksOrders(roles);
+  const { isAdmin } = usePermissions();
   const { locationIds: managedLocationIds } = useManagedLocations();
   const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
   // Never offer a location the database would reject the viewer for
@@ -78,13 +105,27 @@ export default function PayrollReportModal({
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [excludedCount, setExcludedCount] = useState(0);
 
-  // Both multi-selects default to everything, once their options load.
+  // Which columns are available at all depends on the org (orders) and the
+  // viewer (cost, Administrator only) — cost is never even offered as an
+  // option to anyone else.
+  const availableColumns = useMemo<ColumnKey[]>(() => {
+    const cols: ColumnKey[] = ['location', 'role', 'name', 'hours'];
+    if (showOrdersColumns) cols.push('orders');
+    if (isAdmin) cols.push('cost');
+    return cols;
+  }, [showOrdersColumns, isAdmin]);
+  const [selectedColumns, setSelectedColumns] = useState<Set<ColumnKey>>(new Set());
+
+  // Every multi-select defaults to everything available, once its options load.
   useEffect(() => {
     setSelectedLocations(new Set(visibleLocations.map((l) => l.id)));
   }, [visibleLocations]);
   useEffect(() => {
     setSelectedRoles(new Set(roles.map((r) => r.name)));
   }, [roles]);
+  useEffect(() => {
+    setSelectedColumns(new Set(availableColumns));
+  }, [availableColumns]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -112,6 +153,15 @@ export default function PayrollReportModal({
     });
   };
 
+  const toggleColumn = (col: ColumnKey) => {
+    setSelectedColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  };
+
   const generate = async () => {
     if (!startDate || !endDate) {
       setFault('Choose a start and end date.');
@@ -126,15 +176,23 @@ export default function PayrollReportModal({
     setFault(null);
     setRows(null);
 
-    const { data, error } = await supabase
-      .from('time_logs')
-      .select(
-        'id, clock_in, clock_out, location_id, role_at_clock_in, orders_count, profiles:user_id ( full_name, first_name, role ), locations:location_id ( name )'
-      )
-      .gte('clock_in', localDayStartIso(startDate))
-      .lt('clock_in', localDayEndExclusiveIso(endDate))
-      .order('clock_in')
-      .returns<TimeLogRow[]>();
+    // Rates are only ever fetched for an Administrator — staff_wage_rates
+    // RLS would return nothing to anyone else, but this skips the request
+    // entirely rather than firing it and discarding an empty result.
+    const [{ data, error }, ratesResult] = await Promise.all([
+      supabase
+        .from('time_logs')
+        .select(
+          'id, user_id, clock_in, clock_out, location_id, role_at_clock_in, orders_count, profiles:user_id ( full_name, first_name, role ), locations:location_id ( name )'
+        )
+        .gte('clock_in', localDayStartIso(startDate))
+        .lt('clock_in', localDayEndExclusiveIso(endDate))
+        .order('clock_in')
+        .returns<TimeLogRow[]>(),
+      isAdmin
+        ? supabase.from('staff_wage_rates').select(WAGE_RATE_FIELDS).returns<WageRateRow[]>()
+        : Promise.resolve({ data: [] as WageRateRow[], error: null }),
+    ]);
 
     setLoading(false);
 
@@ -144,6 +202,7 @@ export default function PayrollReportModal({
     }
 
     const logs = data ?? [];
+    const ratesByProfile = groupWageRatesByProfile(ratesResult.data ?? []);
 
     // An open shift has no final duration and would understate or inflate
     // the total, so it's excluded — but silently dropping hours before
@@ -174,13 +233,19 @@ export default function PayrollReportModal({
       // Null (still owed, or a role that never tracked orders) contributes
       // nothing to the total rather than being treated as a hard zero.
       const orders = log.orders_count ?? 0;
+      // The rate effective on the shift's own date, not today's — a rate
+      // change must never rewrite the cost of a shift that already
+      // happened. Missing rate contributes 0, same as an unset order count.
+      const rate = isAdmin ? rateOnDate(ratesByProfile.get(log.user_id), localDateKeyFromIso(log.clock_in)) : null;
+      const cost = rate === null ? 0 : rate * hours;
 
       const existing = grouped.get(key);
       if (existing) {
         existing.hours += hours;
         existing.orders += orders;
+        existing.cost += cost;
       } else {
-        grouped.set(key, { location, role, name, hours, orders });
+        grouped.set(key, { location, role, name, hours, orders, cost });
       }
     }
 
@@ -194,22 +259,48 @@ export default function PayrollReportModal({
 
   const total = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.hours, 0), [rows]);
   const totalOrders = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.orders, 0), [rows]);
+  const totalCost = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.cost, 0), [rows]);
 
   const downloadCsv = () => {
     if (!rows) return;
 
-    const header = showOrdersColumns ? 'Location,Role,Name,Hours,Orders' : 'Location,Role,Name,Hours';
-    const rowLine = (row: ReportRow) => {
-      const base = [csvField(row.location), csvField(row.role), csvField(row.name), row.hours.toFixed(2)];
-      if (showOrdersColumns) {
-        const rowTracksOrders = trackedRoleNames.has(row.role);
-        base.push(rowTracksOrders ? String(row.orders) : '');
+    const columns = availableColumns.filter((col) => selectedColumns.has(col));
+    if (columns.length === 0) return;
+
+    const cellFor = (row: ReportRow, col: ColumnKey): string => {
+      switch (col) {
+        case 'location':
+          return csvField(row.location);
+        case 'role':
+          return csvField(row.role);
+        case 'name':
+          return csvField(row.name);
+        case 'hours':
+          return row.hours.toFixed(2);
+        case 'orders':
+          return trackedRoleNames.has(row.role) ? String(row.orders) : '';
+        case 'cost':
+          return row.cost.toFixed(2);
       }
-      return base.join(',');
     };
-    const totalLine = showOrdersColumns
-      ? ['Total', '', '', total.toFixed(2), String(totalOrders)].join(',')
-      : ['Total', '', '', total.toFixed(2)].join(',');
+    const totalFor = (col: ColumnKey): string => {
+      switch (col) {
+        case 'location':
+          return 'Total';
+        case 'hours':
+          return total.toFixed(2);
+        case 'orders':
+          return String(totalOrders);
+        case 'cost':
+          return totalCost.toFixed(2);
+        default:
+          return '';
+      }
+    };
+
+    const header = columns.map((col) => COLUMN_LABELS[col]).join(',');
+    const rowLine = (row: ReportRow) => columns.map((col) => cellFor(row, col)).join(',');
+    const totalLine = columns.map(totalFor).join(',');
 
     const lines: string[] = [`${startDate},${endDate}`, '', header, ...rows.map(rowLine), totalLine];
 
@@ -363,6 +454,7 @@ export default function PayrollReportModal({
                       <th className="px-3 py-2">Name</th>
                       <th className="px-3 py-2 text-right">Hours</th>
                       {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
+                      {isAdmin && <th className="px-3 py-2 text-right">Cost</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -381,6 +473,11 @@ export default function PayrollReportModal({
                             {rowTracksOrders ? row.orders : '—'}
                           </td>
                         )}
+                        {isAdmin && (
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">
+                            {formatCurrencyAmount(row.cost)}
+                          </td>
+                        )}
                       </tr>
                       );
                     })}
@@ -394,6 +491,11 @@ export default function PayrollReportModal({
                       {showOrdersColumns && (
                         <td className="px-3 py-2 text-right tabular-nums text-ink">{totalOrders}</td>
                       )}
+                      {isAdmin && (
+                        <td className="px-3 py-2 text-right tabular-nums text-ink">
+                          {formatCurrencyAmount(totalCost)}
+                        </td>
+                      )}
                     </tr>
                   </tfoot>
                 </table>
@@ -402,15 +504,41 @@ export default function PayrollReportModal({
         </div>
 
         {rows && rows.length > 0 && (
-          <div className="flex justify-end border-t border-border px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            <button
-              type="button"
-              onClick={downloadCsv}
-              className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Download CSV
-            </button>
+          <div className="space-y-3 border-t border-border px-5 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div>
+              <p className="text-xs font-medium text-ink/60">Columns to include in the CSV</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {availableColumns.map((col) => {
+                  const on = selectedColumns.has(col);
+                  return (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => toggleColumn(col)}
+                      aria-pressed={on}
+                      className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                        on ? 'border-primary bg-primary text-white' : 'border-border text-ink hover:border-primary/40'
+                      }`}
+                    >
+                      {on && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
+                      {COLUMN_LABELS[col]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={downloadCsv}
+                disabled={selectedColumns.size === 0}
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-border disabled:text-ink/60"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Download CSV
+              </button>
+            </div>
           </div>
         )}
       </div>

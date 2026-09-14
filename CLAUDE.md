@@ -147,6 +147,23 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   though: an Administrator can soft-delete a note, setting deleted_at and
   deleted_by. The row stays — the UI renders it as a tombstone rather than
   removing it. See src/components/EmployeeNotes.tsx.
+- `staff_wage_rates` (id, org_id, profile_id, hourly_rate, effective_from,
+  created_at, created_by) — hourly pay, effective-dated rather than a
+  single column on profiles, so a rate change never rewrites the cost of a
+  past shift; the rate for a date is whichever row has the latest
+  effective_from on or before it. RLS is is_admin()-only for every
+  operation — there is no policy for a Manager or for the row's own
+  profile_id, so neither can read it through the API at all.
+  wage_rate_at(profile_id, date) is the one sanctioned way anything else
+  reads a rate: SECURITY DEFINER (so RLS doesn't just make it look like
+  nobody has a rate), but it checks is_admin() internally first, so
+  calling it as anyone else returns null rather than the real rate. Every
+  UI surface that shows a rate or a cost — StaffManager's Pay panel
+  (WageRatesPanel.tsx), the Timesheets Cost column, PayrollReportModal
+  (including its CSV column picker, where Cost is only ever offered as an
+  option to an admin) — is gated on usePermissions().isAdmin, and
+  hourly_rate/effective_from are in sentryScrub.ts's SENSITIVE_KEYS. See
+  supabase/migrations/0018_staff_wage_rates.sql and src/lib/wageRates.ts.
 - Task module:
   - `task_templates` (id, org_id, location_id, title, description,
     assigned_role, assigned_user_id, requires_photo, recurrence,

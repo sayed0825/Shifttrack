@@ -28,6 +28,9 @@ const SENSITIVE_KEYS = new Set([
   'address',
   'note_text',
   'comment_text',
+  // Pay data. Never let a wage rate leave the browser in an error report.
+  'hourly_rate',
+  'effective_from',
 ]);
 
 // The same field names as they appear in a Supabase PostgREST filter

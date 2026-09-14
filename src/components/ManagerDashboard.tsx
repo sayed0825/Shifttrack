@@ -10,6 +10,7 @@ import {
 } from 'react';
 import {
   AlertCircle,
+  Banknote,
   Calendar,
   Check,
   CheckSquare,
@@ -36,6 +37,14 @@ import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
 import { logNeedsOrdersReport, ordersCellText, ORDERS_NOT_YET_REPORTED, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
+import {
+  WAGE_RATE_FIELDS,
+  formatCurrencyAmount,
+  groupWageRatesByProfile,
+  localDateKeyFromIso,
+  rateOnDate,
+  type WageRateRow,
+} from '../lib/wageRates';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
@@ -117,6 +126,9 @@ export interface TimesheetSummary {
   profile: Profile | null;
   logs: TimeLogWithShift[];
   totalHours: number;
+  // Sum of hours × the rate effective on each log's date. Admin-only: stays
+  // 0 for anyone else, since TimesheetsPanel never fetches rates for them.
+  totalCost: number;
   hasOpenLog: boolean;
 }
 
@@ -531,6 +543,7 @@ export default function ManagerDashboard(): ReactNode {
           <TimesheetsPanel
             viewer={viewer}
             canManage={canManage}
+            isAdmin={isAdmin}
             weekStart={weekStart}
             locationFilter={locationFilter}
             roleFilter={roleFilter}
@@ -800,6 +813,7 @@ function RosterSidebar({
 function TimesheetsPanel({
   viewer,
   canManage,
+  isAdmin,
   weekStart,
   locationFilter,
   roleFilter,
@@ -808,6 +822,7 @@ function TimesheetsPanel({
 }: {
   viewer: Profile;
   canManage: boolean;
+  isAdmin: boolean;
   weekStart: Date;
   locationFilter: LocationFilter;
   roleFilter: RoleFilter;
@@ -819,10 +834,46 @@ function TimesheetsPanel({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TimeLogRow | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [wageRates, setWageRates] = useState<WageRateRow[]>([]);
 
   const { graceMinutes } = useLateGrace();
   const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
   const showOrdersColumns = orgTracksOrders(roles);
+
+  // Pay data. Never fetched for anyone but an Administrator — staff_wage_rates
+  // RLS would return nothing to anyone else anyway, but this also skips the
+  // request entirely rather than firing it and discarding an empty result.
+  useEffect(() => {
+    if (!isAdmin) {
+      setWageRates([]);
+      return undefined;
+    }
+    let cancelled = false;
+
+    (async () => {
+      const { data } = await supabase.from('staff_wage_rates').select(WAGE_RATE_FIELDS).returns<WageRateRow[]>();
+      if (!cancelled) setWageRates(data ?? []);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  const ratesByProfile = useMemo(() => groupWageRatesByProfile(wageRates), [wageRates]);
+
+  // Cost for one log: hours × the rate effective on the shift's own date
+  // (its clock-in date), not today's rate — a rate change must not silently
+  // rewrite the cost of a shift that already happened. Null when there's no
+  // rate on file for that date, so it renders as "—" rather than a false 0.
+  const costForLog = useCallback(
+    (log: TimeLogWithShift): number | null => {
+      if (!isAdmin) return null;
+      const rate = rateOnDate(ratesByProfile.get(log.user_id), localDateKeyFromIso(log.clock_in));
+      return rate === null ? null : rate * durationHours(log.clock_in, log.clock_out);
+    },
+    [isAdmin, ratesByProfile]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -864,19 +915,22 @@ function TimesheetsPanel({
         profile: log.profiles,
         logs: [],
         totalHours: 0,
+        totalCost: 0,
         hasOpenLog: false,
       };
 
       entry.logs.push(log);
       entry.totalHours += durationHours(log.clock_in, log.clock_out);
+      entry.totalCost += costForLog(log) ?? 0;
       entry.hasOpenLog ||= log.clock_out === null;
       grouped.set(log.user_id, entry);
     }
 
     return Array.from(grouped.values()).sort((a, b) => b.totalHours - a.totalHours);
-  }, [logs]);
+  }, [logs, costForLog]);
 
   const weekTotal = summaries.reduce((sum, entry) => sum + entry.totalHours, 0);
+  const weekTotalCost = summaries.reduce((sum, entry) => sum + entry.totalCost, 0);
 
   if (loading) {
     return (
@@ -912,7 +966,7 @@ function TimesheetsPanel({
       )}
 
       {/* Weekly summary */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className={`grid gap-3 sm:grid-cols-3 ${isAdmin ? 'lg:grid-cols-4' : ''}`}>
         <SummaryCard label="Week of" value={formatWeekRange(weekStart)} Icon={Calendar} />
         <SummaryCard label="Total hours" value={formatHours(weekTotal)} Icon={Clock} />
         <SummaryCard
@@ -920,6 +974,9 @@ function TimesheetsPanel({
           value={String(canManage ? summaries.length : logs.length)}
           Icon={Users}
         />
+        {isAdmin && (
+          <SummaryCard label="Total cost" value={formatCurrencyAmount(weekTotalCost)} Icon={Banknote} />
+        )}
       </div>
 
       {summaries.length === 0 && (
@@ -945,6 +1002,11 @@ function TimesheetsPanel({
             </div>
             <div className="text-right">
               <p className="text-sm font-semibold tabular-nums text-ink">{formatHours(summary.totalHours)}</p>
+              {isAdmin && (
+                <p className="text-xs font-medium tabular-nums text-ink/70">
+                  {formatCurrencyAmount(summary.totalCost)}
+                </p>
+              )}
               <p className="text-xs text-ink/60">
                 {summary.logs.length} entr{summary.logs.length === 1 ? 'y' : 'ies'}
                 {summary.hasOpenLog && <span className="text-success"> · on shift</span>}
@@ -984,8 +1046,15 @@ function TimesheetsPanel({
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <span className="text-sm font-medium tabular-nums text-ink">
-                      {formatHours(durationHours(log.clock_in, log.clock_out))}
+                    <span className="text-right">
+                      <span className="block text-sm font-medium tabular-nums text-ink">
+                        {formatHours(durationHours(log.clock_in, log.clock_out))}
+                      </span>
+                      {isAdmin && (
+                        <span className="block text-xs tabular-nums text-ink/60">
+                          {costForLog(log) === null ? '—' : formatCurrencyAmount(costForLog(log) as number)}
+                        </span>
+                      )}
                     </span>
                     {canManage && (
                       <button
@@ -1011,6 +1080,7 @@ function TimesheetsPanel({
                 <th scope="col">Clock out</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
                 <th scope="col">Hours</th>
+                {isAdmin && <th scope="col">Cost</th>}
                 {canManage && <th scope="col">Actions</th>}
               </tr>
             </thead>
@@ -1057,6 +1127,11 @@ function TimesheetsPanel({
                   <td className="px-2 py-2.5 text-right tabular-nums font-medium text-ink">
                     {formatHours(durationHours(log.clock_in, log.clock_out))}
                   </td>
+                  {isAdmin && (
+                    <td className="px-2 py-2.5 text-right tabular-nums text-ink">
+                      {costForLog(log) === null ? '—' : formatCurrencyAmount(costForLog(log) as number)}
+                    </td>
+                  )}
                   {canManage && (
                     <td className="px-4 py-2.5 text-right">
                       <button
