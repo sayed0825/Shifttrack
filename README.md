@@ -2,3 +2,98 @@
 
 [![Open in Bolt](https://bolt.new/static/open-in-bolt.svg)](https://bolt.new/~/sb1-b2fmczyp)
 
+## Automated RLS tests
+
+`tests/rls/` exercises the actual Row Level Security policies in the
+database — real test users signed in with `@supabase/supabase-js`, not a
+model or mock of the policies. It exists because every permission hole
+found in this app so far (several by hand, several more by audit, plus an
+infinite-recursion policy bug that broke every driver's order entry) was
+found by accident. These tests assert the boundaries hold, so the next one
+isn't found by accident too.
+
+**This suite runs against the live Supabase project — there is no staging
+project yet.** It creates two dedicated test organisations
+(`rls-test-org-a`, `rls-test-org-b`) with their own users, locations,
+shifts, time logs, tasks, notes, wage rates and more, exercises RLS against
+them, and deletes everything it created afterward. It never touches your
+real organisations' data — every fixture row lives under those two test
+orgs and is filtered/deleted by their `org_id`.
+
+Before every run, the suite checks that neither test organisation already
+exists and refuses to run if one does (see "Fixture collisions" below) —
+it will never seed on top of, or tear down, something it didn't just
+create itself.
+
+### The service role key — read this before running it
+
+Fixture setup needs to create and delete auth users and seed rows across
+two organisations, which requires the Supabase **service role key**
+(Project Settings → API → `service_role`). That key bypasses **every** RLS
+policy in the database.
+
+- It goes in `.env.test` **only** — copy `.env.test.example` to `.env.test`
+  and fill it in. `.env.test` is gitignored; **never commit it.**
+- **Never** paste it into Cloudflare Pages' build environment variables,
+  a CI secret, or anywhere reachable by anything other than your own
+  machine running this suite locally. The app's own client
+  (`src/supabaseClient.js`) only ever uses the anon key — the service role
+  key has no legitimate reason to exist anywhere in the deployed app or
+  its build pipeline. This is the second place in the whole codebase a
+  service role key is used at all; the first is the `invite-staff` Edge
+  Function, which only ever runs server-side.
+- The suite refuses to start if `SUPABASE_SERVICE_ROLE_KEY` is missing,
+  rather than silently doing anything with less access — a silent
+  fallback would make every negative test pass for the wrong reason
+  (nothing actually being seeded, read, or torn down), not because RLS
+  held.
+
+### Running it
+
+```bash
+cp .env.test.example .env.test   # fill in the three values, once
+npm run test:rls
+```
+
+### Fixture collisions
+
+If a previous run crashed before its teardown finished, the next run will
+refuse to start with an error naming the leftover organisation(s). That is
+deliberate — **do not** re-run with a flag to force past it, and do not
+assume it's safe to delete automatically. Open the Supabase SQL Editor,
+confirm the named organisation really is leftover test data (its name
+starts with `__RLS_TEST_ORG_`), and remove it by hand:
+
+```sql
+delete from organisations where slug in ('rls-test-org-a', 'rls-test-org-b');
+```
+
+(Every fixture row cascades or is otherwise cleaned up from that delete or
+the tables it touches — see `tests/rls/setup/teardown.ts` for the exact
+per-table order the suite itself uses, if you want to mirror it manually.)
+
+### What's covered
+
+- `tests/rls/negative/` — operations that must fail: cross-org reads on
+  every table, an employee reading another employee's time logs or
+  reading `employee_notes`/`staff_wage_rates` at all, a location manager
+  reaching anything outside their locations (by table, and by calling
+  `delete_staff_member`/`approve_shift_swap`/`approve_shift_application`/
+  `decide_overtime_claim` directly), a manager reaching admin-only settings
+  (wage rates, roles, branding, locations, the order rate), a deactivated
+  user, `clock_in`/`clock_out` immutability, and anonymous access to every
+  table and RPC.
+- `tests/rls/positive/` — operations that must succeed, so the suite also
+  catches over-tightening: an employee reading their own data and setting
+  `orders_count` on their own closed log, a manager managing their own
+  location, an administrator reaching everything in their own org.
+
+The shared assertion helpers in `tests/rls/setup/assert.ts` are the most
+important file to read before adding a new case. Postgres RLS does not
+always surface a blocked operation as an error — a blocked `UPDATE`/
+`DELETE` silently matches zero rows instead, and a blocked `SELECT` just
+comes back empty. Every "this must fail" case in this suite re-reads
+actual database state afterward (via the service-role client) rather than
+trusting the response alone; a suite that only checked for a thrown error
+would pass every negative test against a wide-open database.
+
