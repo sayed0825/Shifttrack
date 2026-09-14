@@ -1089,6 +1089,7 @@ function TimesheetsPanel({
       {editing && (
         <EditLogModal
           log={editing}
+          trackedRoleNames={trackedRoleNames}
           onClose={() => setEditing(null)}
           onSaved={async () => {
             setEditing(null);
@@ -1128,18 +1129,24 @@ function SummaryCard({
 
 function EditLogModal({
   log,
+  trackedRoleNames,
   onClose,
   onSaved,
 }: {
   log: TimeLogRow;
+  trackedRoleNames: Set<string>;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }): ReactNode {
   const [clockIn, setClockIn] = useState(() => toLocalInput(log.clock_in));
   const [clockOut, setClockOut] = useState(() => toLocalInput(log.clock_out));
   const [notes, setNotes] = useState(log.notes ?? '');
+  const [orders, setOrders] = useState(() => log.orders_count?.toString() ?? '');
+  const [extraMiles, setExtraMiles] = useState(() => log.extra_miles?.toString() ?? '');
   const [saving, setSaving] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
+
+  const showOrdersFields = logNeedsOrdersReport(log.role_at_clock_in, log.profiles?.role, trackedRoleNames);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1164,12 +1171,42 @@ function EditLogModal({
       return;
     }
 
+    let ordersValue: number | null = null;
+    let extraMilesValue: number | null = null;
+
+    if (showOrdersFields) {
+      const trimmedOrders = orders.trim();
+      if (trimmedOrders !== '') {
+        const parsedOrders = Number(trimmedOrders);
+        if (!Number.isInteger(parsedOrders) || parsedOrders < 0) {
+          setFault('Orders completed must be a whole number, zero or more.');
+          return;
+        }
+        ordersValue = parsedOrders;
+      }
+
+      const trimmedMiles = extraMiles.trim();
+      if (trimmedMiles !== '') {
+        const parsedMiles = Number(trimmedMiles);
+        if (!Number.isFinite(parsedMiles) || parsedMiles < 0) {
+          setFault('Additional mileage must be zero or more.');
+          return;
+        }
+        extraMilesValue = parsedMiles;
+      }
+    }
+
     setSaving(true);
     setFault(null);
 
     const { error } = await supabase
       .from('time_logs')
-      .update({ clock_in: inIso, clock_out: outIso, notes: notes.trim() || null })
+      .update({
+        clock_in: inIso,
+        clock_out: outIso,
+        notes: notes.trim() || null,
+        ...(showOrdersFields ? { orders_count: ordersValue, extra_miles: extraMilesValue } : {}),
+      })
       .eq('id', log.id);
 
     if (error) {
@@ -1258,6 +1295,41 @@ function EditLogModal({
             <p className="text-xs text-ink/60">
               Leaving clock out empty keeps this shift open and the duration counting from now.
             </p>
+          )}
+
+          {showOrdersFields && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="edit-orders" className="block text-sm font-medium text-ink">
+                  Orders completed
+                </label>
+                <input
+                  id="edit-orders"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  step={1}
+                  value={orders}
+                  onChange={(event) => setOrders(event.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-extra-miles" className="block text-sm font-medium text-ink">
+                  Additional mileage
+                </label>
+                <input
+                  id="edit-extra-miles"
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step={0.1}
+                  value={extraMiles}
+                  onChange={(event) => setExtraMiles(event.target.value)}
+                  className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                />
+              </div>
+            </div>
           )}
 
           <div>
