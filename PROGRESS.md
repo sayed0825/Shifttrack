@@ -18,22 +18,28 @@ baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
 pending-invite handling (2d), and the Phase 3 security review, Sentry,
 and UptimeRobot (3). Migrations 0015 (orders/cleanup), 0016 (App Store
 account-deletion compliance), 0017 (time_logs recursion fix), 0018
-(`staff_wage_rates`), and 0019 (`organisations.order_rate`) are all run
-and verified. **Week 1 UI batch (10 items) complete and verified on
-the live site**, and this session's batch — add-shift availability
-warnings, driver order capture, wage rates, per-order pay, and a full
-responsiveness pass — is also done and verified. Supabase Pro
-(point-in-time backups) is deliberately deferred until ready to pay —
-see "Known broken" below. The repo is now the
+(`staff_wage_rates`), 0019 (`organisations.order_rate`), and 0020
+(tightens the time_logs self-edit trigger from 0017 — see log below)
+are all run and verified. **Week 1 UI batch (10 items) complete and
+verified on the live site**, and this session's batch — add-shift
+availability warnings, driver order capture, wage rates, per-order pay,
+and a full responsiveness pass — is also done and verified. **The
+automated RLS test suite (`tests/rls/`) is built and pushed but has
+never actually been run** — see "Next up" and "Known broken" below.
+Supabase Pro (point-in-time backups) is deliberately deferred until
+ready to pay — see "Known broken" below. The repo is now the
 source of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:** per `launch-plan-fast.md` Week 2, running in parallel:
 1. **Capacitor build** — `cap add ios` and `android`, wire background
    geolocation into clock-in, verify `Info.plist` and
    `AndroidManifest.xml`, build and test on a real device, icons and
    splash screens.
-2. **Automated RLS tests** — the time_logs recursion bug fixed this
-   session (0017, see log below) is exactly the class of bug these
-   would have caught immediately.
+2. **Run the automated RLS test suite** — get `SUPABASE_SERVICE_ROLE_KEY`
+   into a local `.env.test` (see README.md), run `npm run test:rls`,
+   and fix whatever it finds. It has never been executed — everything
+   about it so far (including the migration 0020 fix it already
+   surfaced by inspection alone) has been verified by reading, not by
+   running.
 3. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
@@ -57,6 +63,14 @@ and approval all verified against real data). Manager task tooling has
 since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
+- The automated RLS test suite (`tests/rls/`, 8 negative + 3 positive
+  files) is written, typechecked, and pushed — but NEVER RUN. It needs
+  `SUPABASE_SERVICE_ROLE_KEY` in a local `.env.test`, which nobody has
+  supplied yet (Claude Code never has it — the suite's own guard
+  refuses to run without it rather than falling back to anon). Writing
+  it did already surface one real bug by inspection (see 0020 in the
+  log), but that is not the same as the suite having actually executed
+  against the live database even once.
 - Branding (logo upload, org name, `useOrganisation`) and the visual
   redesign pass (design tokens, header bar, status colour, Archivo) are
   pushed but UNREVIEWED — no real device check yet. Also: the
@@ -96,6 +110,46 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-14 (yet later)
+**Automated RLS test suite built and pushed — NOT YET RUN.** Needs
+`SUPABASE_SERVICE_ROLE_KEY` in a local `.env.test` to execute (see
+README.md, "Automated RLS tests"); the read-only MCP connection used
+for everything else in this file has no service-role access either, so
+this had to be built and verified by reading, not by running.
+
+- 8 negative test files (cross-org isolation across every table, an
+  employee reading another employee's time_logs or reading
+  `employee_notes`/`staff_wage_rates` at all, a location manager
+  reaching anything outside their locations both by table and by
+  calling `delete_staff_member`/`approve_shift_swap`/
+  `approve_shift_application`/`decide_overtime_claim` directly, a
+  manager reaching admin-only settings, a deactivated user,
+  `clock_in`/`clock_out` immutability, anonymous access to every table
+  and RPC) and 3 positive files (an employee's own data, a manager's
+  own location, an administrator's whole org) in `tests/rls/`. Real
+  test users signed in with `@supabase/supabase-js` against two
+  dedicated test organisations, not a mock of the policies.
+- A collision guard refuses to run if either reserved test org already
+  exists, rather than risk seeding into or tearing down real data —
+  this suite runs against **production** until a staging project
+  exists.
+- Writing it surfaced a real bug before it was even run: tracing
+  `tg_protect_own_time_log` (0017) showed it let any manager or
+  administrator through unconditionally, with no check on whose row
+  was being edited — a manager could rewrite their own
+  `clock_in`/`clock_out`, not just a subordinate's. **Fixed and run
+  live, recorded as migration 0020 (pulled from the database via the
+  MCP to match):** an administrator may edit their own hours (and
+  anyone else's, as before); a manager may still edit anyone else's
+  hours, but not their own; everyone else can only set `orders_count`
+  on their own log, unchanged. `time-log-immutable.test.ts` updated to
+  match: manager and employee self-edits still fail, administrator
+  self-edit and a manager editing a subordinate's log now succeed.
+
+**Next session: get the service role key, run `npm run test:rls`, and
+fix whatever it finds** — see "Next up" above. Nothing in this suite
+has ever actually executed against the live database.
 
 ### 2026-09-14 (later)
 This session, on top of the Week 1 UI batch below:
