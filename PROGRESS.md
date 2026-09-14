@@ -16,34 +16,42 @@ Newest entries at the top.
 **Phase:** 3 complete — capability-flag permissions and full schema
 baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
 pending-invite handling (2d), and the Phase 3 security review, Sentry,
-and UptimeRobot (3). Migrations 0015 (orders/cleanup) and 0016
-(App Store account-deletion compliance) are run and verified. **Week 1
-UI batch (10 items) complete and verified on the live site** — see log
-below. Supabase Pro (point-in-time backups) is deliberately deferred
-until ready to pay — see "Known broken" below. The repo is now the
+and UptimeRobot (3). Migrations 0015 (orders/cleanup), 0016 (App Store
+account-deletion compliance), and 0017 (time_logs recursion fix) are
+run and verified. **0018 (`staff_wage_rates`) and 0019
+(`organisations.order_rate`) are written and pushed but NOT YET
+CONFIRMED RUN** — the Supabase MCP connection is read-only and cannot
+apply them; see "Known broken" below. **Week 1 UI batch (10 items)
+complete and verified on the live site**, and this session's batch —
+add-shift availability warnings, driver order capture, wage rates,
+per-order pay, and a full responsiveness pass — is also done, pending
+those two migrations actually being run — see log below. Supabase Pro
+(point-in-time backups) is deliberately deferred until ready to pay —
+see "Known broken" below. The repo is now the
 source of truth for schema, not Supabase — see CLAUDE.md.
-**Next up:**
-1. **Add-shift availability warnings** — filter the Add-shift staff
-   picker by role, split into available/unavailable with a reason shown
-   for each unavailable person, and a proceed-anyway prompt rather than
-   a hard block. Must also cover recurring shifts (a person available for
-   the anchor date can still be unavailable for a later occurrence).
-2. **Driver order/mileage capture on clock-out** — prompt for
-   orders/extra-miles on clock-out for any role with `tracks_orders`
-   (schema already live, migration 0015), a timesheet column showing it,
-   and CSV export in `PayrollReportModal`.
-3. Then, in parallel: the Capacitor build (iOS/Android) and **Phase 4
-   testing**, starting with automated RLS tests.
-4. Real-device check of the branding + visual redesign pass pushed
+**Next up:** per `launch-plan-fast.md` Week 2, running in parallel:
+1. **Capacitor build** — `cap add ios` and `android`, wire background
+   geolocation into clock-in, verify `Info.plist` and
+   `AndroidManifest.xml`, build and test on a real device, icons and
+   splash screens.
+2. **Automated RLS tests** — the time_logs recursion bug fixed this
+   session (0017, see log below) is exactly the class of bug these
+   would have caught immediately.
+3. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
-5. Wire `organisations.primary_colour` into actual theming — it's
+4. Wire `organisations.primary_colour` into actual theming — it's
    fetched by `useOrganisation` but nothing consumes it yet; the app is
    still hardcoded to brand green (#14532D) everywhere.
-6. The purged-photo fallback in Task History (a task older than the
+5. The purged-photo fallback in Task History (a task older than the
    one-month photo-purge cron, where the signed URL request should fail
    gracefully) hasn't actually been exercised. Needs a task old enough
    for the purge to have already run against it.
+
+**Outside engineering, gates the launch date:** Apple Developer and
+Google Play accounts — not yet started. Pure calendar time (Apple
+approval especially can take days), doesn't block any of the
+engineering work above running in parallel.
 
 Task module is complete and tested end to end on both sides (template
 creation, instance generation, employee completion with and without a
@@ -52,6 +60,14 @@ and approval all verified against real data). Manager task tooling has
 since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
+- Migrations 0018 (`staff_wage_rates`) and 0019
+  (`organisations.order_rate`) are written and pushed to the repo but
+  NOT CONFIRMED RUN against the live database — the Supabase MCP
+  connection is read-only and cannot apply them. Until run manually via
+  the SQL Editor, the Pay section in StaffManager, the Cost/Total
+  columns in Timesheets and the payroll report, and the order-rate
+  setting in the admin More tab will all fail against a database
+  missing the table/column/function they depend on.
 - Branding (logo upload, org name, `useOrganisation`) and the visual
   redesign pass (design tokens, header bar, status colour, Archivo) are
   pushed but UNREVIEWED — no real device check yet. Also: the
@@ -91,6 +107,78 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-14 (later)
+This session, on top of the Week 1 UI batch below:
+
+- **Fixed infinite recursion (42P17) in the time_logs update policy**
+  (migration 0017 — run live via direct SQL before the migration file
+  was written to match, so already confirmed applied).
+  `time_logs_update_own_orders`'s `WITH CHECK` compared `to_jsonb()` of
+  the stored row against the new one — selecting from `time_logs`
+  inside a `time_logs` policy. Replaced with a plain org+user check in
+  USING/WITH CHECK, plus a new `tg_protect_own_time_log` BEFORE UPDATE
+  trigger (a policy can't see the previous row; a trigger can) that
+  lets a manager through and otherwise rejects any change to
+  `clock_in`/`clock_out`/`user_id`/`location_id`/`is_geofenced_valid` —
+  so a driver can still only set their own `orders_count`, never
+  rewrite their hours.
+- **Add-shift availability warnings** (`ManagerScheduler.jsx`) — a role
+  filter above the staff picker; the list splits into Available/
+  Unavailable sections with the reason shown inline ("Approved time
+  off, 14–16 Sep" / "Already scheduled 17:00–22:00 at Chelmsford").
+  Unavailable people stay selectable — it's a warning, not a block. A
+  recurring series is checked across every occurrence in one query
+  (not per-date), and the save confirmation names the specific
+  reason/date, or for multiple clashes, the count and a capped date
+  list.
+- **Driver order capture** — a blocking modal on any outstanding
+  completed shift for a role with `tracks_orders`, an Orders column in
+  both Timesheets and the payroll CSV, editable by a manager. **Mileage
+  was removed at the user's request** — `time_logs.extra_miles` stays
+  in the schema, unused, rather than being migrated out.
+- **Wage rates** (migration 0018, `staff_wage_rates` — **NOT YET
+  CONFIRMED RUN**, see "Known broken" above) — effective-dated per
+  `(profile_id, effective_from)` rather than a column on `profiles`, so
+  a pay rise doesn't rewrite the cost of a past shift and a backdated
+  rise still recalculates correctly from its own start date. RLS is
+  `is_admin()`-only for every operation, no policy at all for anyone
+  else; `wage_rate_at()` is the one sanctioned read path elsewhere in
+  the schema — SECURITY DEFINER, but returns null unless the caller is
+  an admin, so it can't be used to probe pay. `hourly_rate` and
+  `effective_from` added to `sentryScrub.ts`'s redaction list. A Pay
+  section on StaffManager's expanded staff row (admin only); a Cost
+  column in Timesheets and the payroll report (hours × the rate
+  effective on that shift's date, admin only).
+- **Per-order pay** (migration 0019, `organisations.order_rate` —
+  **NOT YET CONFIRMED RUN**, see "Known broken" above) — per-org, not
+  hardcoded, same access model as the existing `late_grace_minutes`
+  column (any org member reads, only an admin writes). A setting for it
+  sits next to the grace period in the admin More tab. The payroll
+  report gets a Total column per row (hours × wage rate + orders ×
+  order rate) and a per-person total for the whole selected period,
+  keyed by profile id rather than display name. The order rate used is
+  snapshotted at generation time and printed into both the on-screen
+  header and the CSV, so an exported file stays correct and
+  self-explanatory even after the setting later changes. Cost and
+  Total are both individually selectable in the CSV column picker.
+- **Responsiveness pass** across everything built since the last one
+  (the two-level More submenu, task history, the payroll report and
+  its column picker, the pay section, the orders modal, add-shift
+  availability) — audited every screen at 375/768/1280px plus tablet
+  and landscape. Four real findings, all fixed: PayrollReportModal's
+  results table (now up to 7 columns) had no small-screen fallback —
+  now stacks into cards below `sm`, a real table `sm:` and up, matching
+  the pattern already established in `TimesheetsPanel`; RolesCard's
+  reorder buttons were 22×22px, under the 44px minimum; the Live
+  Map/Roster grid skipped straight from one column to `lg`, wasting
+  tablet width; the org-name `truncate` span's wrapper had a
+  contradictory `shrink-0` next to `min-w-0` that silenced it entirely.
+  Everything else checked (all 12 modals' safe-area padding, the
+  driver-facing screens specifically, long-content wrapping elsewhere)
+  came back clean — in particular, the orders modal (flagged as
+  blocking, since if its button were unreachable a driver couldn't use
+  the app at all) was confirmed safe at both 375×667 and 375×812.
 
 ### 2026-09-14
 **Week 1 UI batch (10 items) complete and verified on the live site**:
