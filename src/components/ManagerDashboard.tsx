@@ -34,7 +34,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
-import { logNeedsOrdersReport, milesCellText, ordersCellText, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
+import { logNeedsOrdersReport, ordersCellText, ORDERS_NOT_YET_REPORTED, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
@@ -98,7 +98,6 @@ export interface TimeLogRow {
   notes: string | null;
   profiles: Profile | null;
   orders_count?: number | null;
-  extra_miles?: number | null;
   role_at_clock_in?: string | null;
 }
 
@@ -832,7 +831,7 @@ function TimesheetsPanel({
     let query = supabase
       .from('time_logs')
       .select(
-        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, extra_miles, role_at_clock_in, profiles:user_id ( id, first_name, full_name, role ), shifts:shift_id ( start_time )'
+        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, role_at_clock_in, profiles:user_id ( id, first_name, full_name, role ), shifts:shift_id ( start_time )'
       )
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
@@ -980,9 +979,7 @@ function TimesheetsPanel({
                     )}
                     {needsReport && (
                       <p className={`mt-1 text-xs ${log.orders_count == null ? 'font-medium text-warning' : 'text-ink/60'}`}>
-                        {ordersCellText(needsReport, log.orders_count ?? null)}
-                        {log.orders_count != null &&
-                          ` · ${milesCellText(needsReport, log.orders_count, log.extra_miles ?? null)} mi`}
+                        {log.orders_count == null ? ORDERS_NOT_YET_REPORTED : `${log.orders_count} orders`}
                       </p>
                     )}
                   </div>
@@ -1013,7 +1010,6 @@ function TimesheetsPanel({
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
-                {showOrdersColumns && <th scope="col">Extra miles</th>}
                 <th scope="col">Hours</th>
                 {canManage && <th scope="col">Actions</th>}
               </tr>
@@ -1056,11 +1052,6 @@ function TimesheetsPanel({
                       }`}
                     >
                       {ordersCellText(needsReport, log.orders_count ?? null)}
-                    </td>
-                  )}
-                  {showOrdersColumns && (
-                    <td className="px-2 py-2.5 tabular-nums text-ink">
-                      {milesCellText(needsReport, log.orders_count ?? null, log.extra_miles ?? null)}
                     </td>
                   )}
                   <td className="px-2 py-2.5 text-right tabular-nums font-medium text-ink">
@@ -1142,7 +1133,6 @@ function EditLogModal({
   const [clockOut, setClockOut] = useState(() => toLocalInput(log.clock_out));
   const [notes, setNotes] = useState(log.notes ?? '');
   const [orders, setOrders] = useState(() => log.orders_count?.toString() ?? '');
-  const [extraMiles, setExtraMiles] = useState(() => log.extra_miles?.toString() ?? '');
   const [saving, setSaving] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
 
@@ -1172,7 +1162,6 @@ function EditLogModal({
     }
 
     let ordersValue: number | null = null;
-    let extraMilesValue: number | null = null;
 
     if (showOrdersFields) {
       const trimmedOrders = orders.trim();
@@ -1183,16 +1172,6 @@ function EditLogModal({
           return;
         }
         ordersValue = parsedOrders;
-      }
-
-      const trimmedMiles = extraMiles.trim();
-      if (trimmedMiles !== '') {
-        const parsedMiles = Number(trimmedMiles);
-        if (!Number.isFinite(parsedMiles) || parsedMiles < 0) {
-          setFault('Additional mileage must be zero or more.');
-          return;
-        }
-        extraMilesValue = parsedMiles;
       }
     }
 
@@ -1205,7 +1184,7 @@ function EditLogModal({
         clock_in: inIso,
         clock_out: outIso,
         notes: notes.trim() || null,
-        ...(showOrdersFields ? { orders_count: ordersValue, extra_miles: extraMilesValue } : {}),
+        ...(showOrdersFields ? { orders_count: ordersValue } : {}),
       })
       .eq('id', log.id);
 
@@ -1298,37 +1277,20 @@ function EditLogModal({
           )}
 
           {showOrdersFields && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="edit-orders" className="block text-sm font-medium text-ink">
-                  Orders completed
-                </label>
-                <input
-                  id="edit-orders"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  step={1}
-                  value={orders}
-                  onChange={(event) => setOrders(event.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                />
-              </div>
-              <div>
-                <label htmlFor="edit-extra-miles" className="block text-sm font-medium text-ink">
-                  Additional mileage
-                </label>
-                <input
-                  id="edit-extra-miles"
-                  type="number"
-                  inputMode="decimal"
-                  min={0}
-                  step={0.1}
-                  value={extraMiles}
-                  onChange={(event) => setExtraMiles(event.target.value)}
-                  className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                />
-              </div>
+            <div>
+              <label htmlFor="edit-orders" className="block text-sm font-medium text-ink">
+                Orders completed
+              </label>
+              <input
+                id="edit-orders"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={orders}
+                onChange={(event) => setOrders(event.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              />
             </div>
           )}
 

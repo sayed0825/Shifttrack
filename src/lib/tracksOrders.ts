@@ -1,12 +1,12 @@
 import type { Role } from '../hooks/useRoles';
 
-/** Names of roles that require order/mileage reporting, for this org. */
+/** Names of roles that require order reporting, for this org. */
 export function tracksOrdersRoleNames(roles: Role[]): Set<string> {
   return new Set(roles.filter((r) => r.tracks_orders).map((r) => r.name));
 }
 
-/** Whether any role in the org tracks orders at all — gates showing Orders/mileage
- * UI so a business without drivers never sees empty columns. */
+/** Whether any role in the org tracks orders at all — gates showing Orders UI
+ * so a business without drivers never sees an empty column. */
 export function orgTracksOrders(roles: Role[]): boolean {
   return roles.some((r) => r.tracks_orders);
 }
@@ -38,20 +38,4 @@ export function ordersCellText(needsReport: boolean, ordersCount: number | null)
   if (!needsReport) return '—';
   if (ordersCount == null) return ORDERS_NOT_YET_REPORTED;
   return String(ordersCount);
-}
-
-/**
- * Display text for a timesheet row's mileage cell. Unlike orders_count,
- * extra_miles stays optional even once reported, so a null value there
- * only reads as "still owed" while the Orders cell also says so.
- */
-export function milesCellText(
-  needsReport: boolean,
-  ordersCount: number | null,
-  extraMiles: number | null
-): string {
-  if (!needsReport) return '—';
-  if (ordersCount == null) return ORDERS_NOT_YET_REPORTED;
-  if (extraMiles == null) return '—';
-  return extraMiles.toFixed(1);
 }

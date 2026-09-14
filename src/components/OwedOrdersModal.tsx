@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { Check, Loader2, Package } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { friendlyError } from '../lib/friendlyError';
 import { logNeedsOrdersReport, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import type { Profile } from './ManagerDashboard';
 
@@ -26,8 +27,8 @@ function formatShiftLabel(log: OwedLog): string {
 }
 
 /**
- * Blocks the app until every closed shift the driver owes an orders/mileage
- * entry for has one. Mounted once at the dashboard root so it fires on login
+ * Blocks the app until every closed shift the driver owes an orders entry
+ * for has one. Mounted once at the dashboard root so it fires on login
  * regardless of which tab last persisted, and re-checked whenever `checkSignal`
  * changes (the Clock/Tasks tabs becoming active, or right after a clock-out).
  */
@@ -41,7 +42,6 @@ export default function OwedOrdersModal({
   const { roles } = useRoles();
   const [queue, setQueue] = useState<OwedLog[]>([]);
   const [orders, setOrders] = useState('');
-  const [miles, setMiles] = useState('');
   const [saving, setSaving] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
 
@@ -83,30 +83,20 @@ export default function OwedOrdersModal({
       return;
     }
 
-    let parsedMiles: number | null = null;
-    const trimmedMiles = miles.trim();
-    if (trimmedMiles !== '') {
-      parsedMiles = Number(trimmedMiles);
-      if (!Number.isFinite(parsedMiles) || parsedMiles < 0) {
-        setFault('Additional mileage must be zero or more.');
-        return;
-      }
-    }
-
     setSaving(true);
     const { error } = await supabase
       .from('time_logs')
-      .update({ orders_count: parsedOrders, extra_miles: parsedMiles })
+      .update({ orders_count: parsedOrders })
       .eq('id', current.id);
     setSaving(false);
 
     if (error) {
-      setFault('Could not save. Check your connection and try again.');
+      console.error(error);
+      setFault(friendlyError(error, 'Could not save. Check your connection and try again.'));
       return;
     }
 
     setOrders('');
-    setMiles('');
     setQueue((q) => q.slice(1));
   };
 
@@ -149,23 +139,6 @@ export default function OwedOrdersModal({
               value={orders}
               onChange={(e) => setOrders(e.target.value)}
               autoFocus
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="owed-extra-miles" className="block text-sm font-medium text-ink">
-              Additional mileage <span className="font-normal text-ink/50">(optional)</span>
-            </label>
-            <p className="mt-0.5 text-xs text-ink/50">Miles driven beyond the normal route.</p>
-            <input
-              id="owed-extra-miles"
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={0.1}
-              value={miles}
-              onChange={(e) => setMiles(e.target.value)}
               className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>

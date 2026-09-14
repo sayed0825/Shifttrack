@@ -35,7 +35,6 @@ import { useLateGrace } from '../hooks/useLateGrace';
 import { isLate, minutesLate } from '../lib/lateness';
 import {
   logNeedsOrdersReport,
-  milesCellText,
   ordersCellText,
   ORDERS_NOT_YET_REPORTED,
   orgTracksOrders,
@@ -99,7 +98,6 @@ interface TimeLogRow {
   notes: string | null;
   location_id: string | null;
   orders_count?: number | null;
-  extra_miles?: number | null;
   role_at_clock_in?: string | null;
 }
 
@@ -594,8 +592,8 @@ function ClockInTab({
         .eq('id', openLog.id);
       if (error) throw error;
       setOpenLog(null);
-      // Closed for real (not just queued) — an orders/mileage entry may now
-      // be owed for this shift.
+      // Closed for real (not just queued) — an orders entry may now be
+      // owed for this shift.
       onClockedOut();
     } catch {
       enqueue({
@@ -958,7 +956,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
     const { data } = await supabase
       .from('time_logs')
       .select(
-        'id, clock_in, clock_out, notes, location_id, orders_count, extra_miles, role_at_clock_in, shifts:shift_id ( start_time )'
+        'id, clock_in, clock_out, notes, location_id, orders_count, role_at_clock_in, shifts:shift_id ( start_time )'
       )
       .eq('user_id', user.id)
       .gte('clock_in', weekStart.toISOString())
@@ -1054,9 +1052,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                     )}
                     {needsReport && (
                       <p className="mt-1 text-xs text-ink/60">
-                        {log.orders_count == null
-                          ? ORDERS_NOT_YET_REPORTED
-                          : `${log.orders_count} orders · ${milesCellText(needsReport, log.orders_count, log.extra_miles ?? null)} mi`}
+                        {log.orders_count == null ? ORDERS_NOT_YET_REPORTED : `${log.orders_count} orders`}
                       </p>
                     )}
                   </div>
@@ -1075,7 +1071,6 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
-                {showOrdersColumns && <th scope="col">Extra miles</th>}
                 <th scope="col">Hours</th>
               </tr>
             </thead>
@@ -1102,11 +1097,6 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                     {showOrdersColumns && (
                       <td className="px-2 py-3 tabular-nums text-ink">
                         {ordersCellText(needsReport, log.orders_count ?? null)}
-                      </td>
-                    )}
-                    {showOrdersColumns && (
-                      <td className="px-2 py-3 tabular-nums text-ink">
-                        {milesCellText(needsReport, log.orders_count ?? null, log.extra_miles ?? null)}
                       </td>
                     )}
                     <td className="px-4 py-3 text-right tabular-nums font-medium text-ink">
