@@ -92,6 +92,22 @@ function formatLongDate(key) {
   });
 }
 
+function formatShortDate(key) {
+  return new Date(`${key}T12:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+// "14–16 Sep" within one month; "30 Aug – 2 Sep" across a month boundary.
+function formatDateRangeShort(startKey, endKey) {
+  if (startKey === endKey) return formatShortDate(startKey);
+  const start = new Date(`${startKey}T12:00:00`);
+  const end = new Date(`${endKey}T12:00:00`);
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  if (sameMonth) {
+    return `${start.getDate()}–${end.getDate()} ${end.toLocaleDateString([], { month: 'short' })}`;
+  }
+  return `${formatShortDate(startKey)} – ${formatShortDate(endKey)}`;
+}
+
 function roleDotClass(role) {
   return role === 'Driver' ? 'bg-secondary' : 'bg-primary';
 }
@@ -134,6 +150,135 @@ function buildOccurrences({ anchorKey, weekdays, recurring, repeatUntil }) {
   }
 
   return keys.sort();
+}
+
+// --- availability -----------------------------------------------------------
+//
+// Unavailable means, for a given date: an approved unavailability_request
+// covers it, or the person already has a shift that day at any location
+// (not just the one being scheduled). This is a snapshot taken when a query
+// below runs, not a live lock — it can go stale if two managers schedule the
+// same person at once, since the database itself does not prevent
+// double-booking. Every result here is advisory: a manager can always
+// proceed past it, because they often have context the system doesn't.
+
+function formatClashReason(timeOffRow, shiftRow) {
+  if (timeOffRow) {
+    return `Approved time off, ${formatDateRangeShort(timeOffRow.start_date, timeOffRow.end_date)}`;
+  }
+  if (shiftRow) {
+    return `Already scheduled ${localHhmm(shiftRow.start_time)}–${localHhmm(shiftRow.end_time)} at ${
+      shiftRow.locations?.name ?? 'another location'
+    }`;
+  }
+  return null;
+}
+
+// One date, many staff — used to label the staff picker. Two queries (not
+// one per person) via .in(), each scoped to the single date being scheduled.
+async function fetchRosterAvailability(staffIds, date) {
+  if (staffIds.length === 0) return new Map();
+
+  const dayStart = toUtcIso(date, '00:00');
+  const dayEnd = toUtcIso(date, '00:00', 1);
+
+  const [{ data: unavailRows }, { data: shiftRows }] = await Promise.all([
+    supabase
+      .from('unavailability_requests')
+      .select('user_id, start_date, end_date')
+      .in('user_id', staffIds)
+      .eq('status', 'approved')
+      .lte('start_date', date)
+      .gte('end_date', date),
+    // A Manager scoped to specific locations can only see shifts at
+    // locations they manage (shifts_manager_all RLS) — a shift at a
+    // location outside their scope won't surface here. An Administrator
+    // manages every location, so this is complete for them.
+    supabase
+      .from('shifts')
+      .select('assigned_user_id, start_time, end_time, locations ( name )')
+      .in('assigned_user_id', staffIds)
+      .gte('start_time', dayStart)
+      .lt('start_time', dayEnd)
+      .order('start_time'),
+  ]);
+
+  const shiftByStaff = new Map();
+  for (const row of shiftRows ?? []) {
+    if (!shiftByStaff.has(row.assigned_user_id)) shiftByStaff.set(row.assigned_user_id, row);
+  }
+
+  const result = new Map();
+  for (const id of staffIds) {
+    const timeOff = (unavailRows ?? []).find(
+      (row) => row.user_id === id && date >= row.start_date && date <= row.end_date
+    );
+    const reason = formatClashReason(timeOff, shiftByStaff.get(id));
+    if (reason) result.set(id, reason);
+  }
+  return result;
+}
+
+// One staff member, many dates — used for the recurring-series check.
+// One query across the whole date range rather than one per occurrence, since
+// a 12-week series is up to 84 dates.
+async function fetchStaffClashDates(staffId, dates) {
+  if (!staffId || dates.length === 0) return new Map();
+
+  const first = dates[0];
+  const last = dates[dates.length - 1];
+  const rangeStart = toUtcIso(first, '00:00');
+  const rangeEnd = toUtcIso(last, '00:00', 1);
+
+  const [{ data: unavailRows }, { data: shiftRows }] = await Promise.all([
+    supabase
+      .from('unavailability_requests')
+      .select('start_date, end_date')
+      .eq('user_id', staffId)
+      .eq('status', 'approved')
+      .lte('start_date', last)
+      .gte('end_date', first),
+    supabase
+      .from('shifts')
+      .select('start_time, end_time, locations ( name )')
+      .eq('assigned_user_id', staffId)
+      .gte('start_time', rangeStart)
+      .lt('start_time', rangeEnd)
+      .order('start_time'),
+  ]);
+
+  const shiftsByDate = new Map();
+  for (const row of shiftRows ?? []) {
+    const key = dateKey(new Date(row.start_time));
+    if (!shiftsByDate.has(key)) shiftsByDate.set(key, row);
+  }
+
+  const clashes = new Map();
+  for (const date of dates) {
+    const timeOff = (unavailRows ?? []).find((row) => date >= row.start_date && date <= row.end_date);
+    const reason = formatClashReason(timeOff, shiftsByDate.get(date));
+    if (reason) clashes.set(date, reason);
+  }
+  return clashes;
+}
+
+// Summarises which of `occurrences` are in `clashMap` — a single reason +
+// date when only one clashes, otherwise a count and a capped date list.
+function buildClashSummary(clashMap, occurrences) {
+  const clashDates = occurrences.filter((key) => clashMap.has(key));
+  if (clashDates.length === 0) return null;
+
+  if (clashDates.length === 1) {
+    const [key] = clashDates;
+    return `${clashMap.get(key)} on ${formatLongDate(key)}.`;
+  }
+
+  const MAX_LISTED_DATES = 8;
+  const listed = clashDates.slice(0, MAX_LISTED_DATES).map(formatShortDate).join(', ');
+  const extra = clashDates.length - MAX_LISTED_DATES;
+  return `Clashes on ${clashDates.length} of ${occurrences.length} dates: ${listed}${
+    extra > 0 ? `, and ${extra} more` : ''
+  }.`;
 }
 
 // ============================================================================
@@ -477,6 +622,8 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
   const [staffId, setStaffId] = useState('');
   const [staffQuery, setStaffQuery] = useState('');
   const [staff, setStaff] = useState([]);
+  const [modalRoleFilter, setModalRoleFilter] = useState('');
+  const [rosterAvailability, setRosterAvailability] = useState(new Map());
   const [locationId, setLocationId] = useState(locations[0]?.id ?? '');
   const [startTime, setStartTime] = useState('17:00');
   const [endTime, setEndTime] = useState('22:00');
@@ -489,6 +636,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
   const [fault, setFault] = useState(null);
   const [unavailWarn, setUnavailWarn] = useState(null);
 
+  const { roles, loading: rolesLoading } = useRoles();
   const dialogRef = useRef(null);
   const weekdaysSeeded = useRef(false);
 
@@ -549,13 +697,50 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
     };
   }, [locationId]);
 
+  const roleFilteredStaff = useMemo(
+    () => (modalRoleFilter ? staff.filter((person) => person.role === modalRoleFilter) : staff),
+    [staff, modalRoleFilter]
+  );
+
   const filteredStaff = useMemo(() => {
     const needle = staffQuery.trim().toLowerCase();
-    if (!needle) return staff;
-    return staff.filter((person) =>
+    if (!needle) return roleFilteredStaff;
+    return roleFilteredStaff.filter((person) =>
       `${person.full_name ?? ''} ${person.first_name ?? ''}`.toLowerCase().includes(needle)
     );
-  }, [staff, staffQuery]);
+  }, [roleFilteredStaff, staffQuery]);
+
+  const availableStaff = useMemo(
+    () => filteredStaff.filter((person) => !rosterAvailability.has(person.id)),
+    [filteredStaff, rosterAvailability]
+  );
+  const unavailableStaff = useMemo(
+    () => filteredStaff.filter((person) => rosterAvailability.has(person.id)),
+    [filteredStaff, rosterAvailability]
+  );
+
+  // Who's available for the date currently being scheduled (the anchor date
+  // for a recurring series — see fetchStaffClashDates for the full-series
+  // check run at save time). Recomputes whenever the roster or date changes.
+  useEffect(() => {
+    if (staff.length === 0) {
+      setRosterAvailability(new Map());
+      return undefined;
+    }
+    let cancelled = false;
+
+    (async () => {
+      const map = await fetchRosterAvailability(
+        staff.map((person) => person.id),
+        startDate
+      );
+      if (!cancelled) setRosterAvailability(map);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [staff, startDate]);
 
   const occurrences = useMemo(
     () => buildOccurrences({ anchorKey: startDate, weekdays, recurring, repeatUntil }),
@@ -572,7 +757,9 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
       prev.includes(value) ? prev.filter((day) => day !== value) : [...prev, value]
     );
 
-  // Warn — never block — when shifts land on approved unavailability.
+  // Live preview, advisory only — warns as soon as a staff member and dates
+  // are picked, but the authoritative check (and the confirmation prompt) runs
+  // again in handleSave right before anything is written.
   useEffect(() => {
     if (!staffId || occurrences.length === 0) {
       setUnavailWarn(null);
@@ -581,25 +768,9 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
     let cancelled = false;
 
     (async () => {
-      const { data } = await supabase
-        .from('unavailability_requests')
-        .select('start_date, end_date')
-        .eq('user_id', staffId)
-        .eq('status', 'approved')
-        .gte('end_date', occurrences[0])
-        .lte('start_date', occurrences[occurrences.length - 1]);
-
+      const clashes = await fetchStaffClashDates(staffId, occurrences);
       if (cancelled) return;
-
-      const clashes = occurrences.filter((key) =>
-        (data ?? []).some((request) => key >= request.start_date && key <= request.end_date)
-      );
-
-      setUnavailWarn(
-        clashes.length > 0
-          ? `${clashes.length} shift${clashes.length === 1 ? '' : 's'} fall on dates with an approved unavailability request.`
-          : null
-      );
+      setUnavailWarn(buildClashSummary(clashes, occurrences));
     })();
 
     return () => {
@@ -625,6 +796,21 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
     setFault(null);
 
     try {
+      // Re-check right before writing anything — the picker's warning can be
+      // stale by the time Save is clicked. Proceeding is always allowed; the
+      // manager may know something the system doesn't.
+      const clashes = await fetchStaffClashDates(staffId, occurrences);
+      if (clashes.size > 0) {
+        const person = staff.find((entry) => entry.id === staffId);
+        const personName = person?.full_name ?? person?.first_name ?? 'This person';
+        const summary = buildClashSummary(clashes, occurrences);
+        const proceed = window.confirm(`${personName} — ${summary}\n\nSchedule anyway?`);
+        if (!proceed) {
+          setSaving(false);
+          return;
+        }
+      }
+
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -733,6 +919,30 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
             </select>
           </div>
 
+          {/* Role filter — narrows who appears in the staff picker below */}
+          <div>
+            <label htmlFor="shift-role-filter" className="block text-sm font-medium text-ink">
+              Role
+            </label>
+            <select
+              id="shift-role-filter"
+              value={modalRoleFilter}
+              onChange={(event) => {
+                setModalRoleFilter(event.target.value);
+                setStaffId('');
+              }}
+              disabled={rolesLoading}
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+            >
+              <option value="">All roles</option>
+              {roles.map((r) => (
+                <option key={r.id} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Staff picker */}
           <div>
             <label htmlFor="staff-search" className="block text-sm font-medium text-ink">
@@ -755,37 +965,52 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
             <div
               role="listbox"
               aria-label="Staff members"
-              className="mt-2 max-h-44 overflow-y-auto rounded-lg border border-border"
+              className="mt-2 max-h-64 overflow-y-auto rounded-lg border border-border"
             >
               {filteredStaff.length === 0 && (
                 <p className="px-3 py-4 text-center text-sm text-ink/60">
-                  {locationId
-                    ? 'Nobody at this location matches that name.'
-                    : 'Select a location first.'}
+                  {!locationId
+                    ? 'Select a location first.'
+                    : staffQuery.trim()
+                      ? 'Nobody matches that name.'
+                      : modalRoleFilter
+                        ? 'Nobody with that role at this location.'
+                        : 'Nobody at this location yet.'}
                 </p>
               )}
-              {filteredStaff.map((person) => (
-                <button
-                  key={person.id}
-                  type="button"
-                  role="option"
-                  aria-selected={staffId === person.id}
-                  onClick={() => setStaffId(person.id)}
-                  className={`flex min-h-[44px] w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm ${
-                    staffId === person.id ? 'bg-primary text-white' : 'text-ink hover:bg-bg'
-                  }`}
-                >
-                  <span
-                    className={`h-2 w-2 shrink-0 rounded-full ${roleDotClass(person.role)}`}
-                    aria-hidden="true"
-                  />
-                  <span className="flex-1 truncate">{person.full_name ?? person.first_name}</span>
-                  <span className={`text-xs ${staffId === person.id ? 'text-white/70' : 'text-ink/50'}`}>
-                    {person.role}
-                  </span>
-                  {staffId === person.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                </button>
-              ))}
+
+              {availableStaff.length > 0 && (
+                <>
+                  <p className="border-b border-border bg-bg px-3 py-1.5 text-xs font-semibold text-ink/60">
+                    Available
+                  </p>
+                  {availableStaff.map((person) => (
+                    <StaffOption
+                      key={person.id}
+                      person={person}
+                      selected={staffId === person.id}
+                      onSelect={() => setStaffId(person.id)}
+                    />
+                  ))}
+                </>
+              )}
+
+              {unavailableStaff.length > 0 && (
+                <>
+                  <p className="border-b border-t border-border bg-bg px-3 py-1.5 text-xs font-semibold text-ink/60">
+                    Unavailable
+                  </p>
+                  {unavailableStaff.map((person) => (
+                    <StaffOption
+                      key={person.id}
+                      person={person}
+                      selected={staffId === person.id}
+                      onSelect={() => setStaffId(person.id)}
+                      reason={rosterAvailability.get(person.id)}
+                    />
+                  ))}
+                </>
+              )}
             </div>
           </div>
 
@@ -997,5 +1222,38 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// A row in the staff picker. Unavailable people stay selectable — this is a
+// warning, not a block — with the reason shown under their name.
+function StaffOption({ person, selected, onSelect, reason }) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      onClick={onSelect}
+      className={`flex min-h-[44px] w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm ${
+        selected ? 'bg-primary text-white' : 'text-ink hover:bg-bg'
+      }`}
+    >
+      <span
+        className={`mt-1.5 h-2 w-2 shrink-0 self-start rounded-full ${roleDotClass(person.role)}`}
+        aria-hidden="true"
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{person.full_name ?? person.first_name}</span>
+        {reason && (
+          <span className={`block truncate text-xs ${selected ? 'text-white/70' : 'text-warning'}`}>
+            {reason}
+          </span>
+        )}
+      </span>
+      <span className={`shrink-0 text-xs ${selected ? 'text-white/70' : 'text-ink/50'}`}>
+        {person.role}
+      </span>
+      {selected && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+    </button>
   );
 }
