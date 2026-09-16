@@ -16,22 +16,23 @@ workflows:
 
     environment:
       ios_signing:
-        # This alone does not create anything -- it only tells
-        # `xcode-project use-profiles` (below) which existing certificate/
-        # profile to look for and apply. The first time a bundle ID is
-        # built, nothing exists yet to find; see "Fetch or create signing
-        # files", the step that actually generates them via the App Store
-        # Connect integration above. No certificate, private key, or
-        # profile is stored anywhere in this file or a Codemagic group --
-        # both steps authenticate purely through the integration.
+        # UI-managed signing: the certificate and App Store provisioning
+        # profile for this bundle ID were generated through Codemagic's UI
+        # (Team settings -> Code signing identities) and are stored there,
+        # not in this repo. This block just tells Codemagic which stored
+        # identity to inject into the build before any script runs --
+        # `xcode-project use-profiles` (below) is what actually applies it
+        # to the Xcode project. Deliberately not combined with the CLI
+        # `app-store-connect fetch-signing-files` approach: Codemagic
+        # documents the two as alternatives, and combining them fails --
+        # fetch-signing-files --create found the certificate already sitting
+        # in the Apple account (created via the UI) and tried to save it
+        # locally without a private key, which Apple never re-releases once
+        # a certificate exists ("Cannot save Signing Certificates without
+        # certificate private key").
         distribution_type: app_store
         bundle_identifier: com.kitescheduling.app
       vars:
-        # Must match environment.ios_signing.bundle_identifier above --
-        # YAML config fields and shell script vars can't share one
-        # definition, so this is the one place that duplication is
-        # unavoidable.
-        BUNDLE_ID: "com.kitescheduling.app"
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
       node: 20.19.0
@@ -68,27 +69,10 @@ workflows:
         script: |
           cd ios/App && pod install
 
-      - name: Fetch or create signing files
-        # environment.ios_signing / `use-profiles` only ever FETCH an
-        # existing certificate and provisioning profile -- they do not
-        # create one that doesn't exist yet. The App ID is registered in
-        # the Apple Developer portal and the app record exists in App
-        # Store Connect, but no certificate or profile has ever been
-        # created for it, so without this step `use-profiles` fails with
-        # "No matching profiles found". --create makes this idempotent:
-        # once a certificate/profile exist, later runs just fetch them.
-        # No explicit --issuer-id/--key-id/--private-key -- authenticates
-        # via the same App Store Connect integration referenced above,
-        # exactly like `use-profiles` does.
-        script: |
-          app-store-connect fetch-signing-files \
-            --type IOS_APP_STORE \
-            --create \
-            "$BUNDLE_ID"
-
       - name: Set up iOS code signing
-        # Applies the certificate/profile fetch-signing-files just
-        # ensured exist to the Xcode project.
+        # Applies the certificate/profile Codemagic already injected from
+        # the UI-managed code signing identity (environment.ios_signing
+        # above) to the Xcode project.
         script: |
           xcode-project use-profiles
 
