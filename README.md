@@ -26,6 +26,23 @@ per-build `capacitor.config.json` copy, `Pods/`) are gitignored — see
 `ios/.gitignore` — since `npx cap sync ios` recreates them from the repo
 state on every build, on Codemagic or on a real Mac.
 
+`capacitor.config.json`'s `ios.contentInset` is `scrollableAxes`, not
+`always`. `always` sets `UIScrollView.contentInsetAdjustmentBehavior`
+to inset the WebView's *native* scroll container on every edge —
+including left/right — regardless of whether that axis actually
+scrolls. Since this app is never meant to scroll horizontally, that
+native inset had nothing to reconcile against and showed up as a
+genuine, persistent horizontal drag on device (TestFlight only, never
+in mobile Safari, since Safari's own viewport scrolling doesn't go
+through this native-container mechanism at all) — no amount of CSS
+`overflow-x: hidden` can prevent it, since it isn't the document
+overflowing, it's the outer native scroll view. `scrollableAxes` insets
+only the axes that are genuinely scrollable — vertical, in this app —
+so the status bar/home indicator are still cleared without introducing
+a phantom horizontal one. If a screen is ever meant to scroll
+horizontally, checking there's no *unintended* horizontal scroll comes
+first, not reaching back for `always`.
+
 ## Automated RLS tests
 
 `tests/rls/` exercises the actual Row Level Security policies in the

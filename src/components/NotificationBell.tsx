@@ -127,7 +127,10 @@ export default function NotificationBell(): ReactNode {
         <div
           role="dialog"
           aria-label="Notifications"
-          className="absolute right-0 top-full z-[1200] mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
+          // dvw, not vw — the dynamic viewport width, since this is
+          // `right: 0`-anchored (not clamped in JS the way FilterButton's
+          // popover is) and needs to actually match the visible width.
+          className="absolute right-0 top-full z-[1200] mt-2 w-80 max-w-[calc(100dvw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
         >
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <h3 className="text-sm font-semibold text-ink">Notifications</h3>

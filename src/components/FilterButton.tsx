@@ -174,7 +174,7 @@ export default function FilterButton({
             ref={popoverRef}
             role="dialog"
             aria-label={`${label} options`}
-            className="fixed z-[1200] w-72 max-w-[calc(100vw-2rem)] space-y-3 overflow-y-auto rounded-lg border border-border bg-surface p-3 shadow-lg"
+            className="fixed z-[1200] w-72 max-w-[calc(100dvw-2rem)] space-y-3 overflow-y-auto rounded-lg border border-border bg-surface p-3 shadow-lg"
             style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
           >
             {children}

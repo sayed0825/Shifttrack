@@ -3,7 +3,7 @@
   "appName": "ShiftTrack",
   "webDir": "dist",
   "ios": {
-    "contentInset": "always"
+    "contentInset": "scrollableAxes"
   },
   "android": {
     "useLegacyBridge": true
