@@ -4,7 +4,7 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
 
-    # References the App Store Connect integration named "<code magic>" in
+    # References the App Store Connect integration named "code magic" in
     # this Codemagic team's settings (Teams -> Integrations -> App Store
     # Connect). Nothing here is a credential -- the integration itself
     # holds the API key, configured once in Codemagic's UI, never in this
@@ -12,7 +12,7 @@ workflows:
     # below) and publishing (publishing.app_store_connect below) to know
     # which Apple account to act as.
     integrations:
-      app_store_connect: "<code magic>"
+      app_store_connect: "code magic"
 
     environment:
       ios_signing:
