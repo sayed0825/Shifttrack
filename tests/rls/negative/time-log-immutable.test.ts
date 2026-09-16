@@ -12,6 +12,15 @@ interface Case {
   timeLogId: string;
 }
 
+// Postgres returns timestamptz as "...+00:00"; a JS-constructed
+// .toISOString() ends in "Z". Same instant, different notation — compare
+// parsed values, never raw strings, or an otherwise-correct write reads as
+// a failed assertion.
+function sameInstant(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null) return a === b;
+  return new Date(a).getTime() === new Date(b).getTime();
+}
+
 // tg_protect_own_time_log (migration 0017, tightened in 0020 after this
 // suite caught the gap): an administrator may edit their own hours (and
 // anyone else's, as before). A manager may still edit anyone ELSE's hours,
@@ -48,7 +57,7 @@ describe('time_log clock_in/clock_out edits are scoped by whose row it is and wh
           async () => {
             const { data, error } = await adminClient.from('time_logs').select('clock_in, clock_out').eq('id', c.timeLogId).single();
             if (error || !data) throw new Error('could not re-read the time_log');
-            if (data.clock_in !== before.clock_in || data.clock_out !== before.clock_out) {
+            if (!sameInstant(data.clock_in, before.clock_in) || !sameInstant(data.clock_out, before.clock_out)) {
               throw new Error('clock_in/clock_out changed');
             }
           }
@@ -75,8 +84,8 @@ describe('time_log clock_in/clock_out edits are scoped by whose row it is and wh
         .eq('id', fixtures.orgA.timeLogAdminId)
         .single();
       expect(error).toBeNull();
-      expect(data?.clock_in).toBe(newClockIn);
-      expect(data?.clock_out).toBe(newClockOut);
+      expect(sameInstant(data?.clock_in, newClockIn)).toBe(true);
+      expect(sameInstant(data?.clock_out, newClockOut)).toBe(true);
     });
 
     it("a manager can change clock_in/clock_out on a subordinate's closed log", async () => {
@@ -100,8 +109,8 @@ describe('time_log clock_in/clock_out edits are scoped by whose row it is and wh
         .eq('id', fixtures.orgA.timeLogEmployee1Id)
         .single();
       expect(error).toBeNull();
-      expect(data?.clock_in).toBe(newClockIn);
-      expect(data?.clock_out).toBe(newClockOut);
+      expect(sameInstant(data?.clock_in, newClockIn)).toBe(true);
+      expect(sameInstant(data?.clock_out, newClockOut)).toBe(true);
     });
   });
 });
