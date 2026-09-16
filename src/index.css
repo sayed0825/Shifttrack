@@ -89,12 +89,21 @@ body {
 }
 
 /*
- * Belt-and-braces against sideways scroll from an unexpectedly wide child
- * (a long unbroken string, a stray fixed width). Every screen should already
- * wrap/truncate its own content — this just stops one offender from taking
- * the whole page with it.
+ * The document itself must never scroll — every screen does its own
+ * scrolling internally (a `h-dvh` root with an inner `overflow-y-auto`
+ * region), never on `html`/`body`. This isn't just tidiness: in the native
+ * iOS build, `position: fixed` (the bottom mobile nav, portaled popovers)
+ * resolves against the WKWebView's own *native* outer scroll view, which
+ * tracks whether the document is scrollable — not against CSS's notion of
+ * the viewport the way Mobile Safari's browser chrome does. If `body` ever
+ * ends up even a pixel taller than the viewport (stray padding, a rounding
+ * difference), that native container becomes scrollable and drags fixed
+ * elements along as it scrolls, even though nothing in the page's own CSS
+ * asked for that. Locking both axes here removes the possibility outright,
+ * rather than papering over the symptom with `position: sticky`.
  */
 html,
 body {
-  overflow-x: hidden;
+  height: 100dvh;
+  overflow: hidden;
 }

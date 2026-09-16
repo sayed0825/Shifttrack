@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, Check, CheckSquare, Clock, MapPin, UserCog, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { useAnchoredPopoverPosition } from '../hooks/useAnchoredPopoverPosition';
+
+const POPOVER_WIDTH = 320; // matches w-80
 
 export interface NotificationRow {
   id: string;
@@ -36,7 +40,15 @@ export default function NotificationBell(): ReactNode {
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  const position = useAnchoredPopoverPosition({
+    open,
+    triggerRef: buttonRef,
+    width: POPOVER_WIDTH,
+    align: 'right',
+  });
 
   const load = useCallback(async () => {
     const { data, error: queryError } = await supabase
@@ -73,16 +85,25 @@ export default function NotificationBell(): ReactNode {
     };
   }, [load]);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside, or on Escape. The dropdown is
+  // portaled to document.body (see the render below), so this must check
+  // popoverRef too — it's no longer a DOM descendant of the button.
   useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    if (!open) return undefined;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (buttonRef.current?.contains(target) || popoverRef.current?.contains(target)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', onClick);
-    return () => document.removeEventListener('mousedown', onClick);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [open]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
@@ -108,11 +129,14 @@ export default function NotificationBell(): ReactNode {
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={containerRef} className="relative">
+    <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-label={`Notifications${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+        aria-expanded={open}
+        aria-haspopup="true"
         className="relative rounded-lg p-2 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
         <Bell className="h-5 w-5" aria-hidden="true" />
@@ -123,82 +147,89 @@ export default function NotificationBell(): ReactNode {
         )}
       </button>
 
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Notifications"
-          // dvw, not vw — the dynamic viewport width, since this is
-          // `right: 0`-anchored (not clamped in JS the way FilterButton's
-          // popover is) and needs to actually match the visible width.
-          className="absolute right-0 top-full z-[1200] mt-2 w-80 max-w-[calc(100dvw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
-        >
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h3 className="text-sm font-semibold text-ink">Notifications</h3>
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                onClick={() => void markAllRead()}
-                className="inline-flex items-center gap-1 text-xs font-medium text-ink/60 hover:text-ink"
-              >
-                <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                Mark all read
-              </button>
-            )}
-          </div>
+      {open &&
+        position &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            role="dialog"
+            aria-label="Notifications"
+            // Portaled to document.body and positioned in fixed coordinates
+            // against the trigger's own bounding rect (see
+            // useAnchoredPopoverPosition), same treatment as FilterButton —
+            // clamped so it can never extend past either viewport edge, not
+            // just right-anchored and hoping the width happens to fit.
+            className="fixed z-[1200] flex w-80 max-w-[calc(100dvw-2rem)] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-lg"
+            style={{ top: position.top, left: position.left, maxHeight: position.maxHeight }}
+          >
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-sm font-semibold text-ink">Notifications</h3>
+              {unreadCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void markAllRead()}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-ink/60 hover:text-ink"
+                >
+                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  Mark all read
+                </button>
+              )}
+            </div>
 
-          <div className="max-h-96 overflow-y-auto">
-            {loading && (
-              <div className="flex items-center justify-center gap-2 py-8 text-sm text-ink/60">
-                <Bell className="h-4 w-4 animate-pulse" aria-hidden="true" />
-                Loading…
-              </div>
-            )}
+            <div className="flex-1 overflow-y-auto">
+              {loading && (
+                <div className="flex items-center justify-center gap-2 py-8 text-sm text-ink/60">
+                  <Bell className="h-4 w-4 animate-pulse" aria-hidden="true" />
+                  Loading…
+                </div>
+              )}
 
-            {!loading && error && (
-              <div className="px-4 py-8 text-center text-sm text-danger">{error}</div>
-            )}
+              {!loading && error && (
+                <div className="px-4 py-8 text-center text-sm text-danger">{error}</div>
+              )}
 
-            {!loading && !error && notifications.length === 0 && (
-              <div className="px-4 py-8 text-center text-sm text-ink/60">
-                <Bell className="mx-auto mb-2 h-6 w-6 text-ink/40" aria-hidden="true" />
-                No notifications yet.
-              </div>
-            )}
+              {!loading && !error && notifications.length === 0 && (
+                <div className="px-4 py-8 text-center text-sm text-ink/60">
+                  <Bell className="mx-auto mb-2 h-6 w-6 text-ink/40" aria-hidden="true" />
+                  No notifications yet.
+                </div>
+              )}
 
-            {!loading && !error && notifications.length > 0 && (
-              <ul className="divide-y divide-border">
-                {notifications.map((n) => {
-                  const Icon = TYPE_ICONS[n.type] ?? Bell;
-                  return (
-                    <li
-                      key={n.id}
-                      className={`flex gap-3 px-4 py-3 ${n.is_read ? 'bg-surface' : 'bg-primary/5'}`}
-                    >
-                      <div
-                        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                          n.is_read ? 'bg-bg text-ink/50' : 'bg-secondary/20 text-secondary'
-                        }`}
+              {!loading && !error && notifications.length > 0 && (
+                <ul className="divide-y divide-border">
+                  {notifications.map((n) => {
+                    const Icon = TYPE_ICONS[n.type] ?? Bell;
+                    return (
+                      <li
+                        key={n.id}
+                        className={`flex gap-3 px-4 py-3 ${n.is_read ? 'bg-surface' : 'bg-primary/5'}`}
                       >
-                        <Icon className="h-4 w-4" aria-hidden="true" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium text-ink">{n.title}</p>
-                          <span className="shrink-0 text-xs text-ink/50">{formatRelative(n.created_at)}</span>
+                        <div
+                          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                            n.is_read ? 'bg-bg text-ink/50' : 'bg-secondary/20 text-secondary'
+                          }`}
+                        >
+                          <Icon className="h-4 w-4" aria-hidden="true" />
                         </div>
-                        {n.body && <p className="mt-0.5 text-xs text-ink/60">{n.body}</p>}
-                        {!n.is_read && (
-                          <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-secondary" aria-label="Unread" />
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium text-ink">{n.title}</p>
+                            <span className="shrink-0 text-xs text-ink/50">{formatRelative(n.created_at)}</span>
+                          </div>
+                          {n.body && <p className="mt-0.5 text-xs text-ink/60">{n.body}</p>}
+                          {!n.is_read && (
+                            <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-secondary" aria-label="Unread" />
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

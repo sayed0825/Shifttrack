@@ -43,6 +43,26 @@ a phantom horizontal one. If a screen is ever meant to scroll
 horizontally, checking there's no *unintended* horizontal scroll comes
 first, not reaching back for `always`.
 
+`html, body` in `src/index.css` are locked to `height: 100dvh;
+overflow: hidden`, not just `overflow-x: hidden`. This is what fixed a
+second native-only bug: the bottom mobile nav (`position: fixed`)
+drifting as the page scrolled, only in the TestFlight build, never in
+mobile Safari. In a WKWebView, `position: fixed` resolves against the
+WebView's own *native* outer scroll view — the same one
+`ios.contentInset` configures — not against CSS's notion of the
+viewport the way Mobile Safari's browser chrome does. Every screen in
+this app already does its own scrolling internally (a `h-dvh` root
+with an inner `overflow-y-auto` region), so `html`/`body` were never
+meant to scroll at all — but nothing stopped `body` from ending up a
+pixel or two taller than the viewport (stray padding, a rounding
+difference), which is enough to make that native container scrollable
+and drag anything `fixed` along with it as it scrolls. Locking both
+axes on `html`/`body` removes the possibility outright. If a fixed
+element ever seems to drift again, check for exactly this — a genuine
+mismatch between the document's real height and the viewport — before
+reaching for `position: sticky` as a substitute; `sticky` would hide
+the symptom without touching why `fixed` stopped behaving like `fixed`.
+
 ## Automated RLS tests
 
 `tests/rls/` exercises the actual Row Level Security policies in the

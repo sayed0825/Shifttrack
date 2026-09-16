@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Filter, X } from 'lucide-react';
+import { useAnchoredPopoverPosition } from '../hooks/useAnchoredPopoverPosition';
 
 const POPOVER_WIDTH = 288; // matches w-72
-const VIEWPORT_MARGIN = 16;
-const POPOVER_GAP = 8;
-const MIN_POPOVER_HEIGHT = 160;
 const SM_BREAKPOINT = 640; // Tailwind's `sm`
 
 export default function FilterButton({
@@ -22,51 +20,34 @@ export default function FilterButton({
 }): ReactNode {
   const [open, setOpen] = useState(false);
   const [isSheet, setIsSheet] = useState(false);
-  const [position, setPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  // Below sm: a full-width bottom sheet, own scroll, no position math
+  // needed. From sm up: a popover clamped to the viewport (see the shared
+  // hook below) — flipped above the trigger when there isn't room below,
+  // with its own max-height and internal scroll so it's never taller than
+  // the screen it's on.
   useEffect(() => {
     if (!open) return undefined;
 
     const mql = window.matchMedia(`(min-width: ${SM_BREAKPOINT}px)`);
+    const updateIsSheet = () => setIsSheet(!mql.matches);
+    updateIsSheet();
 
-    // Below sm: a full-width bottom sheet, own scroll, no position math
-    // needed. From sm up: a popover clamped to the viewport — flipped
-    // above the trigger when there isn't room below, with its own
-    // max-height and internal scroll so it's never taller than the
-    // screen it's on.
-    const updateLayout = () => {
-      if (!mql.matches) {
-        setIsSheet(true);
-        setPosition(null);
-        return;
-      }
-      setIsSheet(false);
+    mql.addEventListener('change', updateIsSheet);
+    return () => mql.removeEventListener('change', updateIsSheet);
+  }, [open]);
 
-      const rect = buttonRef.current?.getBoundingClientRect();
-      if (!rect) return;
+  const position = useAnchoredPopoverPosition({
+    open: open && !isSheet,
+    triggerRef: buttonRef,
+    width: POPOVER_WIDTH,
+    align: 'left',
+  });
 
-      const left = Math.max(
-        VIEWPORT_MARGIN,
-        Math.min(rect.left, window.innerWidth - POPOVER_WIDTH - VIEWPORT_MARGIN)
-      );
-
-      const spaceBelow = window.innerHeight - rect.bottom - VIEWPORT_MARGIN;
-      const spaceAbove = rect.top - VIEWPORT_MARGIN;
-
-      if (spaceBelow >= MIN_POPOVER_HEIGHT || spaceBelow >= spaceAbove) {
-        setPosition({
-          top: rect.bottom + POPOVER_GAP,
-          left,
-          maxHeight: Math.max(MIN_POPOVER_HEIGHT, spaceBelow - POPOVER_GAP),
-        });
-      } else {
-        const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove - POPOVER_GAP);
-        setPosition({ top: rect.top - POPOVER_GAP - maxHeight, left, maxHeight });
-      }
-    };
-    updateLayout();
+  useEffect(() => {
+    if (!open) return undefined;
 
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -77,17 +58,11 @@ export default function FilterButton({
       if (event.key === 'Escape') setOpen(false);
     };
 
-    window.addEventListener('resize', updateLayout);
-    window.addEventListener('scroll', updateLayout, true);
     document.addEventListener('mousedown', onPointerDown);
     document.addEventListener('keydown', onKeyDown);
-    mql.addEventListener('change', updateLayout);
     return () => {
-      window.removeEventListener('resize', updateLayout);
-      window.removeEventListener('scroll', updateLayout, true);
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
-      mql.removeEventListener('change', updateLayout);
     };
   }, [open]);
 
