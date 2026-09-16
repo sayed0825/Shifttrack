@@ -236,8 +236,8 @@ export default function LiveMap({ height = '100%', locationFilter = 'all' }) {
 
       {refreshedAt && (
         <p className="border-b border-border px-4 py-1.5 text-xs text-ink/50">
-          Each driver's last reported position — sent every 90 seconds while
-          clocked in. Refreshed {relativeTime(refreshedAt)}.
+          Each driver's last reported position. Positions update as drivers
+          move. Refreshed {relativeTime(refreshedAt)}.
         </p>
       )}
 
