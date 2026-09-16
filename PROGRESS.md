@@ -20,26 +20,32 @@ and UptimeRobot (3). Migrations 0015 (orders/cleanup), 0016 (App Store
 account-deletion compliance), 0017 (time_logs recursion fix), 0018
 (`staff_wage_rates`), 0019 (`organisations.order_rate`), and 0020
 (tightens the time_logs self-edit trigger from 0017 — see log below)
-are all run and verified. **Week 1 UI batch (10 items) complete and
-verified on the live site**, and this session's batch — add-shift
-availability warnings, driver order capture, wage rates, per-order pay,
-and a full responsiveness pass — is also done and verified. **The
-automated RLS test suite (`tests/rls/`) is built and pushed but has
-never actually been run** — see "Next up" and "Known broken" below.
-Supabase Pro (point-in-time backups) is deliberately deferred until
-ready to pay — see "Known broken" below. The repo is now the
+are all run and verified. **0021 (guards tg_shift_delete_notify/
+tg_shift_update_notify against an already-deleted profile — see log
+below) is written and pushed but NOT YET CONFIRMED RUN.** **Week 1 UI
+batch (10 items) complete and verified on the live site**, and this
+session's batch — add-shift availability warnings, driver order
+capture, wage rates, per-order pay, and a full responsiveness pass —
+is also done and verified. **The automated RLS test suite (`tests/rls/`)
+runs green: 128 tests across 11 files, run against the live database
+with teardown confirmed clean via the MCP** — see log below.
+**Re-run it after any RLS policy or trigger change** — it exists
+specifically because that class of bug (the 0017 recursion, the 0020
+self-edit gap, the 0021 notify-trigger FK violation) keeps getting
+found by accident, and it only protects against the next one if it's
+actually run each time, not just left green from the last policy
+shape. Supabase Pro (point-in-time backups) is deliberately deferred
+until ready to pay — see "Known broken" below. The repo is now the
 source of truth for schema, not Supabase — see CLAUDE.md.
 **Next up:** per `launch-plan-fast.md` Week 2, running in parallel:
 1. **Capacitor build** — `cap add ios` and `android`, wire background
    geolocation into clock-in, verify `Info.plist` and
    `AndroidManifest.xml`, build and test on a real device, icons and
    splash screens.
-2. **Run the automated RLS test suite** — get `SUPABASE_SERVICE_ROLE_KEY`
-   into a local `.env.test` (see README.md), run `npm run test:rls`,
-   and fix whatever it finds. It has never been executed — everything
-   about it so far (including the migration 0020 fix it already
-   surfaced by inspection alone) has been verified by reading, not by
-   running.
+2. **Run migration 0021**, then re-run `npm run test:rls` to confirm
+   it's still green with the fix actually applied — right now neither
+   a manual run nor the suite has confirmed it live (see "Known
+   broken").
 3. Real-device check of the branding + visual redesign pass pushed
    2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
    everything else in this file so far.
@@ -63,14 +69,18 @@ and approval all verified against real data). Manager task tooling has
 since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
-- The automated RLS test suite (`tests/rls/`, 8 negative + 3 positive
-  files) is written, typechecked, and pushed — but NEVER RUN. It needs
-  `SUPABASE_SERVICE_ROLE_KEY` in a local `.env.test`, which nobody has
-  supplied yet (Claude Code never has it — the suite's own guard
-  refuses to run without it rather than falling back to anon). Writing
-  it did already surface one real bug by inspection (see 0020 in the
-  log), but that is not the same as the suite having actually executed
-  against the live database even once.
+- Migration 0021 (guards the two shift-notify triggers against an
+  already-deleted profile) is written and pushed but NOT CONFIRMED RUN
+  against the live database. Notably, the RLS suite passing green does
+  NOT verify this one either way: teardown's explicit per-table delete
+  order (shifts before profiles) sidesteps the org-cascade path that
+  originally surfaced `tg_shift_delete_notify`'s bug, and the suite's
+  only `delete_staff_member` call is a negative case (an out-of-scope
+  manager, rejected before any delete happens) — so `tg_shift_update_notify`'s
+  SET-NULL path has never actually been exercised by anything, manual
+  or automated. Until this is confirmed run, deleting a staff member
+  with existing shifts via "Delete permanently" in StaffManager can
+  still fail with a `notifications_user_id_fkey` violation.
 - Branding (logo upload, org name, `useOrganisation`) and the visual
   redesign pass (design tokens, header bar, status colour, Archivo) are
   pushed but UNREVIEWED — no real device check yet. Also: the
@@ -110,6 +120,55 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-16
+**The automated RLS test suite runs green: 128 tests across 11 files,
+run for real against the live database, teardown confirmed clean
+afterward via the MCP (zero rows at either reserved test org slug).**
+First actual execution since it was built 2026-09-14 — everything
+about it before today had only been verified by reading.
+
+Building and running it, across this and the previous session, found
+three real bugs:
+
+- **Managers could edit their own clock in/out times.** Traced
+  `tg_protect_own_time_log` (0017): it let any manager or admin
+  through unconditionally, with no check on whose row was being
+  edited. Fixed live (migration 0020): an administrator may edit their
+  own hours and anyone else's; a manager may edit anyone else's hours
+  but not their own; everyone else can only set `orders_count` on
+  their own log.
+- **`tg_shift_delete_notify` failed with `notifications_user_id_fkey`**
+  when a shift was deleted as part of a cascade that had already
+  removed the profile it pointed at — an `organisations` delete
+  cascades to both `profiles` and `shifts` (both `org_id` CASCADE),
+  and Postgres doesn't guarantee which sibling cascade runs first.
+- **`tg_shift_update_notify` had the same bug via a different path** —
+  `shifts.assigned_user_id` is `ON DELETE SET NULL`, so deleting a
+  profile directly fires this trigger as an UPDATE while
+  `old.assigned_user_id` is the profile just deleted in the same
+  statement. **Reachable today via the "Delete permanently" button in
+  StaffManager** — the more realistic of the two paths, since it's
+  already-exercised production behaviour, not a hypothetical bulk-org
+  delete. Both guarded in migration 0021 (skip the insert, rather than
+  error, if the target profile no longer exists) — written and pushed,
+  **not yet confirmed run**; see "Known broken."
+
+The suite itself also had two bugs, found on this first real run:
+timestamp assertions compared a JS `.toISOString()` string (ends in
+`Z`) against Postgres's returned notation (`+00:00`) — same instant,
+different string, fixed with a `sameInstant()` helper that parses both
+sides before comparing; and `manager-scope.test.ts` asserted a manager
+can't read an out-of-scope colleague's profile, which stopped being
+true when `profiles_select_org` was deliberately widened to org-wide
+(so a colleague's name renders instead of "Unknown" as a task
+comment's author) — replaced with a dedicated block asserting what
+actually holds: read succeeds, but role changes, deactivation, and
+reading their time_logs/employee_notes/wage_rate all still fail.
+
+**Re-run the suite after any RLS policy or trigger change** — that is
+its entire purpose, and a green result only means anything for the
+policy shape it was actually run against.
 
 ### 2026-09-14 (yet later)
 **Automated RLS test suite built and pushed — NOT YET RUN.** Needs
