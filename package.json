@@ -14,7 +14,8 @@
     "ios": "npm run sync && cap open ios",
     "android": "npm run sync && cap open android",
     "doctor": "cap doctor",
-    "test:rls": "vitest run"
+    "test:rls": "vitest run",
+    "prepare": "husky"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
@@ -45,6 +46,7 @@
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
     "dotenv": "^17.4.2",
+    "husky": "^9.1.7",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.5.3",
     "vite": "^7.0.0",

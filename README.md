@@ -55,6 +55,24 @@ cp .env.test.example .env.test   # fill in the three values, once
 npm run test:rls
 ```
 
+### It also runs on every `git push`
+
+A Husky pre-push hook (`.husky/pre-push`) runs the suite before any
+push and blocks it if the suite fails. It's committed to the repo, via
+Husky, so it's active on any clone after `npm install` — not a local
+`.git/hooks` file that only exists on one machine.
+
+- **No `.env.test`?** The hook warns loudly and lets the push through
+  rather than blocking someone who doesn't have the service role key.
+  That warning means this push was **not** verified against live RLS
+  policies — read it, don't just glance past it.
+- It hits the live database and takes about a minute. `git push
+  --no-verify` skips the hook entirely. That's a real, sometimes
+  correct option (an urgent hotfix push, working somewhere the suite
+  genuinely can't run) — but treat it as a **deliberate decision each
+  time**, not a habit to reach for because the wait is annoying. A
+  skipped push is an unverified push.
+
 ### Fixture collisions
 
 If a previous run crashed before its teardown finished, the next run will

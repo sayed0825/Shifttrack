@@ -120,6 +120,15 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   in another table, or a BEFORE trigger for a check that needs the OLD
   row of the same table -- see the time_logs_update_own_orders /
   tg_protect_own_time_log split in 0017_fix_time_logs_orders_recursion.sql.
+- Run the automated RLS suite (`tests/rls/`, see README.md) after any
+  change to a policy, a trigger, or a SECURITY DEFINER function --
+  every real bug it has caught so far (the 0017 recursion, the 0020
+  self-edit gap, the 0021 notify-trigger FK violation) was in exactly
+  that category. It also runs as a Husky pre-push hook, but don't rely
+  on that alone: never assume a green run covers a migration that
+  hasn't actually been applied to the live database yet -- the suite
+  tests what's live, not what's in a migration file waiting to be run,
+  and a passing suite from before your change proves nothing about it.
 - Approvals that change two rows (shift swaps) go through SECURITY DEFINER
   RPCs so both rows move together or neither does.
 - The protect_profile_role trigger blocks role changes when auth.uid() is

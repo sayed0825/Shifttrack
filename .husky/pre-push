@@ -1,0 +1,30 @@
+yellow="\033[33m"
+red="\033[31m"
+reset="\033[0m"
+
+if [ ! -f .env.test ]; then
+  echo ""
+  printf "%b" "${yellow}==================== WARNING ====================${reset}\n"
+  printf "%b" "${yellow}.env.test not found -- the RLS test suite was SKIPPED.${reset}\n"
+  printf "%b" "${yellow}This push has NOT been verified against live RLS policies.${reset}\n"
+  printf "%b" "${yellow}See README.md \"Automated RLS tests\" to set up .env.test.${reset}\n"
+  printf "%b" "${yellow}==================================================${reset}\n"
+  echo ""
+  exit 0
+fi
+
+echo "Running RLS test suite before push (npm run test:rls) -- this hits the live database and takes about a minute..."
+npm run test:rls
+status=$?
+
+if [ $status -ne 0 ]; then
+  echo ""
+  printf "%b" "${red}==================== PUSH BLOCKED ====================${reset}\n"
+  printf "%b" "${red}The RLS test suite failed. Fix it before pushing.${reset}\n"
+  printf "%b" "${red}To skip deliberately: git push --no-verify${reset}\n"
+  printf "%b" "${red}=======================================================${reset}\n"
+  echo ""
+  exit 1
+fi
+
+exit 0
