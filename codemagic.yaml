@@ -1,0 +1,95 @@
+definitions:
+  ios_signing: &ios_signing
+    # Codemagic's App Store Connect integration, configured once in the
+    # Codemagic UI (Teams -> Integrations -> App Store Connect) and
+    # referenced here by name -- nothing here is a credential itself.
+    # https://docs.codemagic.io/knowledge-appstore/app-store-connect/
+    auth: integration
+    submit_to_testflight: true
+
+workflows:
+  ios-release:
+    name: iOS release (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    environment:
+      groups:
+        # Created in the Codemagic UI (Teams -> Environment variables), not
+        # in this file. Never commit a signing credential, API key, or
+        # provisioning profile to the repo -- everything below is a
+        # reference to a value Codemagic injects at build time.
+        #
+        # ios_signing group holds:
+        #   APP_STORE_CONNECT_ISSUER_ID
+        #   APP_STORE_CONNECT_KEY_IDENTIFIER
+        #   APP_STORE_CONNECT_PRIVATE_KEY
+        #   CERTIFICATE_PRIVATE_KEY (only if not using automatic signing
+        #     via the App Store Connect integration above)
+        - ios_signing
+        # app_config group holds anything the web build itself needs at
+        # build time that isn't safe/appropriate to hardcode here --
+        # currently none (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are
+        # already public client values baked into src/supabaseClient.js;
+        # this group exists so a future secret has somewhere to go without
+        # touching this file).
+        - app_config
+      vars:
+        BUNDLE_ID: "com.kitescheduling.app"
+        XCODE_WORKSPACE: "ios/App/App.xcworkspace"
+        XCODE_SCHEME: "App"
+      node: 20.19.0
+      xcode: latest
+      cocoapods: default
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+
+      - name: Build the web app
+        script: npm run build
+
+      - name: Sync Capacitor iOS
+        # Copies dist/ into ios/App/App/public, regenerates
+        # ios/App/App/capacitor.config.json from capacitor.config.json at
+        # the repo root, and rewrites ios/App/Podfile's plugin pod entries
+        # from whatever is in package.json. All three are gitignored
+        # precisely because this step regenerates them on every build --
+        # see ios/.gitignore.
+        script: npx cap sync ios
+
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios/App && pod install
+
+      - name: Set up iOS code signing
+        script: |
+          xcode-project use-profiles
+
+      - name: Increment build number
+        script: |
+          cd ios/App
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$BUNDLE_ID")
+          agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
+
+      - name: Build .ipa for distribution
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        <<: *ios_signing

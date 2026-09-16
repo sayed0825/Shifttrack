@@ -71,8 +71,5 @@
 	<array>
 		<string>location</string>
 	</array>
-
-	<key>NSMotionUsageDescription</key>
-	<string>ShiftTrack uses motion data to reduce battery drain by pausing location updates while you are stationary.</string>
 </dict>
 </plist>

@@ -1,0 +1,11 @@
+{
+  "appId": "com.kitescheduling.app",
+  "appName": "ShiftTrack",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "always"
+  },
+  "android": {
+    "useLegacyBridge": true
+  }
+}

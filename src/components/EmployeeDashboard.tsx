@@ -21,6 +21,7 @@ import {
   User,
   X,
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import {
   enqueue,
   flushQueue,
@@ -28,6 +29,7 @@ import {
   onQueueChange,
   pendingCount,
 } from '../lib/offlineQueue';
+import { addBackgroundLocationWatcher, removeBackgroundLocationWatcher } from '../lib/backgroundGeolocation';
 import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
@@ -375,12 +377,43 @@ function ClockInTab({
     return () => clearInterval(id);
   }, [openLog]);
 
-  // Only drivers are tracked, and only while on shift. 90s is a
-  // deliberate compromise: fresh enough for dispatch, light enough
-  // not to drain a phone across a five-hour evening.
+  // Only drivers are tracked, and only while on shift.
+  //
+  // Native (iOS/Android): a background-capable watcher via
+  // @capacitor-community/background-geolocation. navigator.geolocation's
+  // getCurrentPosition/setInterval polling is suspended the moment the
+  // WebView loses focus — the screen locking, or switching apps — which
+  // is exactly when a driver's phone spends most of a shift. The native
+  // watcher keeps delivering updates through that.
+  //
+  // Web: unchanged — navigator.geolocation polling, 90s. A deliberate
+  // compromise: fresh enough for dispatch, light enough not to drain a
+  // phone across a five-hour evening.
   useEffect(() => {
     if (!tracking || profile.role !== 'Driver') return undefined;
     let cancelled = false;
+
+    if (Capacitor.isNativePlatform()) {
+      const watcherPromise = addBackgroundLocationWatcher((location, error) => {
+        if (cancelled || error || !location) return;
+        void pushLiveLocation({
+          userId: profile.id,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          heading: location.bearing ?? null,
+          speed: location.speed ?? null,
+          accuracy: location.accuracy,
+        });
+      });
+      return () => {
+        cancelled = true;
+        // Always await the watcher's own ID before removing it, even if
+        // cleanup runs before addWatcher's promise has resolved — losing
+        // that race would leak a watcher no cleanup ever reaches.
+        void watcherPromise.then((watcherId) => removeBackgroundLocationWatcher(watcherId));
+      };
+    }
+
     const push = () => {
       if (!navigator.geolocation) return;
       navigator.geolocation.getCurrentPosition(
