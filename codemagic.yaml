@@ -1,41 +1,31 @@
-definitions:
-  ios_signing: &ios_signing
-    # Codemagic's App Store Connect integration, configured once in the
-    # Codemagic UI (Teams -> Integrations -> App Store Connect) and
-    # referenced here by name -- nothing here is a credential itself.
-    # https://docs.codemagic.io/knowledge-appstore/app-store-connect/
-    auth: integration
-    submit_to_testflight: true
-
 workflows:
   ios-release:
     name: iOS release (TestFlight)
     max_build_duration: 60
     instance_type: mac_mini_m2
 
+    # References the App Store Connect integration named "<code magic>" in
+    # this Codemagic team's settings (Teams -> Integrations -> App Store
+    # Connect). Nothing here is a credential -- the integration itself
+    # holds the API key, configured once in Codemagic's UI, never in this
+    # file. Required for both automatic code signing (environment.ios_signing
+    # below) and publishing (publishing.app_store_connect below) to know
+    # which Apple account to act as.
+    integrations:
+      app_store_connect: "<code magic>"
+
     environment:
-      groups:
-        # Created in the Codemagic UI (Teams -> Environment variables), not
-        # in this file. Never commit a signing credential, API key, or
-        # provisioning profile to the repo -- everything below is a
-        # reference to a value Codemagic injects at build time.
-        #
-        # ios_signing group holds:
-        #   APP_STORE_CONNECT_ISSUER_ID
-        #   APP_STORE_CONNECT_KEY_IDENTIFIER
-        #   APP_STORE_CONNECT_PRIVATE_KEY
-        #   CERTIFICATE_PRIVATE_KEY (only if not using automatic signing
-        #     via the App Store Connect integration above)
-        - ios_signing
-        # app_config group holds anything the web build itself needs at
-        # build time that isn't safe/appropriate to hardcode here --
-        # currently none (VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are
-        # already public client values baked into src/supabaseClient.js;
-        # this group exists so a future secret has somewhere to go without
-        # touching this file).
-        - app_config
+      ios_signing:
+        # Automatic signing: Codemagic fetches or generates the matching
+        # certificate and provisioning profile itself via the integration
+        # above, scoped to this bundle ID. No certificate, private key, or
+        # profile is stored anywhere -- manual signing (env-var-supplied
+        # certificates/profiles) was deliberately not used, since it would
+        # mean a signing credential has to live in a Codemagic group
+        # instead of just an account-level integration reference.
+        distribution_type: app_store
+        bundle_identifier: com.kitescheduling.app
       vars:
-        BUNDLE_ID: "com.kitescheduling.app"
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
       node: 20.19.0
@@ -63,7 +53,9 @@ workflows:
         # the repo root, and rewrites ios/App/Podfile's plugin pod entries
         # from whatever is in package.json. All three are gitignored
         # precisely because this step regenerates them on every build --
-        # see ios/.gitignore.
+        # see ios/.gitignore. This also runs `pod install` itself once the
+        # Podfile is updated; the explicit step below is a harmless,
+        # idempotent safety net, not strictly required.
         script: npx cap sync ios
 
       - name: Install CocoaPods dependencies
@@ -71,14 +63,26 @@ workflows:
           cd ios/App && pod install
 
       - name: Set up iOS code signing
+        # Reads environment.ios_signing (distribution_type +
+        # bundle_identifier) and the App Store Connect integration above to
+        # fetch/create the right certificate and profile, then applies them
+        # to the Xcode project.
         script: |
           xcode-project use-profiles
 
       - name: Increment build number
+        # $BUILD_NUMBER is Codemagic's own per-workflow build counter, not
+        # an App Store Connect lookup -- deliberately not
+        # `app-store-connect get-latest-app-store-build-number`, which
+        # requires the app's numeric Apple ID (assigned once the app first
+        # exists in App Store Connect, which it doesn't yet). Strictly
+        # increasing per build is all TestFlight actually requires; switch
+        # to the App Store Connect lookup later if build numbers ever need
+        # to track the App Store Connect record itself rather than
+        # Codemagic's own count.
         script: |
           cd ios/App
-          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$BUNDLE_ID")
-          agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
+          agvtool new-version -all $BUILD_NUMBER
 
       - name: Build .ipa for distribution
         script: |
@@ -89,7 +93,9 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
 
     publishing:
       app_store_connect:
-        <<: *ios_signing
+        auth: integration
+        submit_to_testflight: true
