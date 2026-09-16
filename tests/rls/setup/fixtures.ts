@@ -131,10 +131,17 @@ interface TimeLogArgs {
   roleAtClockIn: string;
 }
 
+interface ClosedTimeLog {
+  id: string;
+  clockOut: string;
+}
+
 /** Always closed (clock_out set) — every fixture time_log needs a settled
  *  duration for cost/hours calculations elsewhere not to choke, and the
- *  "own closed log" positive case needs one that's actually closed. */
-async function createClosedTimeLog({ orgId, userId, locationId, shiftId = null, roleAtClockIn }: TimeLogArgs): Promise<string> {
+ *  "own closed log" positive case needs one that's actually closed.
+ *  Returns clockOut too, not just the id — createOvertimeClaim needs it to
+ *  build a claim that satisfies overtime_has_claim. */
+async function createClosedTimeLog({ orgId, userId, locationId, shiftId = null, roleAtClockIn }: TimeLogArgs): Promise<ClosedTimeLog> {
   const clockIn = new Date(Date.now() - 6 * 3_600_000);
   const clockOut = new Date(Date.now() - 2 * 3_600_000);
   const result = await adminClient
@@ -150,7 +157,8 @@ async function createClosedTimeLog({ orgId, userId, locationId, shiftId = null, 
     })
     .select('id')
     .single();
-  return mustSucceed(result, 'create time log').id;
+  const id = mustSucceed(result, 'create time log').id;
+  return { id, clockOut: clockOut.toISOString() };
 }
 
 interface TaskArgs {
@@ -240,10 +248,26 @@ async function createShiftApplication(orgId: string, shiftId: string, userId: st
   return mustSucceed(result, 'create shift application').id;
 }
 
-async function createOvertimeClaim(orgId: string, userId: string, timeLogId: string): Promise<string> {
+/**
+ * overtime_has_claim requires claimed_clock_in or claimed_clock_out to be
+ * non-null — a claim with neither changes nothing, so the constraint
+ * rejects it. `loggedClockOut` is the time_log's own clock_out; the claim
+ * is built an hour later than that, matching what the app actually
+ * submits (a driver claiming they worked later than their recorded
+ * clock-out).
+ */
+async function createOvertimeClaim(orgId: string, userId: string, timeLogId: string, loggedClockOut: string): Promise<string> {
+  const claimedClockOut = new Date(new Date(loggedClockOut).getTime() + 3_600_000).toISOString();
   const result = await adminClient
     .from('overtime_claims')
-    .insert({ org_id: orgId, user_id: userId, time_log_id: timeLogId, status: 'pending', reason: 'RLS fixture claim' })
+    .insert({
+      org_id: orgId,
+      user_id: userId,
+      time_log_id: timeLogId,
+      status: 'pending',
+      reason: 'RLS fixture claim',
+      claimed_clock_out: claimedClockOut,
+    })
     .select('id')
     .single();
   return mustSucceed(result, 'create overtime claim').id;
@@ -313,10 +337,10 @@ async function buildOrgA(): Promise<OrgAFixture> {
     durationHours: 6,
   });
 
-  const timeLogEmployee1Id = await createClosedTimeLog({ orgId, userId: employee1.id, locationId: locationA1Id, shiftId: shiftEmployee1Id, roleAtClockIn: roleNames.employee });
-  const timeLogEmployee2Id = await createClosedTimeLog({ orgId, userId: employee2.id, locationId: locationA2Id, shiftId: shiftEmployee2Id, roleAtClockIn: roleNames.employee });
-  const timeLogManagerId = await createClosedTimeLog({ orgId, userId: manager.id, locationId: locationA1Id, roleAtClockIn: roleNames.manager });
-  const timeLogAdminId = await createClosedTimeLog({ orgId, userId: admin.id, locationId: locationA1Id, roleAtClockIn: roleNames.administrator });
+  const timeLogEmployee1 = await createClosedTimeLog({ orgId, userId: employee1.id, locationId: locationA1Id, shiftId: shiftEmployee1Id, roleAtClockIn: roleNames.employee });
+  const timeLogEmployee2 = await createClosedTimeLog({ orgId, userId: employee2.id, locationId: locationA2Id, shiftId: shiftEmployee2Id, roleAtClockIn: roleNames.employee });
+  const timeLogManager = await createClosedTimeLog({ orgId, userId: manager.id, locationId: locationA1Id, roleAtClockIn: roleNames.manager });
+  const timeLogAdmin = await createClosedTimeLog({ orgId, userId: admin.id, locationId: locationA1Id, roleAtClockIn: roleNames.administrator });
 
   const taskEmployee1Id = await createTask({ orgId, locationId: locationA1Id, assignedUserId: employee1.id });
   const taskEmployee2Id = await createTask({ orgId, locationId: locationA2Id, assignedUserId: employee2.id });
@@ -333,7 +357,7 @@ async function buildOrgA(): Promise<OrgAFixture> {
 
   const shiftSwapId = await createShiftSwap(orgId, employee1.id, shiftEmployee1Id, employee2.id, shiftEmployee2Id);
   const shiftApplicationId = await createShiftApplication(orgId, openShiftForApplicationId, employee2.id);
-  const overtimeClaimEmployee2Id = await createOvertimeClaim(orgId, employee2.id, timeLogEmployee2Id);
+  const overtimeClaimEmployee2Id = await createOvertimeClaim(orgId, employee2.id, timeLogEmployee2.id, timeLogEmployee2.clockOut);
   const unavailabilityRequestEmployee2Id = await createUnavailability(orgId, employee2.id);
   const liveLocationEmployee1Id = await createLiveLocation(orgId, employee1.id);
 
@@ -352,10 +376,10 @@ async function buildOrgA(): Promise<OrgAFixture> {
     shiftEmployee1Id,
     shiftEmployee2Id,
     openShiftForApplicationId,
-    timeLogEmployee1Id,
-    timeLogEmployee2Id,
-    timeLogManagerId,
-    timeLogAdminId,
+    timeLogEmployee1Id: timeLogEmployee1.id,
+    timeLogEmployee2Id: timeLogEmployee2.id,
+    timeLogManagerId: timeLogManager.id,
+    timeLogAdminId: timeLogAdmin.id,
     taskEmployee1Id,
     taskEmployee2Id,
     taskCommentEmployee1Id,
@@ -388,7 +412,7 @@ async function buildOrgB(): Promise<OrgBFixture> {
   const adminShiftId = await createShift({ orgId, locationId, assignedUserId: admin.id, startsInHours: -24, durationHours: 6 });
   const openShiftForApplicationId = await createShift({ orgId, locationId, requiredRole: roleNames.employee, startsInHours: 48, durationHours: 6 });
 
-  const timeLogId = await createClosedTimeLog({ orgId, userId: employee.id, locationId, shiftId, roleAtClockIn: roleNames.employee });
+  const timeLog = await createClosedTimeLog({ orgId, userId: employee.id, locationId, shiftId, roleAtClockIn: roleNames.employee });
 
   const taskId = await createTask({ orgId, locationId, assignedUserId: employee.id });
   const taskCommentId = await createTaskComment(orgId, taskId, employee.id);
@@ -403,7 +427,7 @@ async function buildOrgB(): Promise<OrgBFixture> {
   // to confirm Org A can't see, not to exercise any RPC against them.
   const shiftSwapId = await createShiftSwap(orgId, employee.id, shiftId, admin.id, adminShiftId);
   const shiftApplicationId = await createShiftApplication(orgId, openShiftForApplicationId, employee.id);
-  const overtimeClaimId = await createOvertimeClaim(orgId, employee.id, timeLogId);
+  const overtimeClaimId = await createOvertimeClaim(orgId, employee.id, timeLog.id, timeLog.clockOut);
   const unavailabilityRequestId = await createUnavailability(orgId, employee.id);
   const liveLocationId = await createLiveLocation(orgId, employee.id);
 
@@ -414,7 +438,7 @@ async function buildOrgB(): Promise<OrgBFixture> {
     admin,
     employee,
     shiftId,
-    timeLogId,
+    timeLogId: timeLog.id,
     taskId,
     taskCommentId,
     noteId,
