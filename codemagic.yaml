@@ -16,16 +16,22 @@ workflows:
 
     environment:
       ios_signing:
-        # Automatic signing: Codemagic fetches or generates the matching
-        # certificate and provisioning profile itself via the integration
-        # above, scoped to this bundle ID. No certificate, private key, or
-        # profile is stored anywhere -- manual signing (env-var-supplied
-        # certificates/profiles) was deliberately not used, since it would
-        # mean a signing credential has to live in a Codemagic group
-        # instead of just an account-level integration reference.
+        # This alone does not create anything -- it only tells
+        # `xcode-project use-profiles` (below) which existing certificate/
+        # profile to look for and apply. The first time a bundle ID is
+        # built, nothing exists yet to find; see "Fetch or create signing
+        # files", the step that actually generates them via the App Store
+        # Connect integration above. No certificate, private key, or
+        # profile is stored anywhere in this file or a Codemagic group --
+        # both steps authenticate purely through the integration.
         distribution_type: app_store
         bundle_identifier: com.kitescheduling.app
       vars:
+        # Must match environment.ios_signing.bundle_identifier above --
+        # YAML config fields and shell script vars can't share one
+        # definition, so this is the one place that duplication is
+        # unavoidable.
+        BUNDLE_ID: "com.kitescheduling.app"
         XCODE_WORKSPACE: "ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
       node: 20.19.0
@@ -62,11 +68,27 @@ workflows:
         script: |
           cd ios/App && pod install
 
+      - name: Fetch or create signing files
+        # environment.ios_signing / `use-profiles` only ever FETCH an
+        # existing certificate and provisioning profile -- they do not
+        # create one that doesn't exist yet. The App ID is registered in
+        # the Apple Developer portal and the app record exists in App
+        # Store Connect, but no certificate or profile has ever been
+        # created for it, so without this step `use-profiles` fails with
+        # "No matching profiles found". --create makes this idempotent:
+        # once a certificate/profile exist, later runs just fetch them.
+        # No explicit --issuer-id/--key-id/--private-key -- authenticates
+        # via the same App Store Connect integration referenced above,
+        # exactly like `use-profiles` does.
+        script: |
+          app-store-connect fetch-signing-files \
+            --type IOS_APP_STORE \
+            --create \
+            "$BUNDLE_ID"
+
       - name: Set up iOS code signing
-        # Reads environment.ios_signing (distribution_type +
-        # bundle_identifier) and the App Store Connect integration above to
-        # fetch/create the right certificate and profile, then applies them
-        # to the Xcode project.
+        # Applies the certificate/profile fetch-signing-files just
+        # ensured exist to the Xcode project.
         script: |
           xcode-project use-profiles
 
@@ -74,12 +96,13 @@ workflows:
         # $BUILD_NUMBER is Codemagic's own per-workflow build counter, not
         # an App Store Connect lookup -- deliberately not
         # `app-store-connect get-latest-app-store-build-number`, which
-        # requires the app's numeric Apple ID (assigned once the app first
-        # exists in App Store Connect, which it doesn't yet). Strictly
-        # increasing per build is all TestFlight actually requires; switch
-        # to the App Store Connect lookup later if build numbers ever need
-        # to track the App Store Connect record itself rather than
-        # Codemagic's own count.
+        # requires the app's numeric Apple ID (the App Store Connect
+        # resource ID, not the bundle identifier). The app record exists
+        # in App Store Connect now, so that ID does exist -- it just isn't
+        # in this file. Strictly increasing per build is all TestFlight
+        # actually requires, so this needs no lookup at all; switch to the
+        # App Store Connect version later if build numbers ever need to
+        # track that record itself rather than Codemagic's own count.
         script: |
           cd ios/App
           agvtool new-version -all $BUILD_NUMBER
