@@ -63,6 +63,15 @@ mismatch between the document's real height and the viewport — before
 reaching for `position: sticky` as a substitute; `sticky` would hide
 the symptom without touching why `fixed` stopped behaving like `fixed`.
 
+**`capacitor.config.json`'s `ios.webContentsDebuggingEnabled` is
+temporarily `true`**, to let Safari's Develop menu attach to the
+TestFlight build for on-device debugging (iOS 16.4+ requires this
+opt-in even for a release build; without it Safari reports "no
+inspectable applications"). **This must be set back to `false` (or
+removed) before submitting to the App Store** — a build with web
+inspector access left open is a real attack surface in a shipped app,
+not just a leftover dev convenience.
+
 ## Automated RLS tests
 
 `tests/rls/` exercises the actual Row Level Security policies in the
