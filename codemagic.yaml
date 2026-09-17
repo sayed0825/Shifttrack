@@ -105,4 +105,14 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        submit_to_testflight: true
+        # Uploading to App Store Connect already makes the build available
+        # to internal testers as soon as it finishes processing -- no
+        # review needed. submit_to_testflight additionally submits the
+        # build for TestFlight *beta app review*, which is only required
+        # for external testers/groups. We only use internal testers during
+        # development, and Apple rejects a second review submission while
+        # one is already pending (422 "Another build is in review"), which
+        # Codemagic reports as a failed build even though compile + upload
+        # succeeded. false is also this key's documented default; set
+        # explicitly here so it's not mistaken for an oversight.
+        submit_to_testflight: false
