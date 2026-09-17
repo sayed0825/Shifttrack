@@ -37,7 +37,6 @@ import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
 import { logNeedsOrdersReport, ordersCellText, ORDERS_NOT_YET_REPORTED, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
-import { recordDebugTap } from '../lib/debugTrigger';
 import {
   WAGE_RATE_FIELDS,
   formatCurrencyAmount,
@@ -418,7 +417,7 @@ export default function ManagerDashboard(): ReactNode {
     <div className="flex h-full flex-col bg-bg">
       <header className="bg-primary text-white">
         <div className="flex flex-wrap items-center gap-4 px-4 py-3">
-          <div className="flex min-w-0 items-center" onClick={recordDebugTap}>
+          <div className="flex min-w-0 items-center">
             {organisation?.logo_url ? (
               <img
                 src={organisation.logo_url}

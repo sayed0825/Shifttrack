@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { onDebugTapTriggered } from '../lib/debugTrigger';
 
-// Temporary measurement tool for the native nav drift bug. Renders when the
-// URL has ?debug=1 (web) or after 5 quick taps on the header org logo/name
-// (native — there's no address bar to edit on device). Remove once the
-// drift is diagnosed and fixed.
+// Throwaway diagnostic for the native nav drift bug. Always renders, on
+// every screen, no trigger. Remove once the drift is diagnosed and fixed.
 
 type DebugMetrics = {
   innerHeight: number;
   visualViewportHeight: number | null;
+  visualViewportOffsetTop: number | null;
   docScrollHeight: number;
   docClientHeight: number;
   bodyScrollHeight: number;
@@ -16,6 +14,7 @@ type DebugMetrics = {
   mainClientHeight: number | null;
   safeAreaBottom: string;
   scrollY: number;
+  scrollingElementScrollTop: number | null;
 };
 
 function readMetrics(safeAreaProbe: HTMLDivElement | null): DebugMetrics {
@@ -23,6 +22,7 @@ function readMetrics(safeAreaProbe: HTMLDivElement | null): DebugMetrics {
   return {
     innerHeight: window.innerHeight,
     visualViewportHeight: window.visualViewport ? window.visualViewport.height : null,
+    visualViewportOffsetTop: window.visualViewport ? window.visualViewport.offsetTop : null,
     docScrollHeight: document.documentElement.scrollHeight,
     docClientHeight: document.documentElement.clientHeight,
     bodyScrollHeight: document.body.scrollHeight,
@@ -30,6 +30,7 @@ function readMetrics(safeAreaProbe: HTMLDivElement | null): DebugMetrics {
     mainClientHeight: main ? main.clientHeight : null,
     safeAreaBottom: safeAreaProbe ? getComputedStyle(safeAreaProbe).paddingBottom : 'n/a',
     scrollY: window.scrollY,
+    scrollingElementScrollTop: document.scrollingElement ? document.scrollingElement.scrollTop : null,
   };
 }
 
@@ -41,18 +42,10 @@ function row(label: string, scrollH: number | null, clientH: number | null) {
 }
 
 export default function DebugOverlay() {
-  const [enabled, setEnabled] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return new URLSearchParams(window.location.search).get('debug') === '1';
-  });
   const probeRef = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<DebugMetrics | null>(null);
 
-  useEffect(() => onDebugTapTriggered(() => setEnabled(true)), []);
-
   useEffect(() => {
-    if (!enabled) return;
-
     const update = () => setMetrics(readMetrics(probeRef.current));
     update();
 
@@ -69,9 +62,7 @@ export default function DebugOverlay() {
       window.visualViewport?.removeEventListener('resize', update);
       window.visualViewport?.removeEventListener('scroll', update);
     };
-  }, [enabled]);
-
-  if (!enabled) return null;
+  }, []);
 
   return (
     <div
@@ -97,11 +88,15 @@ export default function DebugOverlay() {
       {metrics
         ? [
             `innerHeight: ${metrics.innerHeight}   visualViewport.h: ${metrics.visualViewportHeight ?? 'n/a'}`,
+            `visualViewport.offsetTop: ${metrics.visualViewportOffsetTop ?? 'n/a'}${
+              metrics.visualViewportOffsetTop ? '  <-- NONZERO' : ''
+            }`,
             row('html  scrollH/clientH', metrics.docScrollHeight, metrics.docClientHeight),
             `body  scrollH: ${metrics.bodyScrollHeight}`,
             row('main  scrollH/clientH', metrics.mainScrollHeight, metrics.mainClientHeight),
             `safe-area-inset-bottom: ${metrics.safeAreaBottom}`,
             `window.scrollY: ${metrics.scrollY}`,
+            `scrollingElement.scrollTop: ${metrics.scrollingElementScrollTop ?? 'n/a'}`,
           ].join('\n')
         : 'measuring…'}
     </div>

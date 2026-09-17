@@ -52,7 +52,6 @@ import OvertimeClaim from './OvertimeClaim';
 import OwedOrdersModal from './OwedOrdersModal';
 import ProfileSettingsCard from './ProfileSettingsCard';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
-import { recordDebugTap } from '../lib/debugTrigger';
 import type { Profile } from './ManagerDashboard';
 
 type TabId = 'clock' | 'schedule' | 'shifts' | 'tasks' | 'timesheets' | 'more';
@@ -223,7 +222,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
     <div className="flex h-dvh flex-col bg-bg">
       <header className="bg-primary text-white">
         <div className="flex flex-wrap items-center gap-4 px-3 py-2">
-          <div className="flex min-w-0 items-center" onClick={recordDebugTap}>
+          <div className="flex min-w-0 items-center">
             {organisation?.logo_url ? (
               <img
                 src={organisation.logo_url}
