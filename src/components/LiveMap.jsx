@@ -7,10 +7,6 @@ import { supabase } from '../supabaseClient';
 
 // Drivers ping every 90s, so anything older than 5 minutes is cold.
 const STALE_AFTER_MS = 5 * 60 * 1000;
-// Pill + stem + gap, roughly — the vertical space buildIcon's label needs
-// above the pin. A marker with less room than this above it (near the top
-// of the visible map) has the label flipped below the pin instead.
-const LABEL_CLEARANCE_PX = 56;
 const DEFAULT_CENTER = [51.6, 0.25]; // Essex — the three sites sit inside this
 const DEFAULT_ZOOM = 10;
 const SITE_ZOOM = 15;
@@ -65,7 +61,7 @@ function formatHeading(degrees) {
   return `${points[Math.round(degrees / 45) % 8]} · ${Math.round(degrees)}°`;
 }
 
-function buildIcon({ label, theme, heading, onDuty, flipLabel = false }) {
+function buildIcon({ label, theme, heading, onDuty }) {
   const arrow =
     onDuty && heading != null
       ? `<span class="absolute inset-0 flex items-start justify-center" style="transform: rotate(${Number(heading)}deg)">
@@ -73,34 +69,22 @@ function buildIcon({ label, theme, heading, onDuty, flipLabel = false }) {
          </span>`
       : '';
 
-  const pill = `
-    <span class="max-w-[7rem] truncate rounded-full px-2.5 py-1 text-xs font-semibold shadow-sm ring-1 ${theme.pill}">
-      ${escapeHtml(label)}
-    </span>`;
-  const stem = `<span class="h-2 w-0.5 ${theme.stem}"></span>`;
-  const pin = `
-    <span class="relative flex h-4 w-4 items-center justify-center rounded-full shadow ring-2 ${theme.pin}">
-      ${arrow}
-    </span>`;
-
-  /*
-   * Normal: pill, stem, pin (top to bottom in the DOM), the whole column
-   * translated up by its own height so the pin — the last child — lands
-   * on the anchor and the pill sits above it. A marker with too little
-   * room above it in the map's current viewport has that pill clipped by
-   * the map's own overflow:hidden, so `flipLabel` reverses the order
-   * (pin, stem, pill) with no vertical translation, landing the pin on
-   * the anchor and letting the label hang below it instead, where there's
-   * room.
-   */
   return L.divIcon({
     className: '',
     iconSize: [0, 0],
     iconAnchor: [0, 0],
-    popupAnchor: [0, flipLabel ? 34 : -34],
-    html: flipLabel
-      ? `<div class="absolute -translate-x-1/2 flex flex-col items-center">${pin}${stem}${pill}</div>`
-      : `<div class="absolute -translate-x-1/2 -translate-y-full flex flex-col items-center">${pill}${stem}${pin}</div>`,
+    popupAnchor: [0, -34],
+    html: `
+      <div class="absolute -translate-x-1/2 -translate-y-full flex flex-col items-center">
+        <span class="max-w-[7rem] truncate rounded-full px-2.5 py-1 text-xs font-semibold shadow-sm ring-1 ${theme.pill}">
+          ${escapeHtml(label)}
+        </span>
+        <span class="h-2 w-0.5 ${theme.stem}"></span>
+        <span class="relative flex h-4 w-4 items-center justify-center rounded-full shadow ring-2 ${theme.pin}">
+          ${arrow}
+        </span>
+      </div>
+    `,
   });
 }
 
@@ -122,84 +106,6 @@ function MapController({ target, bounds }) {
   }, [target, bounds, map]);
 
   return null;
-}
-
-/*
- * Rendered as a child of MapContainer (not LiveMap itself) so it can read
- * the live map instance via useMap() and recompute, on every pan/zoom,
- * which markers currently have too little room above them for their
- * label — see buildIcon's flipLabel.
- */
-function DriverMarkers({ markers }) {
-  const map = useMap();
-  const [flippedIds, setFlippedIds] = useState(() => new Set());
-
-  useEffect(() => {
-    const updateFlips = () => {
-      const next = new Set();
-      for (const { position } of markers) {
-        const point = map.latLngToContainerPoint([position.latitude, position.longitude]);
-        if (point.y < LABEL_CLEARANCE_PX) next.add(position.user_id);
-      }
-      setFlippedIds((prev) => {
-        if (prev.size === next.size && [...prev].every((id) => next.has(id))) return prev;
-        return next;
-      });
-    };
-
-    updateFlips();
-    map.on('move zoom', updateFlips);
-    return () => {
-      map.off('move zoom', updateFlips);
-    };
-  }, [map, markers]);
-
-  return markers.map(({ position, profile, onDuty, stale, theme }) => (
-    <Marker
-      key={position.user_id}
-      position={[position.latitude, position.longitude]}
-      icon={buildIcon({
-        label: profile?.first_name ?? 'Driver',
-        theme,
-        heading: position.heading,
-        onDuty,
-        flipLabel: flippedIds.has(position.user_id),
-      })}
-      zIndexOffset={onDuty ? 400 : 0}
-    >
-      <Popup>
-        <div className="min-w-[13rem] font-sans">
-          <p className="text-sm font-semibold text-ink">
-            {profile?.full_name ?? profile?.first_name ?? 'Unknown driver'}
-          </p>
-          <p className="mt-0.5 text-xs text-ink/60">
-            Driver
-            {!onDuty && <span className="ml-1 text-ink/40">· Off duty</span>}
-          </p>
-
-          <dl className="mt-3 space-y-1.5 text-xs">
-            <div className="flex items-center gap-2 text-ink/80">
-              <Gauge className="h-3.5 w-3.5 text-ink/50" aria-hidden="true" />
-              <dt className="sr-only">Speed</dt>
-              <dd className="tabular-nums">{formatSpeed(position.speed)}</dd>
-            </div>
-            <div className="flex items-center gap-2 text-ink/80">
-              <Compass className="h-3.5 w-3.5 text-ink/50" aria-hidden="true" />
-              <dt className="sr-only">Heading</dt>
-              <dd className="tabular-nums">{formatHeading(position.heading)}</dd>
-            </div>
-          </dl>
-
-          <p
-            className={`mt-3 border-t border-border pt-2 text-xs ${stale ? 'text-warning' : 'text-ink/50'}`}
-          >
-            Last ping {relativeTime(position.updated_at)}
-            {position.accuracy != null && ` · ±${Math.round(position.accuracy)} m`}
-          </p>
-        </div>
-      </Popup>
-    </Marker>
-  ));
 }
 
 export default function LiveMap({ height = '100%', locationFilter = 'all' }) {
@@ -354,7 +260,51 @@ export default function LiveMap({ height = '100%', locationFilter = 'all' }) {
             />
           )}
 
-          <DriverMarkers markers={markers} />
+          {markers.map(({ position, profile, onDuty, stale, theme }) => (
+            <Marker
+              key={position.user_id}
+              position={[position.latitude, position.longitude]}
+              icon={buildIcon({
+                label: profile?.first_name ?? 'Driver',
+                theme,
+                heading: position.heading,
+                onDuty,
+              })}
+              zIndexOffset={onDuty ? 400 : 0}
+            >
+              <Popup>
+                <div className="min-w-[13rem] font-sans">
+                  <p className="text-sm font-semibold text-ink">
+                    {profile?.full_name ?? profile?.first_name ?? 'Unknown driver'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-ink/60">
+                    Driver
+                    {!onDuty && <span className="ml-1 text-ink/40">· Off duty</span>}
+                  </p>
+
+                  <dl className="mt-3 space-y-1.5 text-xs">
+                    <div className="flex items-center gap-2 text-ink/80">
+                      <Gauge className="h-3.5 w-3.5 text-ink/50" aria-hidden="true" />
+                      <dt className="sr-only">Speed</dt>
+                      <dd className="tabular-nums">{formatSpeed(position.speed)}</dd>
+                    </div>
+                    <div className="flex items-center gap-2 text-ink/80">
+                      <Compass className="h-3.5 w-3.5 text-ink/50" aria-hidden="true" />
+                      <dt className="sr-only">Heading</dt>
+                      <dd className="tabular-nums">{formatHeading(position.heading)}</dd>
+                    </div>
+                  </dl>
+
+                  <p
+                    className={`mt-3 border-t border-border pt-2 text-xs ${stale ? 'text-warning' : 'text-ink/50'}`}
+                  >
+                    Last ping {relativeTime(position.updated_at)}
+                    {position.accuracy != null && ` · ±${Math.round(position.accuracy)} m`}
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
         </MapContainer>
 
         {!loading && markers.length === 0 && (

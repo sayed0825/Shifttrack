@@ -101,7 +101,6 @@ export interface TimeLogRow {
   id: string;
   user_id: string;
   location_id: string | null;
-  locations?: { name: string } | null;
   shift_id: string | null;
   clock_in: string;
   clock_out: string | null;
@@ -883,7 +882,7 @@ function TimesheetsPanel({
     let query = supabase
       .from('time_logs')
       .select(
-        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, role_at_clock_in, profiles:user_id ( id, first_name, full_name, role ), locations:location_id ( name ), shifts:shift_id ( start_time )'
+        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, role_at_clock_in, profiles:user_id ( id, first_name, full_name, role ), shifts:shift_id ( start_time )'
       )
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
@@ -1035,9 +1034,6 @@ function TimesheetsPanel({
                       {formatClock(log.clock_in)} –{' '}
                       {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
                     </p>
-                    {log.locations?.name && (
-                      <p className="mt-0.5 truncate text-xs text-ink/50">{log.locations.name}</p>
-                    )}
                     {late && shiftStart && (
                       <span className="mt-1 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
@@ -1082,7 +1078,6 @@ function TimesheetsPanel({
                 <th scope="col">Day</th>
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
-                <th scope="col">Location</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
                 <th scope="col">Hours</th>
                 {isAdmin && <th scope="col">Cost</th>}
@@ -1120,7 +1115,6 @@ function TimesheetsPanel({
                       <span className="text-success">open</span>
                     )}
                   </td>
-                  <td className="px-2 py-2.5 text-ink/70">{log.locations?.name ?? '—'}</td>
                   {showOrdersColumns && (
                     <td
                       className={`px-2 py-2.5 tabular-nums ${

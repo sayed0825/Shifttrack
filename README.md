@@ -44,44 +44,24 @@ horizontally, checking there's no *unintended* horizontal scroll comes
 first, not reaching back for `always`.
 
 `html, body` in `src/index.css` are locked to `height: 100dvh;
-overflow: hidden`, not just `overflow-x: hidden`. This is part of the
-fix for a native-only bug: the bottom mobile nav (`position: fixed`)
-drifting as the page scrolled, with a gap opening up below it — only
-in the TestFlight build, never in mobile Safari. In a WKWebView,
-`position: fixed` resolves against the WebView's own *native* outer
-scroll view — the same one `ios.contentInset` configures — not
-against CSS's notion of the viewport the way Mobile Safari's browser
-chrome does. Every screen in this app already does its own scrolling
-internally (a `h-dvh` root with an inner `overflow-y-auto` region), so
-`html`/`body` were never meant to scroll at all. Locking both axes on
-`html`/`body` removes the *document's own* scroll possibility, but it
-wasn't the whole story:
-
-`EmployeeDashboard.tsx`'s `<main className="flex-1 overflow-y-auto">`
-was missing `min-h-0`. A flex item's default `min-height` is `auto`,
-which means it refuses to shrink below its own content's natural
-height no matter what `flex: 1` asks for — so instead of clamping to
-the `h-dvh` root's available space and scrolling *internally*,
-`<main>` grew to fit its full content and pushed the whole page taller
-than the viewport, exactly the "screen whose own container exceeds
-100dvh" `overflow: hidden` on `html`/`body` doesn't fully guard
-against: that CSS only clips the *visible* rendering in a browser, it
-doesn't stop a WKWebView's native scroll view from measuring the
-document's true, larger rendered size and becoming natively scrollable
-by the difference — which is what was dragging the fixed nav along and
-leaving the gap below it. `ManagerDashboard.tsx`'s equivalent `<main>`
-already had `min-h-0`; this was the one place that didn't, and the
-same bug most likely also explained the Live Map's touch-drag panning
-not working (zoom worked; pan didn't) — the native scroll view
-competing for single-finger drag gestures anywhere on the page,
-including over the map, whenever it believed there was something to
-scroll. If a fixed element or a touch gesture ever seems to misbehave
-like this again, check for exactly this shape of bug first — some
-`flex-1` region missing `min-h-0`, letting a screen's real height
-exceed the viewport — before reaching for `position: sticky` or a
-manual `touch-action` override; `sticky` hides the symptom without
-touching why `fixed` stopped behaving like `fixed`, and Leaflet
-already ships the correct `touch-action` CSS for its own container.
+overflow: hidden`, not just `overflow-x: hidden`. This is what fixed a
+second native-only bug: the bottom mobile nav (`position: fixed`)
+drifting as the page scrolled, only in the TestFlight build, never in
+mobile Safari. In a WKWebView, `position: fixed` resolves against the
+WebView's own *native* outer scroll view — the same one
+`ios.contentInset` configures — not against CSS's notion of the
+viewport the way Mobile Safari's browser chrome does. Every screen in
+this app already does its own scrolling internally (a `h-dvh` root
+with an inner `overflow-y-auto` region), so `html`/`body` were never
+meant to scroll at all — but nothing stopped `body` from ending up a
+pixel or two taller than the viewport (stray padding, a rounding
+difference), which is enough to make that native container scrollable
+and drag anything `fixed` along with it as it scrolls. Locking both
+axes on `html`/`body` removes the possibility outright. If a fixed
+element ever seems to drift again, check for exactly this — a genuine
+mismatch between the document's real height and the viewport — before
+reaching for `position: sticky` as a substitute; `sticky` would hide
+the symptom without touching why `fixed` stopped behaving like `fixed`.
 
 ## Automated RLS tests
 
