@@ -3,7 +3,7 @@
   "appName": "ShiftTrack",
   "webDir": "dist",
   "ios": {
-    "contentInset": "scrollableAxes",
+    "contentInset": "never",
     "webContentsDebuggingEnabled": true
   },
   "android": {

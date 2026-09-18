@@ -26,42 +26,60 @@ per-build `capacitor.config.json` copy, `Pods/`) are gitignored — see
 `ios/.gitignore` — since `npx cap sync ios` recreates them from the repo
 state on every build, on Codemagic or on a real Mac.
 
-`capacitor.config.json`'s `ios.contentInset` is `scrollableAxes`, not
-`always`. `always` sets `UIScrollView.contentInsetAdjustmentBehavior`
-to inset the WebView's *native* scroll container on every edge —
-including left/right — regardless of whether that axis actually
-scrolls. Since this app is never meant to scroll horizontally, that
-native inset had nothing to reconcile against and showed up as a
-genuine, persistent horizontal drag on device (TestFlight only, never
-in mobile Safari, since Safari's own viewport scrolling doesn't go
-through this native-container mechanism at all) — no amount of CSS
-`overflow-x: hidden` can prevent it, since it isn't the document
-overflowing, it's the outer native scroll view. `scrollableAxes` insets
-only the axes that are genuinely scrollable — vertical, in this app —
-so the status bar/home indicator are still cleared without introducing
-a phantom horizontal one. If a screen is ever meant to scroll
-horizontally, checking there's no *unintended* horizontal scroll comes
-first, not reaching back for `always`.
+`capacitor.config.json`'s `ios.contentInset` is `never` (Capacitor's
+own default — it was previously overridden to `scrollableAxes`, see
+below). `contentInset` sets `UIScrollView.contentInsetAdjustmentBehavior`
+on the WebView's *native* outer scroll container. Any value other than
+`never` makes iOS automatically push page content down/inset it by the
+safe-area amount at the native layer, on top of whatever the page's own
+CSS already computed — `always` does this on every edge (including
+left/right, which this app never scrolls); `scrollableAxes` restricts
+it to axes that are genuinely scrollable, which for this app is
+vertical only.
 
-`html, body` in `src/index.css` are locked to `height: 100dvh;
-overflow: hidden`, not just `overflow-x: hidden`. This is what fixed a
-second native-only bug: the bottom mobile nav (`position: fixed`)
-drifting as the page scrolled, only in the TestFlight build, never in
-mobile Safari. In a WKWebView, `position: fixed` resolves against the
-WebView's own *native* outer scroll view — the same one
-`ios.contentInset` configures — not against CSS's notion of the
-viewport the way Mobile Safari's browser chrome does. Every screen in
-this app already does its own scrolling internally (a `h-dvh` root
-with an inner `overflow-y-auto` region), so `html`/`body` were never
-meant to scroll at all — but nothing stopped `body` from ending up a
-pixel or two taller than the viewport (stray padding, a rounding
-difference), which is enough to make that native container scrollable
-and drag anything `fixed` along with it as it scrolls. Locking both
-axes on `html`/`body` removes the possibility outright. If a fixed
-element ever seems to drift again, check for exactly this — a genuine
-mismatch between the document's real height and the viewport — before
-reaching for `position: sticky` as a substitute; `sticky` would hide
-the symptom without touching why `fixed` stopped behaving like `fixed`.
+That still isn't right for this app, though, and is why it's `never`
+now: `viewport-fit=cover` (`index.html`) makes `100dvh` resolve to the
+WebView's *entire* frame, safe areas included — confirmed on-device
+via Safari's Web Inspector (Develop menu, needs
+`ios.webContentsDebuggingEnabled: true`, see below): `innerHeight`/
+`visualViewport.height` read 736, but `html`/`body` `scrollHeight` and
+`clientHeight` both read 778, exactly 736 + the 42px status bar inset.
+With `contentInset` at anything but `never`, the native layer pushes
+content down by that same 42px on top of a document that's *already*
+sized to the full 778 — the document has nowhere to absorb that native
+push, so the WebView's own scroll position rests at `scrollY: 42`
+instead of `0`. That resting scroll is exactly what drags anything
+`position: fixed` (the bottom mobile nav) out of place, and it likely
+also explains the live map's touch-drag panning not working — Leaflet
+never gets a clean single-finger drag; the WebView's own natively
+scrollable outer container competes for it. `contentInset: never`
+removes the native push entirely, and `pt-[env(safe-area-inset-top)]`
+on `EmployeeDashboard`'s and `ManagerDashboard`'s `<header>` accounts
+for the status bar *inside* the CSS layout instead — the same pattern
+this app already used for the bottom inset
+(`pb-[env(safe-area-inset-bottom)]` on the mobile nav and every sheet/
+modal footer). Safe-area insets should always be consumed as CSS
+padding inside an already-correctly-sized `100dvh` root, never added
+on top of one by the native layer — if a fixed element drifts again,
+measure `innerHeight` against `html`/`body` `scrollHeight` first
+(`src/components/DebugOverlay.tsx` is a throwaway diagnostic panel
+that already does this, rendered unconditionally on every screen —
+remove it once this class of bug stops recurring) before assuming
+it's the same cause as last time.
+
+`html, body` in `src/index.css` are separately locked to `height:
+100dvh; overflow: hidden`, not just `overflow-x: hidden`. Every screen
+in this app does its own scrolling internally (a `h-dvh` root with an
+inner `overflow-y-auto` region), so `html`/`body` are never meant to
+scroll at all regardless of the `contentInset` issue above — but
+nothing stops `body` from ending up a pixel or two taller than the
+viewport for an unrelated reason (stray padding, a rounding
+difference), which on its own is enough to make the native container
+scrollable and drag `fixed` elements again. Locking both axes here
+removes that possibility outright, independent of whatever caused it.
+Prefer this fix over `position: sticky` as a substitute — `sticky`
+would hide the symptom without touching why `fixed` stopped behaving
+like `fixed`.
 
 **`capacitor.config.json`'s `ios.webContentsDebuggingEnabled` is
 temporarily `true`**, to let Safari's Develop menu attach to the

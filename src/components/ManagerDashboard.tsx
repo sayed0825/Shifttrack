@@ -415,7 +415,7 @@ export default function ManagerDashboard(): ReactNode {
 
   return (
     <div className="flex h-full flex-col bg-bg">
-      <header className="bg-primary text-white">
+      <header className="bg-primary pt-[env(safe-area-inset-top)] text-white">
         <div className="flex flex-wrap items-center gap-4 px-4 py-3">
           <div className="flex min-w-0 items-center">
             {organisation?.logo_url ? (
