@@ -100,6 +100,7 @@ interface TimeLogRow {
   clock_out: string | null;
   notes: string | null;
   location_id: string | null;
+  locations?: { name: string } | null;
   orders_count?: number | null;
   role_at_clock_in?: string | null;
 }
@@ -991,7 +992,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
     const { data } = await supabase
       .from('time_logs')
       .select(
-        'id, clock_in, clock_out, notes, location_id, orders_count, role_at_clock_in, shifts:shift_id ( start_time )'
+        'id, clock_in, clock_out, notes, location_id, orders_count, role_at_clock_in, locations:location_id ( name ), shifts:shift_id ( start_time )'
       )
       .eq('user_id', user.id)
       .gte('clock_in', weekStart.toISOString())
@@ -1080,6 +1081,9 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                       {formatClock(log.clock_in)} –{' '}
                       {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
                     </p>
+                    {log.locations?.name && (
+                      <p className="mt-0.5 truncate text-xs text-ink/50">{log.locations.name}</p>
+                    )}
                     {late && shiftStart && (
                       <span className="mt-1 inline-flex items-center rounded-lg bg-danger-bg px-1.5 py-0.5 text-[11px] font-semibold text-danger">
                         LATE · {minutesLate(log.clock_in, shiftStart)} min
@@ -1105,6 +1109,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                 <th scope="col">Day</th>
                 <th scope="col">Clock in</th>
                 <th scope="col">Clock out</th>
+                <th scope="col">Location</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
                 <th scope="col">Hours</th>
               </tr>
@@ -1129,6 +1134,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                     <td className="px-2 py-3 tabular-nums text-ink">
                       {log.clock_out ? formatClock(log.clock_out) : <span className="text-success">open</span>}
                     </td>
+                    <td className="px-2 py-3 text-ink/70">{log.locations?.name ?? '—'}</td>
                     {showOrdersColumns && (
                       <td className="px-2 py-3 tabular-nums text-ink">
                         {ordersCellText(needsReport, log.orders_count ?? null)}
