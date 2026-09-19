@@ -121,6 +121,82 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-19
+Two native-only WKWebView bugs, both confirmed fixed on a real device
+this session, plus one process failure that cost most of the session
+before either fix actually reached the device.
+
+- **Nav drift (status bar pushing content/the bottom nav down by 42px)**
+  — root cause and fix landed in commit `09bc803` the previous session,
+  but "not yet confirmed on a device build" at the time it was written.
+  **Confirmed this session.** Root cause: `viewport-fit=cover` makes
+  `100dvh` resolve to the WebView's whole frame, safe areas included;
+  with `ios.contentInset` at anything but `"never"` (it was
+  `"scrollableAxes"`), iOS *also* pushes content down by the safe-area
+  amount at the native `UIScrollView` layer, on top of a document
+  already sized to the full frame — nowhere for that push to go, so the
+  WebView's resting scroll position became 42 instead of 0, dragging
+  the fixed bottom nav with it. Fixed by `ios.contentInset: "never"`
+  plus `pt-[env(safe-area-inset-top)]` on both dashboards' `<header>`,
+  so the inset is consumed as CSS padding inside the correctly-sized
+  root instead of added on top of it natively.
+- **Horizontal scroll drift on the Schedule tab (and, once found,
+  everywhere else)** — reported as `scrollX: 50` with `docW: 402/402`
+  and no element measuring wider than the viewport. Went through two
+  wrong theories before the real one: first, that something was
+  transiently wider than the viewport during a modal/popover
+  transition (led to `resetDocumentScroll`, the `useAnchoredPopoverPosition`
+  `useLayoutEffect` fix, and root `overflow-x` hardening — all kept,
+  none of them wrong to have, but none of them were the cause).
+  **Actual root cause, measured on-device**: `visualViewport.scale` was
+  `1.6` — the page was zoomed, not overflowing, which is exactly why
+  nothing ever measured as too wide. iOS Safari/WKWebView auto-zooms on
+  focusing any input/select/textarea with a computed font-size under
+  16px; this app's form fields were `text-sm`/`text-xs` (14px/12px)
+  almost everywhere, so nearly every field in the app was a trigger,
+  and the zoom doesn't reliably clear itself on blur or modal close.
+  Fixed at the source: every form field across the app (75 fields, 16
+  files — add shift, edit time log, invite staff, task templates/
+  one-off tasks, orders modal, profile settings, wage rates, payroll
+  report, overtime claim, shift swap/apply, unavailability) is now
+  `text-base sm:text-sm` (or `sm:text-xs`) — 16px below `sm`, the
+  smaller size only from `sm` up where iOS doesn't auto-zoom. A first
+  attempt at a global override rule failed on-device even with
+  `!important`, because it was unlayered against Tailwind v4's
+  `@layer utilities` — moved into `@layer utilities` explicitly and
+  re-verified against the compiled CSS output (not assumed) once
+  correctly scoped. Kept as a `@layer utilities` safety net for
+  anything future code adds as bare `text-sm`; the per-field fix is
+  the real one, living entirely in Tailwind's own cascade. Also added
+  `resetViewportZoom()` (briefly adds `maximum-scale=1` to the
+  viewport meta, then removes it — snaps zoom back to 1 without
+  disabling pinch-zoom) folded into `resetDocumentScroll()`, called on
+  every tab change, every modal/popover close, and app load, as a
+  safety net for whatever still slips through. Deliberately did NOT
+  use `maximum-scale=1`/`user-scalable=no` in the viewport meta
+  permanently — that disables pinch-zoom outright, an accessibility
+  failure.
+- **Process failure: most of this session was lost to fixes never
+  reaching the device.** Every fix above was correct in the working
+  tree well before it was confirmed — but was only committed to local
+  `main`, never pushed, across several rounds of "still broken on
+  device" reports. Every device build being tested was building
+  `origin/main` at `09bc803`, unchanged. The font-size fix in
+  particular was independently re-diagnosed, re-verified against
+  compiled CSS, and re-confirmed correct in the working tree — genuinely
+  fixed the whole time — before the actual gap (nothing had been pushed)
+  was found. **Lesson: after any fix meant to be tested on a device
+  build, confirm it's actually on `origin/main` (`git log
+  origin/main..HEAD`), not just committed locally, before waiting on a
+  device result.**
+- **Cleanup**: `DebugOverlay.tsx` (a throwaway diagnostic, originally
+  added for the nav-drift bug and extended for the scrollX drift,
+  always-rendering with no trigger) removed entirely, along with its
+  two render sites in `App.tsx`. `ios.webContentsDebuggingEnabled` set
+  back to `false` in `capacitor.config.json` — was `true` for on-device
+  Safari Web Inspector debugging during this session; an inspectable
+  WebView in a shipped build is a real weakness.
+
 ### 2026-09-16
 **The automated RLS test suite runs green: 128 tests across 11 files,
 run for real against the live database, teardown confirmed clean

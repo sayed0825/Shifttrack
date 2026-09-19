@@ -5,7 +5,6 @@ import { usePermissions } from './hooks/usePermissions';
 import { resetDocumentScroll } from './lib/resetDocumentScroll';
 import ManagerDashboard from './components/ManagerDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
-import DebugOverlay from './components/DebugOverlay';
 import type { Profile } from './components/ManagerDashboard';
 
 type Session = {
@@ -304,7 +303,6 @@ export default function App() {
   if (canManage) {
     return (
       <div className="h-dvh">
-        <DebugOverlay />
         <ManagerDashboard />
       </div>
     );
@@ -312,7 +310,6 @@ export default function App() {
 
   return (
     <div className="h-dvh">
-      <DebugOverlay />
       <EmployeeDashboard profile={session.profile} />
     </div>
   );

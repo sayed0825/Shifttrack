@@ -4,7 +4,7 @@
   "webDir": "dist",
   "ios": {
     "contentInset": "never",
-    "webContentsDebuggingEnabled": true
+    "webContentsDebuggingEnabled": false
   },
   "android": {
     "useLegacyBridge": true
