@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Filter, X } from 'lucide-react';
 import { useAnchoredPopoverPosition } from '../hooks/useAnchoredPopoverPosition';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 
 const POPOVER_WIDTH = 288; // matches w-72
 const SM_BREAKPOINT = 640; // Tailwind's `sm`
@@ -45,6 +46,13 @@ export default function FilterButton({
     width: POPOVER_WIDTH,
     align: 'left',
   });
+
+  // Native iOS build only: closing can leave the WKWebView's outer scroll
+  // view offset sideways even though this popover animated back within
+  // bounds — see resetDocumentScroll for why. Force it back on every close.
+  useEffect(() => {
+    if (!open) resetDocumentScroll();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;

@@ -21,6 +21,7 @@ import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { friendlyError } from '../lib/friendlyError';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import CollapsibleSection from './CollapsibleSection';
 import FilterButton from './FilterButton';
 
@@ -156,6 +157,8 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }): 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  useEffect(() => resetDocumentScroll, []);
 
   return (
     <div
@@ -376,7 +379,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
                           onChange={(e) => setRejecting({ ...rejecting, comment: e.target.value, fault: null })}
                           rows={2}
                           autoFocus
-                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                          className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                         />
                         {rejecting.fault && <p className="text-xs text-danger">{rejecting.fault}</p>}
                         <div className="flex gap-2">
@@ -743,7 +746,7 @@ function TargetPicker({
             value={role}
             onChange={(e) => onRoleChange(e.target.value)}
             disabled={rolesLoading || roles.length === 0}
-            className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             {roles.map((r) => (
               <option key={r.id} value={r.name}>{r.name}</option>
@@ -755,7 +758,7 @@ function TargetPicker({
             value={staffId}
             onChange={(e) => onStaffChange(e.target.value)}
             disabled={staffLoading || staff.length === 0}
-            className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
           >
             {staff.map((s) => (
               <option key={s.id} value={s.id}>{s.full_name ?? s.first_name ?? 'Unnamed'}</option>
@@ -878,6 +881,8 @@ function TemplateFormModal({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
+  useEffect(() => resetDocumentScroll, []);
+
   const toggleWeekday = (value: number) => {
     setWeekdays((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
   };
@@ -946,7 +951,7 @@ function TemplateFormModal({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 
@@ -959,7 +964,7 @@ function TemplateFormModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 
@@ -969,7 +974,7 @@ function TemplateFormModal({
               id="tmpl-location"
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
             >
               {locations.map((l) => (
                 <option key={l.id} value={l.id}>{l.name}</option>
@@ -998,7 +1003,7 @@ function TemplateFormModal({
                 type="time"
                 value={startAt}
                 onChange={(e) => setStartAt(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums"
               />
             </div>
             <div>
@@ -1008,7 +1013,7 @@ function TemplateFormModal({
                 type="time"
                 value={dueAt}
                 onChange={(e) => setDueAt(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums"
               />
             </div>
           </div>
@@ -1019,7 +1024,7 @@ function TemplateFormModal({
               id="tmpl-recurrence"
               value={recurrence}
               onChange={(e) => setRecurrence(e.target.value as Recurrence)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
             >
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>
@@ -1124,6 +1129,8 @@ function OneOffFormModal({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
+  useEffect(() => resetDocumentScroll, []);
+
   const handleSave = async () => {
     setFault(null);
 
@@ -1215,7 +1222,7 @@ function OneOffFormModal({
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 />
               </div>
 
@@ -1228,7 +1235,7 @@ function OneOffFormModal({
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={2}
-                  className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                 />
               </div>
 
@@ -1238,7 +1245,7 @@ function OneOffFormModal({
                   id="oneoff-location"
                   value={locationId}
                   onChange={(e) => setLocationId(e.target.value)}
-                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
                 >
                   {locations.map((l) => (
                     <option key={l.id} value={l.id}>{l.name}</option>
@@ -1267,7 +1274,7 @@ function OneOffFormModal({
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
                   />
                 </div>
                 <div>
@@ -1277,7 +1284,7 @@ function OneOffFormModal({
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
                   />
                 </div>
                 <div>
@@ -1287,7 +1294,7 @@ function OneOffFormModal({
                     type="time"
                     value={dueTime}
                     onChange={(e) => setDueTime(e.target.value)}
-                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
                   />
                 </div>
               </div>
@@ -1581,7 +1588,7 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
           <div>
@@ -1593,7 +1600,7 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 

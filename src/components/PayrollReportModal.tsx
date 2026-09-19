@@ -6,6 +6,7 @@ import { useManagedLocations } from '../hooks/useManagedLocations';
 import { usePermissions } from '../hooks/usePermissions';
 import { useOrderRate } from '../hooks/useOrderRate';
 import { orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import {
   WAGE_RATE_FIELDS,
   formatCurrencyAmount,
@@ -163,6 +164,8 @@ export default function PayrollReportModal({
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  useEffect(() => resetDocumentScroll, []);
 
   const toggleLocation = (id: string) => {
     setSelectedLocations((prev) => {
@@ -455,7 +458,7 @@ export default function PayrollReportModal({
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
             <div>
@@ -467,7 +470,7 @@ export default function PayrollReportModal({
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
           </div>

@@ -296,7 +296,7 @@ export default function EmployeeShiftActions({
               id="swap-mine"
               value={mine}
               onChange={(e) => setMine(e.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
             >
               <option value="">Choose one of yours</option>
               {myShifts.map((s) => (
@@ -315,7 +315,7 @@ export default function EmployeeShiftActions({
               id="swap-theirs"
               value={theirs}
               onChange={(e) => setTheirs(e.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
             >
               <option value="">Choose a colleague&rsquo;s shift</option>
               {peerShifts.map((s) => (

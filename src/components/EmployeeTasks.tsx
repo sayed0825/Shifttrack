@@ -12,6 +12,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
 import { friendlyError } from '../lib/friendlyError';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import type { Profile } from './ManagerDashboard';
 
 type TaskStatus = 'pending' | 'submitted' | 'approved' | 'rejected';
@@ -364,6 +365,8 @@ function TaskDetailSheet({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
+  useEffect(() => resetDocumentScroll, []);
+
   const handleSendComment = async () => {
     const comment_text = draft.trim();
     if (!comment_text || sending) return;
@@ -527,7 +530,7 @@ function TaskDetailSheet({
                     accept="image/*"
                     capture="environment"
                     onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
-                    className="mt-1.5 block w-full text-xs text-ink/70 file:mr-3 file:min-h-[44px] file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-dark"
+                    className="mt-1.5 block w-full text-base sm:text-xs text-ink/70 file:mr-3 file:min-h-[44px] file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-dark"
                   />
                   {photoFile && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-success">
@@ -599,7 +602,7 @@ function TaskDetailSheet({
               if (e.key === 'Enter') void handleSendComment();
             }}
             placeholder="Add a comment"
-            className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           />
           <button
             type="button"

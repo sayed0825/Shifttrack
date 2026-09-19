@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, Lock, LogIn } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { usePermissions } from './hooks/usePermissions';
+import { resetDocumentScroll } from './lib/resetDocumentScroll';
 import ManagerDashboard from './components/ManagerDashboard';
 import EmployeeDashboard from './components/EmployeeDashboard';
 import DebugOverlay from './components/DebugOverlay';
@@ -24,6 +25,13 @@ export default function App() {
     const hash = window.location.hash;
     return hash.includes('type=invite') || hash.includes('type=recovery');
   });
+
+  // Zoom or scroll left over from a previous native session (see
+  // resetDocumentScroll) would otherwise persist across a reload, since
+  // it's a property of the WKWebView, not app state.
+  useEffect(() => {
+    resetDocumentScroll();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

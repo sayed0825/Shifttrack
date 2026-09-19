@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Bell, Check, CheckSquare, Clock, MapPin, UserCog, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useAnchoredPopoverPosition } from '../hooks/useAnchoredPopoverPosition';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 
 const POPOVER_WIDTH = 320; // matches w-80
 
@@ -49,6 +50,12 @@ export default function NotificationBell(): ReactNode {
     width: POPOVER_WIDTH,
     align: 'right',
   });
+
+  // Native iOS build only — see resetDocumentScroll for why closing must
+  // force the WKWebView's outer scroll view back to (0, 0).
+  useEffect(() => {
+    if (!open) resetDocumentScroll();
+  }, [open]);
 
   const load = useCallback(async () => {
     const { data, error: queryError } = await supabase

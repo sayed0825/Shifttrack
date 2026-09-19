@@ -106,4 +106,51 @@ html,
 body {
   height: 100dvh;
   overflow: hidden;
+  overflow-x: hidden;
+}
+
+/*
+ * iOS Safari and WKWebView auto-zoom the whole page when a focused input,
+ * select or textarea has a computed font-size under 16px — and the zoom
+ * does not reliably reset itself when the field blurs or its modal
+ * closes, leaving the document scrollable in both directions until
+ * reload.
+ *
+ * The real fix is that every form field's own class is now
+ * `text-base sm:text-sm` (or `sm:text-xs`), not bare `text-sm`/`text-xs` —
+ * 16px below `sm`, the smaller size only from `sm` up where iOS does not
+ * auto-zoom. That lives entirely in Tailwind's own utilities cascade
+ * (mobile-first base class + a `sm:` override at the same specificity),
+ * so there's no cross-layer question about which one wins.
+ *
+ * This rule is the safety net for anything the per-field audit missed —
+ * a future field added as bare `text-sm`, a third-party control, and so
+ * on. It's declared inside `@layer utilities` (not left unlayered) so it
+ * competes as part of Tailwind's own layer rather than relying on
+ * unlayered-vs-layered precedence at all. `!important` is still required
+ * within that layer: `input`/`select`/`textarea` (a type selector) is
+ * lower specificity than `.text-sm` (a class selector), so without it
+ * Tailwind's own class would still win on specificity alone.
+ */
+@layer utilities {
+  @media (max-width: 639.98px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+}
+
+/*
+ * Belt-and-braces on top of the rule above: #root is the one element every
+ * screen actually renders into, so clamp it directly rather than trusting
+ * that `overflow: hidden` on its ancestors is never overridden or
+ * shadowed by a more specific rule added later. `max-width` (not `width`)
+ * so it still shrinks correctly on very narrow devices instead of forcing
+ * a fixed size.
+ */
+#root {
+  max-width: 100dvw;
+  overflow-x: hidden;
 }

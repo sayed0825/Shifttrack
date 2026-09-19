@@ -8,6 +8,7 @@ import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { usePermissions } from '../hooks/usePermissions';
 import { friendlyError } from '../lib/friendlyError';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import EmployeeNotes from './EmployeeNotes';
 import WageRatesPanel from './WageRatesPanel';
 
@@ -81,6 +82,13 @@ export default function StaffManager({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // See resetDocumentScroll — the confirm dialog toggles in place rather
+  // than mounting/unmounting a separate component, so reset on every
+  // close (confirming going null), not on this component's own unmount.
+  useEffect(() => {
+    if (!confirming) resetDocumentScroll();
+  }, [confirming]);
 
   // Only staff the viewer actually manages — sharing at least one location
   // with them, or everyone if they're an Administrator. Writes to people
@@ -279,7 +287,7 @@ export default function StaffManager({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search name, email, or role"
               aria-label="Search staff"
-              className="min-h-[44px] w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm"
+              className="min-h-[44px] w-full rounded-lg border border-border py-2 pl-9 pr-3 text-base sm:text-sm"
             />
           </div>
 
@@ -293,7 +301,7 @@ export default function StaffManager({
                 value={locationFilter}
                 onChange={(e) => setLocationFilter(e.target.value)}
                 aria-label="Filter by location"
-                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-ink"
+                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-base sm:text-sm text-ink"
               >
                 <option value="all">All locations</option>
                 {locations.map((l) => (
@@ -310,7 +318,7 @@ export default function StaffManager({
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
                 aria-label="Filter by role"
-                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-sm text-ink"
+                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-3 text-base sm:text-sm text-ink"
               >
                 <option value="all">All roles</option>
                 {roles.map((r) => (
@@ -428,7 +436,7 @@ export default function StaffManager({
                             value={person.role ?? ''}
                             onChange={(e) => void setRole(person, e.target.value || null)}
                             disabled={busyId === person.id || rolesLoading}
-                            className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                            className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
                           >
                             <option value="">No role</option>
                             {roles.map((r) => (

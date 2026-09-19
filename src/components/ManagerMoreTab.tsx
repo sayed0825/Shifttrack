@@ -33,6 +33,7 @@ import { useLateGrace } from '../hooks/useLateGrace';
 import { useOrderRate } from '../hooks/useOrderRate';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { friendlyError } from '../lib/friendlyError';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import InviteStaffModal from './InviteStaffModal';
 import ManagerShiftRequests from './ManagerShiftRequests';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
@@ -319,7 +320,7 @@ function LocationsCard(): ReactNode {
                     type="text"
                     value={editForm.name}
                     onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
                 <div>
@@ -328,7 +329,7 @@ function LocationsCard(): ReactNode {
                     type="text"
                     value={editForm.address ?? ''}
                     onChange={(e) => setEditForm({ ...editForm, address: e.target.value || null })}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -339,7 +340,7 @@ function LocationsCard(): ReactNode {
                       step="0.0001"
                       value={editForm.latitude}
                       onChange={(e) => setEditForm({ ...editForm, latitude: parseFloat(e.target.value) || 0 })}
-                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     />
                   </div>
                   <div>
@@ -349,7 +350,7 @@ function LocationsCard(): ReactNode {
                       step="0.0001"
                       value={editForm.longitude}
                       onChange={(e) => setEditForm({ ...editForm, longitude: parseFloat(e.target.value) || 0 })}
-                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     />
                   </div>
                 </div>
@@ -360,7 +361,7 @@ function LocationsCard(): ReactNode {
                     min="10"
                     value={editForm.radius_meters}
                     onChange={(e) => setEditForm({ ...editForm, radius_meters: parseInt(e.target.value, 10) || 100 })}
-                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -595,6 +596,12 @@ function RolesCard(): ReactNode {
     if (!orgId && roles.length > 0) setOrgId(roles[0].org_id);
   }, [orgId, roles]);
 
+  // See resetDocumentScroll — this dialog toggles in place, so reset on
+  // every close (confirmingDelete going null).
+  useEffect(() => {
+    if (!confirmingDelete) resetDocumentScroll();
+  }, [confirmingDelete]);
+
   const handleAdd = async () => {
     const name = newName.trim();
     if (!name) {
@@ -793,7 +800,7 @@ function RolesCard(): ReactNode {
                         onChange={(e) => setEditName(e.target.value)}
                         autoFocus
                         aria-label={`Rename ${role.name}`}
-                        className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                       />
                     </div>
                   ) : (
@@ -900,7 +907,7 @@ function RolesCard(): ReactNode {
           }}
           placeholder="New role name"
           aria-label="New role name"
-          className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         />
         <button
           type="button"
@@ -1143,7 +1150,7 @@ function BrandingCard(): ReactNode {
             setName(e.target.value);
             setSaved(false);
           }}
-          className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         />
       </div>
 
@@ -1238,7 +1245,7 @@ function GracePeriodCard(): ReactNode {
                 setValue(e.target.value);
                 setSaved(false);
               }}
-              className="mt-1.5 min-h-[44px] w-32 rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-32 rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
           <button
@@ -1334,7 +1341,7 @@ function OrderRateCard(): ReactNode {
                 setValue(e.target.value);
                 setSaved(false);
               }}
-              className="mt-1.5 min-h-[44px] w-32 rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-32 rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
           <button

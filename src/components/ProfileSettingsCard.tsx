@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import type { Profile } from './ManagerDashboard';
 
 /** Muted "No role" label for anywhere a role is displayed. */
@@ -33,6 +34,12 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
       if (user?.email) setEmail(user.email);
     })();
   }, []);
+
+  // See resetDocumentScroll — this dialog toggles in place, so reset on
+  // every close (deleteOpen going false).
+  useEffect(() => {
+    if (!deleteOpen) resetDocumentScroll();
+  }, [deleteOpen]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -121,7 +128,7 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
                 type="text"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
             <div>
@@ -131,7 +138,7 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
           </div>
@@ -142,7 +149,7 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
           <div className="flex items-center gap-2 rounded-lg bg-bg px-3 py-2 text-sm">
@@ -179,7 +186,7 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
           <div>
@@ -189,7 +196,7 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 
@@ -260,7 +267,7 @@ export default function ProfileSettingsCard({ profile }: { profile: Profile }): 
                 autoFocus
                 autoCapitalize="off"
                 autoCorrect="off"
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger"
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger"
               />
             </div>
 

@@ -174,7 +174,7 @@ export default function EmployeeNotes({
           rows={3}
           placeholder={`Add a note about ${employeeName}…`}
           disabled={saving}
-          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
         />
 
         <button

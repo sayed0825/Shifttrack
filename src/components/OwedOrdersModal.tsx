@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { friendlyError } from '../lib/friendlyError';
 import { logNeedsOrdersReport, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import type { Profile } from './ManagerDashboard';
 
 interface OwedLog {
@@ -72,6 +73,14 @@ export default function OwedOrdersModal({
 
   const current = queue[0] ?? null;
 
+  // This component stays mounted the whole session and only toggles
+  // between rendering null and the dialog — reset on every fall to null,
+  // not on unmount, or a stray horizontal offset could persist. See
+  // resetDocumentScroll for why this matters only in the native build.
+  useEffect(() => {
+    if (!current) resetDocumentScroll();
+  }, [current]);
+
   const handleSubmit = async () => {
     if (!current) return;
     setFault(null);
@@ -139,7 +148,7 @@ export default function OwedOrdersModal({
               value={orders}
               onChange={(e) => setOrders(e.target.value)}
               autoFocus
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from 'react';
+import { useLayoutEffect, useState, type RefObject } from 'react';
 
 export interface AnchoredPosition {
   top: number;
@@ -40,7 +40,18 @@ export function useAnchoredPopoverPosition({
 }: UseAnchoredPopoverPositionOptions): AnchoredPosition | null {
   const [position, setPosition] = useState<AnchoredPosition | null>(null);
 
-  useEffect(() => {
+  // useLayoutEffect, not useEffect: this must run before the browser
+  // paints the newly-opened popover, not after. useEffect is scheduled
+  // after paint, so the popover's first painted frame would use whatever
+  // `position` was left over from before — null, or a stale position from
+  // a previous trigger — for one frame. On the web that's an invisible
+  // flash; in the native iOS build, WKWebView's outer scroll view can
+  // register a horizontal pan during that one wrongly-positioned frame
+  // and keep the offset after the layout effect corrects it (see
+  // resetDocumentScroll). useLayoutEffect flushes its state update
+  // synchronously before paint, so the clamped position is what's
+  // actually shown first.
+  useLayoutEffect(() => {
     if (!open) {
       setPosition(null);
       return undefined;

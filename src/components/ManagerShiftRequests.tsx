@@ -280,7 +280,7 @@ export default function ManagerShiftRequests({
                 id="open-location"
                 value={locationId}
                 onChange={(e) => setLocationId(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
               >
                 {visibleLocations.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}</option>
@@ -294,7 +294,7 @@ export default function ManagerShiftRequests({
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 disabled={rolesLoading || roles.length === 0}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {roles.map((r) => (
                   <option key={r.id} value={r.name}>{r.name}</option>
@@ -320,7 +320,7 @@ export default function ManagerShiftRequests({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
               />
             </div>
             <div>
@@ -330,7 +330,7 @@ export default function ManagerShiftRequests({
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
               />
             </div>
             <div>
@@ -340,7 +340,7 @@ export default function ManagerShiftRequests({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
               />
             </div>
           </div>

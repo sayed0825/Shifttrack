@@ -158,7 +158,7 @@ export default function OvertimeClaim({ profileId }: { profileId: string }): Rea
                 setLogId(e.target.value);
                 setDone(false);
               }}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
             >
               <option value="">Choose a shift</option>
               {logs.map((log) => (
@@ -191,7 +191,7 @@ export default function OvertimeClaim({ profileId }: { profileId: string }): Rea
                     type="datetime-local"
                     value={actualIn}
                     onChange={(e) => setActualIn(e.target.value)}
-                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-sm tabular-nums"
+                    className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-2 py-2 text-base sm:text-sm tabular-nums"
                   />
                 </div>
                 <div>
@@ -203,7 +203,7 @@ export default function OvertimeClaim({ profileId }: { profileId: string }): Rea
                     type="datetime-local"
                     value={actualOut}
                     onChange={(e) => setActualOut(e.target.value)}
-                    className={`mt-1.5 min-h-[44px] w-full rounded-lg border px-2 py-2 text-sm tabular-nums ${
+                    className={`mt-1.5 min-h-[44px] w-full rounded-lg border px-2 py-2 text-base sm:text-sm tabular-nums ${
                       badOrder ? 'border-danger' : 'border-border'
                     }`}
                   />
@@ -220,7 +220,7 @@ export default function OvertimeClaim({ profileId }: { profileId: string }): Rea
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   placeholder="e.g. covered the close"
-                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm"
                 />
               </div>
             </>

@@ -141,7 +141,7 @@ export default function WageRatesPanel({
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.00"
                 disabled={saving}
-                className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm tabular-nums disabled:opacity-60"
+                className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-bg px-3 py-2 text-base sm:text-sm tabular-nums disabled:opacity-60"
               />
             </div>
             <div>
@@ -154,7 +154,7 @@ export default function WageRatesPanel({
                 value={effectiveFrom}
                 onChange={(e) => setEffectiveFrom(e.target.value)}
                 disabled={saving}
-                className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm tabular-nums disabled:opacity-60"
+                className="mt-1 min-h-[44px] w-full rounded-lg border border-border bg-bg px-3 py-2 text-base sm:text-sm tabular-nums disabled:opacity-60"
               />
             </div>
           </div>

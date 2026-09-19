@@ -17,6 +17,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
 import { friendlyError } from '../lib/friendlyError';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import FilterButton from './FilterButton';
@@ -442,7 +443,7 @@ export default function ManagerScheduler() {
                 id="sched-location-filter"
                 value={locationFilter}
                 onChange={(event) => setLocationFilter(event.target.value)}
-                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-base sm:text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <option value="all">All locations</option>
                 {visibleLocations.map((location) => (
@@ -468,7 +469,7 @@ export default function ManagerScheduler() {
                 value={roleFilter}
                 onChange={(event) => setRoleFilter(event.target.value)}
                 disabled={rolesLoading}
-                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+                className="min-h-[44px] w-full appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-9 text-base sm:text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
               >
                 <option value="all">All roles</option>
                 {roles.map((r) => (
@@ -633,6 +634,12 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
   const [weekdays, setWeekdays] = useState([]);
   const [repeatUntil, setRepeatUntil] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Native iOS build only: a modal closing (via X, backdrop, Escape, or
+  // save) can leave the WKWebView's outer scroll view offset sideways
+  // even though the modal itself animated back within bounds — see
+  // resetDocumentScroll for why. Runs on every unmount path.
+  useEffect(() => resetDocumentScroll, []);
   const [fault, setFault] = useState(null);
   const [unavailWarn, setUnavailWarn] = useState(null);
 
@@ -909,7 +916,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                 setLocationId(event.target.value);
                 setStaffId('');
               }}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>
@@ -932,7 +939,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                 setStaffId('');
               }}
               disabled={rolesLoading}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
             >
               <option value="">All roles</option>
               {roles.map((r) => (
@@ -959,7 +966,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                 value={staffQuery}
                 onChange={(event) => setStaffQuery(event.target.value)}
                 placeholder="Search by name"
-                className="min-h-[44px] w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="min-h-[44px] w-full rounded-lg border border-border py-2 pl-9 pr-3 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
             <div
@@ -1066,7 +1073,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                     type="time"
                     value={startTime}
                     onChange={(event) => setStartTime(event.target.value)}
-                    className="mt-1 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
                 <div>
@@ -1078,7 +1085,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                     type="time"
                     value={endTime}
                     onChange={(event) => setEndTime(event.target.value)}
-                    className="mt-1 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
               </div>
@@ -1099,7 +1106,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
               type="date"
               value={startDate}
               onChange={(event) => setStartDate(event.target.value)}
-              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 
@@ -1156,7 +1163,7 @@ function ShiftModal({ seed, locations, onClose, onSaved }) {
                     value={repeatUntil}
                     min={startDate}
                     onChange={(event) => setRepeatUntil(event.target.value)}
-                    className="mt-1 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1 min-h-[44px] w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
 

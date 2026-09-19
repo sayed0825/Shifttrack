@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
-// Throwaway diagnostic for the native nav drift bug. Always renders, on
-// every screen, no trigger. Remove once the drift is diagnosed and fixed.
+// Throwaway diagnostic for the native nav drift bug, now extended for the
+// native horizontal-scroll-drift bug (Schedule tab and friends: WKWebView's
+// outer scroll view registers a horizontal pan during a transiently-wide
+// modal/popover frame and keeps the offset after). Always renders, on every
+// screen, no trigger. Remove this whole file, its two render sites in
+// App.tsx, and the import, once both drifts are confirmed fixed on-device —
+// do not ship this to production.
 
 type DebugMetrics = {
   innerHeight: number;
@@ -14,8 +19,37 @@ type DebugMetrics = {
   mainClientHeight: number | null;
   safeAreaBottom: string;
   scrollY: number;
+  scrollX: number;
   scrollingElementScrollTop: number | null;
 };
+
+/**
+ * Walks every element on the page and finds the one extending furthest
+ * past the right edge of the viewport, so a console log of a stray
+ * scrollX can point at a specific element instead of just the symptom.
+ * O(n) over the whole DOM — only ever called right after scrollX is
+ * observed to be nonzero, never on a timer.
+ */
+function findWidestOffender(): { description: string; rightEdge: number } | null {
+  const viewportWidth = document.documentElement.clientWidth;
+  let worst: { description: string; rightEdge: number } | null = null;
+
+  for (const el of document.body.querySelectorAll('*')) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0) continue;
+    const overshoot = rect.right - viewportWidth;
+    if (overshoot > 1 && (!worst || rect.right > worst.rightEdge)) {
+      const tag = el.tagName.toLowerCase();
+      const id = el.id ? `#${el.id}` : '';
+      const cls = el.className && typeof el.className === 'string'
+        ? `.${el.className.trim().split(/\s+/).slice(0, 3).join('.')}`
+        : '';
+      worst = { description: `${tag}${id}${cls}`, rightEdge: rect.right };
+    }
+  }
+
+  return worst;
+}
 
 function readMetrics(safeAreaProbe: HTMLDivElement | null): DebugMetrics {
   const main = document.querySelector('main');
@@ -30,6 +64,7 @@ function readMetrics(safeAreaProbe: HTMLDivElement | null): DebugMetrics {
     mainClientHeight: main ? main.clientHeight : null,
     safeAreaBottom: safeAreaProbe ? getComputedStyle(safeAreaProbe).paddingBottom : 'n/a',
     scrollY: window.scrollY,
+    scrollX: window.scrollX,
     scrollingElementScrollTop: document.scrollingElement ? document.scrollingElement.scrollTop : null,
   };
 }
@@ -44,9 +79,25 @@ function row(label: string, scrollH: number | null, clientH: number | null) {
 export default function DebugOverlay() {
   const probeRef = useRef<HTMLDivElement>(null);
   const [metrics, setMetrics] = useState<DebugMetrics | null>(null);
+  const wasScrollXZero = useRef(true);
 
   useEffect(() => {
-    const update = () => setMetrics(readMetrics(probeRef.current));
+    const update = () => {
+      const next = readMetrics(probeRef.current);
+      setMetrics(next);
+
+      // Log only on the 0 -> nonzero transition, not every tick, so a
+      // stuck offset doesn't spam the console once a second.
+      const isZero = next.scrollX === 0;
+      if (!isZero && wasScrollXZero.current) {
+        const offender = findWidestOffender();
+        console.warn(
+          `[scrollX drift] window.scrollX=${next.scrollX} — widest element past the right edge:`,
+          offender ? `${offender.description} (right edge ${Math.round(offender.rightEdge)}px)` : 'none found (offset may have already cleared)'
+        );
+      }
+      wasScrollXZero.current = isZero;
+    };
     update();
 
     const interval = setInterval(update, 250);
@@ -96,6 +147,7 @@ export default function DebugOverlay() {
             row('main  scrollH/clientH', metrics.mainScrollHeight, metrics.mainClientHeight),
             `safe-area-inset-bottom: ${metrics.safeAreaBottom}`,
             `window.scrollY: ${metrics.scrollY}`,
+            `window.scrollX: ${metrics.scrollX}${metrics.scrollX !== 0 ? '  <-- NONZERO, see console' : ''}`,
             `scrollingElement.scrollTop: ${metrics.scrollingElementScrollTop ?? 'n/a'}`,
           ].join('\n')
         : 'measuring…'}

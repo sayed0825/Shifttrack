@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AlertCircle, Check, Loader2, Mail, MapPin, User, UserCog, X } from 'lucide-react';
 import { supabase, SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 
 interface LocationRow {
   id: string;
@@ -48,6 +49,8 @@ export default function InviteStaffModal({
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  useEffect(() => resetDocumentScroll, []);
 
   const toggleAdditional = (id: string) => {
     setAdditionalLocationIds((prev) =>
@@ -164,7 +167,7 @@ export default function InviteStaffModal({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="name@example.com"
-                    className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
               </div>
@@ -183,7 +186,7 @@ export default function InviteStaffModal({
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
                       placeholder="Jane"
-                      className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      className="w-full rounded-lg border border-border py-2 pl-9 pr-3 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     />
                   </div>
                 </div>
@@ -197,7 +200,7 @@ export default function InviteStaffModal({
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Jane Smith"
-                    className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   />
                 </div>
               </div>
@@ -212,7 +215,7 @@ export default function InviteStaffModal({
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                   disabled={rolesLoading || roles.length === 0}
-                  className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  className="mt-1.5 w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {roles.map((r) => (
                     <option key={r.id} value={r.name}>{r.name}</option>

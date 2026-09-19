@@ -37,6 +37,7 @@ import { isLate, minutesLate } from '../lib/lateness';
 import { friendlyError } from '../lib/friendlyError';
 import { logNeedsOrdersReport, ordersCellText, ORDERS_NOT_YET_REPORTED, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import {
   WAGE_RATE_FIELDS,
   formatCurrencyAmount,
@@ -388,6 +389,7 @@ export default function ManagerDashboard(): ReactNode {
 
   useEffect(() => {
     savePersistedTab(TAB_STORAGE_KEY, tab);
+    resetDocumentScroll();
   }, [tab]);
 
   if (booting) {
@@ -653,7 +655,7 @@ function FilterSelect<T extends string>({
           id={id}
           value={value}
           onChange={(event) => onChange(event.target.value as T)}
-          className={`min-h-[44px] appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-8 text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${fullWidth ? 'w-full' : ''}`}
+          className={`min-h-[44px] appearance-none rounded-lg border border-border bg-surface py-2 pl-9 pr-8 text-base sm:text-sm font-medium text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${fullWidth ? 'w-full' : ''}`}
         >
           {options.map((option) => (
             <option key={option.value} value={option.value}>
@@ -1221,6 +1223,8 @@ function EditLogModal({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
+  useEffect(() => resetDocumentScroll, []);
+
   const inIso = fromLocalInput(clockIn);
   const outIso = fromLocalInput(clockOut);
   const invalidOrder = Boolean(inIso && outIso && new Date(outIso) <= new Date(inIso));
@@ -1315,7 +1319,7 @@ function EditLogModal({
                 type="datetime-local"
                 value={clockIn}
                 onChange={(event) => setClockIn(event.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
             <div>
@@ -1327,7 +1331,7 @@ function EditLogModal({
                 type="datetime-local"
                 value={clockOut}
                 onChange={(event) => setClockOut(event.target.value)}
-                className={`mt-1.5 w-full rounded-lg border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                className={`mt-1.5 w-full rounded-lg border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 ${
                   invalidOrder
                     ? 'border-danger focus-visible:outline-danger'
                     : 'border-border focus-visible:outline-primary'
@@ -1364,7 +1368,7 @@ function EditLogModal({
                 step={1}
                 value={orders}
                 onChange={(event) => setOrders(event.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
             </div>
           )}
@@ -1379,7 +1383,7 @@ function EditLogModal({
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               placeholder="Why this entry was changed"
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             />
           </div>
 

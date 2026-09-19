@@ -52,6 +52,7 @@ import OvertimeClaim from './OvertimeClaim';
 import OwedOrdersModal from './OwedOrdersModal';
 import ProfileSettingsCard from './ProfileSettingsCard';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
+import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import type { Profile } from './ManagerDashboard';
 
 type TabId = 'clock' | 'schedule' | 'shifts' | 'tasks' | 'timesheets' | 'more';
@@ -198,6 +199,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
 
   useEffect(() => {
     savePersistedTab(TAB_STORAGE_KEY, tab);
+    resetDocumentScroll();
   }, [tab]);
 
   useEffect(() => {
@@ -1376,7 +1378,7 @@ function UnavailabilityCard({ profileId }: { profileId: string }): ReactNode {
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="e.g. doctor appointment"
-          className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         />
       </div>
 
