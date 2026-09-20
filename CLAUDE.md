@@ -175,21 +175,52 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   supabase/migrations/0018_staff_wage_rates.sql and src/lib/wageRates.ts.
 - Task module:
   - `task_templates` (id, org_id, location_id, title, description,
-    assigned_role, assigned_user_id, requires_photo, recurrence,
-    weekdays smallint[], start_at time, due_at time, is_active,
-    created_by, created_at) — the recurring definition a day's tasks are
-    generated from.
+    assigned_role, assigned_user_id, requires_photo, is_required,
+    max_photos, recurrence, weekdays smallint[], start_at time, due_at
+    time, is_active, created_by, created_at) — the recurring definition a
+    day's tasks are generated from.
   - `tasks` (id, org_id, template_id, location_id, title, description,
     assigned_role, assigned_user_id, start_time, due_time,
-    requires_photo, photo_path, status, completed_by, completed_at,
-    reviewed_by, reviewed_at, created_by, created_at, task_day) — one
-    day's generated instance. status is 'pending' | 'submitted' |
-    'approved' | 'rejected'.
+    requires_photo, is_required, max_photos, photo_path, status,
+    completed_by, completed_at, reviewed_by, reviewed_at, created_by,
+    created_at, task_day, overdue_notified_at) — one day's generated
+    instance. status is 'pending' | 'submitted' | 'approved' |
+    'rejected'.
+  - `is_required` (0025, default true): an optional task
+    (`is_required = false`) that's never completed is excluded from
+    `notify_overdue_tasks()` (both the notification insert and its
+    `overdue_notified_at` bookkeeping) and from HistorySection's "never
+    completed" count (`ManagerTasks.tsx`, filtered client-side same as
+    the role filter, since Postgres can't push an org-defined role name
+    into a safe server-side filter either) — nobody should be chased for
+    skipping something they were never required to do. Shown as an
+    "Optional" badge in the employee view (`EmployeeTasks.tsx`) so
+    someone triaging a busy shift knows what they can skip.
+  - `max_photos` (0025, default 1, capped 1-10 by a check constraint):
+    how many photos a photo-required task accepts. Only meaningful when
+    `requires_photo` is true; the create forms only show the number input
+    then.
+  - `task_photos` (id, org_id, task_id, storage_path, uploaded_by,
+    created_at) — replaces `tasks.photo_path` (0025) as the source of
+    truth for a task's photos, one row per photo, up to `max_photos`.
+    Same RLS shape as `task_comments`: `can_see_task(task_id)` gates
+    both read and insert, insert also pins `uploaded_by` to the caller;
+    append-only, no update/delete policy for anyone.
+    **`tasks.photo_path` is NOT dropped yet** — existing values were
+    copied into `task_photos` when 0025 ran, and the column stays until
+    a later migration confirms nothing still reads it (nothing in the
+    app does as of 0025; re-check with a grep for `photo_path` before
+    actually dropping it, in case something added after this reads it).
   - `task_comments` (id, org_id, task_id, sender_id, comment_text,
     created_at) — a thread on one task, visible to the assignee(s) and
     managers.
-  - Photos live in the private `task-photos` storage bucket and are
-    purged after one month by a cron job.
+  - Photos live in the private `task-photos` storage bucket
+    (`<task_id>/<uuid>.jpg`, one object per `task_photos` row) and are
+    purged after one month by a cron job — clearing both the storage
+    objects and their `task_photos` rows (and nulling any leftover
+    `photo_path`), not just one photo per task the way it worked before
+    0025. Five photos per task across three sites fills the 1GB free
+    tier considerably faster than one — see PROGRESS.md.
   - A task assigned to `assigned_role` is a SHARED POOL, not copied per
     person — whoever completes it first completes it for everyone else
     with that role. See src/components/EmployeeTasks.tsx.

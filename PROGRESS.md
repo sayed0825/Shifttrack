@@ -121,6 +121,45 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-20 (later)
+**Task module: optional tasks and multi-photo, migration 0025 pending
+(not yet run — read-only MCP, run manually).**
+
+- **`is_required`** (default true, on `tasks`/`task_templates`, with a
+  Required/Optional toggle in both create forms): an optional task
+  that's never completed is now excluded from both
+  `notify_overdue_tasks()` and HistorySection's "never completed" count
+  — nobody should be chased for skipping something they were never
+  required to do. Shown as an "Optional" badge on the employee side so
+  someone busy knows what they can skip, and in the manager's template
+  list and history rows.
+- **`max_photos`** (default 1, capped 1-10, number input in the create
+  forms shown only when photo is required) plus a new `task_photos`
+  child table (id, org_id, task_id, storage_path, uploaded_by,
+  created_at) replacing the single `tasks.photo_path` going forward —
+  same RLS shape as `task_comments` (`can_see_task()` gates read and
+  insert). Existing `photo_path` values were copied into `task_photos`
+  by the migration; the column itself is deliberately NOT dropped yet
+  (grepped the app afterward — nothing reads it anymore, but it stays
+  until a later migration makes that permanent). The employee
+  completion control now accepts up to `max_photos` files, uploading
+  each before confirming the submission itself succeeded (so a lost
+  shared-pool race never leaves a `task_photos` row misattributed to
+  the loser — the uploaded storage objects just sit as harmless orphans
+  in that case, same trade-off the old single-photo flow already
+  accepted). Manager review and history both show a thumbnail stack
+  with a count badge and a paginated lightbox (arrow keys work too)
+  instead of one photo each.
+- **Flag for later: storage.** Five photos per task across three sites
+  fills the 1GB Supabase free tier considerably faster than the one
+  photo per task this was sized against originally. Worth watching
+  usage after this ships, and worth reconsidering `max_photos` defaults
+  per template if it climbs faster than expected — no cap enforcement
+  beyond the 1-10 per-task check constraint exists today.
+- The monthly purge cron (`purge_old_task_photos`) now clears every
+  `task_photos` row and its storage object for a task, not just one,
+  plus nulls any leftover legacy `photo_path`.
+
 ### 2026-09-20
 **Reminders module shipped and verified on device.** Admin/manager sends
 a titled message with a description, one-off or recurring, to a role or

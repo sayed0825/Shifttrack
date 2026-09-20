@@ -3,6 +3,8 @@ import {
   AlertCircle,
   Camera,
   Check,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
   Clock,
   ClipboardCheck,
   ClipboardList,
@@ -35,11 +37,16 @@ interface StaffLite {
   full_name: string | null;
 }
 
+interface TaskPhoto {
+  id: string;
+  storage_path: string;
+}
+
 interface SubmittedTask {
   id: string;
   title: string;
   description: string | null;
-  photo_path: string | null;
+  photos: TaskPhoto[];
   completed_at: string | null;
   status: TaskStatus;
   locations: { name: string } | null;
@@ -54,6 +61,8 @@ interface TemplateRow {
   assigned_role: string | null;
   assigned_user_id: string | null;
   requires_photo: boolean;
+  is_required: boolean;
+  max_photos: number;
   recurrence: Recurrence;
   weekdays: number[] | null;
   start_at: string;
@@ -64,10 +73,10 @@ interface TemplateRow {
 }
 
 const REVIEW_FIELDS =
-  'id, title, description, photo_path, completed_at, status, locations ( name ), completer:completed_by ( first_name, full_name )';
+  'id, title, description, completed_at, status, locations ( name ), completer:completed_by ( first_name, full_name ), photos:task_photos ( id, storage_path )';
 
 const TEMPLATE_FIELDS =
-  'id, title, description, location_id, assigned_role, assigned_user_id, requires_photo, recurrence, weekdays, start_at, due_at, is_active, locations ( name ), assignee:assigned_user_id ( first_name, full_name )';
+  'id, title, description, location_id, assigned_role, assigned_user_id, requires_photo, is_required, max_photos, recurrence, weekdays, start_at, due_at, is_active, locations ( name ), assignee:assigned_user_id ( first_name, full_name )';
 
 const WEEKDAYS = [
   { value: 1, short: 'Mon' },
@@ -149,16 +158,30 @@ export default function ManagerTasks({
 // Shared photo lightbox
 // ===========================================================================
 
-function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }): ReactNode {
+function PhotoLightbox({
+  urls,
+  initialIndex = 0,
+  onClose,
+}: {
+  urls: string[];
+  initialIndex?: number;
+  onClose: () => void;
+}): ReactNode {
+  const [index, setIndex] = useState(Math.min(initialIndex, urls.length - 1));
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
+      if (event.key === 'ArrowLeft') setIndex((i) => Math.max(0, i - 1));
+      if (event.key === 'ArrowRight') setIndex((i) => Math.min(urls.length - 1, i + 1));
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [onClose, urls.length]);
 
   useEffect(() => resetDocumentScroll, []);
+
+  if (urls.length === 0) return null;
 
   return (
     <div
@@ -173,8 +196,41 @@ function PhotoLightbox({ url, onClose }: { url: string; onClose: () => void }): 
       >
         <X className="h-5 w-5" aria-hidden="true" />
       </button>
+
+      {urls.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIndex((i) => Math.max(0, i - 1));
+            }}
+            disabled={index === 0}
+            aria-label="Previous photo"
+            className="absolute left-2 top-1/2 flex min-h-[44px] min-w-[44px] -translate-y-1/2 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 sm:left-4"
+          >
+            <ChevronLeftIcon className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIndex((i) => Math.min(urls.length - 1, i + 1));
+            }}
+            disabled={index === urls.length - 1}
+            aria-label="Next photo"
+            className="absolute right-2 top-1/2 flex min-h-[44px] min-w-[44px] -translate-y-1/2 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20 disabled:opacity-30 sm:right-4"
+          >
+            <ChevronRightIcon className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-2.5 py-1 text-xs font-medium text-white">
+            {index + 1} of {urls.length}
+          </p>
+        </>
+      )}
+
       <img
-        src={url}
+        src={urls[index]}
         alt=""
         onClick={(e) => e.stopPropagation()}
         className="max-h-full max-w-full rounded-lg object-contain"
@@ -194,7 +250,7 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
   const [fault, setFault] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null);
   const [rejecting, setRejecting] = useState<{ id: string; comment: string; fault: string | null } | null>(
     null
   );
@@ -230,8 +286,8 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
 
   useEffect(() => {
     const toFetch = tasks
-      .map((t) => t.photo_path)
-      .filter((p): p is string => Boolean(p) && !fetchedPaths.current.has(p));
+      .flatMap((t) => t.photos.map((p) => p.storage_path))
+      .filter((p) => !fetchedPaths.current.has(p));
     if (toFetch.length === 0) return;
     toFetch.forEach((p) => fetchedPaths.current.add(p));
 
@@ -334,23 +390,29 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
             <ul className="space-y-3">
               {tasks.map((task) => {
                 const isRejecting = rejecting?.id === task.id;
-                const url = task.photo_path ? signedUrls[task.photo_path] : undefined;
+                const urls = task.photos.map((p) => signedUrls[p.storage_path]).filter((u): u is string => Boolean(u));
+                const stillLoading = task.photos.length > 0 && urls.length === 0;
 
                 return (
                   <li key={task.id} className="rounded-lg border border-border p-3">
                     <div className="flex items-start gap-3">
-                      {task.photo_path && (
+                      {task.photos.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => url && setLightboxUrl(url)}
-                          disabled={!url}
-                          aria-label="View submitted photo"
-                          className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg"
+                          onClick={() => urls.length > 0 && setLightbox({ urls, index: 0 })}
+                          disabled={urls.length === 0}
+                          aria-label="View submitted photos"
+                          className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg"
                         >
-                          {url ? (
-                            <img src={url} alt="" className="h-full w-full object-cover" />
-                          ) : (
+                          {stillLoading ? (
                             <Loader2 className="h-4 w-4 animate-spin text-ink/40" aria-hidden="true" />
+                          ) : (
+                            <img src={urls[0]} alt="" className="h-full w-full object-cover" />
+                          )}
+                          {task.photos.length > 1 && (
+                            <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[10px] font-semibold text-white">
+                              {task.photos.length}
+                            </span>
                           )}
                         </button>
                       )}
@@ -438,7 +500,9 @@ function ReviewSection({ userId }: { userId: string | null }): ReactNode {
           )}
     </CollapsibleSection>
 
-      {lightboxUrl && <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      {lightbox && (
+        <PhotoLightbox urls={lightbox.urls} initialIndex={lightbox.index} onClose={() => setLightbox(null)} />
+      )}
     </div>
   );
 }
@@ -575,6 +639,11 @@ function TaskSetupSection({
                         <p className="truncate text-sm font-medium text-ink">{template.title}</p>
                         {template.requires_photo && (
                           <Camera className="h-3.5 w-3.5 shrink-0 text-ink/40" aria-hidden="true" />
+                        )}
+                        {!template.is_required && (
+                          <span className="shrink-0 rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
+                            Optional
+                          </span>
                         )}
                       </div>
                       <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-ink/60">
@@ -823,6 +892,61 @@ function PhotoToggle({ value, onChange }: { value: boolean; onChange: (v: boolea
   );
 }
 
+function MaxPhotosInput({ value, onChange }: { value: number; onChange: (n: number) => void }): ReactNode {
+  return (
+    <div>
+      <label htmlFor="max-photos" className="block text-sm font-medium text-ink">
+        Photos allowed
+      </label>
+      <input
+        id="max-photos"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={10}
+        value={value}
+        onChange={(e) => {
+          const n = Math.round(Number(e.target.value));
+          if (Number.isFinite(n)) onChange(Math.min(10, Math.max(1, n)));
+        }}
+        className="mt-1.5 min-h-[44px] w-24 rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      />
+    </div>
+  );
+}
+
+function RequiredToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }): ReactNode {
+  return (
+    <div>
+      <p className="block text-sm font-medium text-ink">
+        Required <span className="font-normal text-ink/50">— optional tasks are excluded from overdue chasing and the "never completed" count</span>
+      </p>
+      <div className="mt-1.5 inline-flex rounded-lg border border-border p-0.5">
+        <button
+          type="button"
+          onClick={() => onChange(true)}
+          aria-pressed={value}
+          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            value ? 'bg-primary text-white' : 'text-ink/70 hover:bg-bg'
+          }`}
+        >
+          Required
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(false)}
+          aria-pressed={!value}
+          className={`inline-flex min-h-[38px] items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            !value ? 'bg-primary text-white' : 'text-ink/70 hover:bg-bg'
+          }`}
+        >
+          Optional
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ===========================================================================
 // Create template modal
 // ===========================================================================
@@ -855,6 +979,8 @@ function TemplateFormModal({
   const [recurrence, setRecurrence] = useState<Recurrence>('daily');
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [requiresPhoto, setRequiresPhoto] = useState(false);
+  const [maxPhotos, setMaxPhotos] = useState(1);
+  const [isRequired, setIsRequired] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
 
@@ -906,6 +1032,8 @@ function TemplateFormModal({
       assigned_role: target === 'role' ? role : null,
       assigned_user_id: target === 'individual' ? staffId : null,
       requires_photo: requiresPhoto,
+      max_photos: requiresPhoto ? maxPhotos : 1,
+      is_required: isRequired,
       recurrence,
       weekdays: recurrence === 'weekly' ? [...weekdays].sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6],
       start_at: startAt,
@@ -1042,6 +1170,10 @@ function TemplateFormModal({
 
           <PhotoToggle value={requiresPhoto} onChange={setRequiresPhoto} />
 
+          {requiresPhoto && <MaxPhotosInput value={maxPhotos} onChange={setMaxPhotos} />}
+
+          <RequiredToggle value={isRequired} onChange={setIsRequired} />
+
           {fault && (
             <div className="flex gap-2 rounded-lg bg-danger-bg p-3 text-sm">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
@@ -1102,6 +1234,8 @@ function OneOffFormModal({
   const [startTime, setStartTime] = useState('09:00');
   const [dueTime, setDueTime] = useState('17:00');
   const [requiresPhoto, setRequiresPhoto] = useState(false);
+  const [maxPhotos, setMaxPhotos] = useState(1);
+  const [isRequired, setIsRequired] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fault, setFault] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -1153,6 +1287,8 @@ function OneOffFormModal({
       start_time: toUtcIso(date, startTime),
       due_time: toUtcIso(date, dueTime),
       requires_photo: requiresPhoto,
+      max_photos: requiresPhoto ? maxPhotos : 1,
+      is_required: isRequired,
       status: 'pending',
       created_by: userId,
     });
@@ -1301,6 +1437,10 @@ function OneOffFormModal({
 
               <PhotoToggle value={requiresPhoto} onChange={setRequiresPhoto} />
 
+              {requiresPhoto && <MaxPhotosInput value={maxPhotos} onChange={setMaxPhotos} />}
+
+              <RequiredToggle value={isRequired} onChange={setIsRequired} />
+
               {fault && (
                 <div className="flex gap-2 rounded-lg bg-danger-bg p-3 text-sm">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden="true" />
@@ -1341,7 +1481,7 @@ function OneOffFormModal({
 const HISTORY_PAGE_SIZE = 50;
 
 const HISTORY_FIELDS =
-  'id, title, task_day, due_time, status, assigned_role, photo_path, completed_at, reviewed_at, locations ( name ), completer:completed_by ( first_name, full_name ), reviewer:reviewed_by ( first_name, full_name ), assignee:assigned_user_id ( first_name, full_name )';
+  'id, title, task_day, due_time, status, assigned_role, is_required, completed_at, reviewed_at, locations ( name ), completer:completed_by ( first_name, full_name ), reviewer:reviewed_by ( first_name, full_name ), assignee:assigned_user_id ( first_name, full_name ), photos:task_photos ( id, storage_path )';
 
 interface HistoryTaskRow {
   id: string;
@@ -1350,7 +1490,8 @@ interface HistoryTaskRow {
   due_time: string;
   status: TaskStatus;
   assigned_role: string | null;
-  photo_path: string | null;
+  is_required: boolean;
+  photos: TaskPhoto[];
   completed_at: string | null;
   reviewed_at: string | null;
   locations: { name: string } | null;
@@ -1400,7 +1541,7 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
   const [neverCompletedCount, setNeverCompletedCount] = useState(0);
 
   const [signedUrls, setSignedUrls] = useState<Record<string, string | null>>({});
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ urls: string[]; index: number } | null>(null);
   const fetchedPaths = useRef<Set<string>>(new Set());
 
   // Both multi-selects default to everything, once their options load.
@@ -1481,6 +1622,7 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
         .from('tasks')
         .select('id, assigned_role')
         .eq('status', 'pending')
+        .eq('is_required', true)
         .lt('due_time', nowIso)
         .gte('task_day', startDate)
         .lte('task_day', endDate);
@@ -1501,8 +1643,8 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
 
   useEffect(() => {
     const toFetch = rows
-      .map((r) => r.photo_path)
-      .filter((p): p is string => Boolean(p) && !fetchedPaths.current.has(p));
+      .flatMap((r) => r.photos.map((p) => p.storage_path))
+      .filter((p) => !fetchedPaths.current.has(p));
     if (toFetch.length === 0) return;
     toFetch.forEach((p) => fetchedPaths.current.add(p));
 
@@ -1677,26 +1819,35 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
         <ul className="mt-4 space-y-2">
           {rows.map((task) => {
             const target = task.assigned_role ?? nameOf(task.assignee);
-            const photoState = task.photo_path ? signedUrls[task.photo_path] : undefined;
+            const anyPending = task.photos.some((p) => signedUrls[p.storage_path] === undefined);
+            const resolvedUrls = task.photos
+              .map((p) => signedUrls[p.storage_path])
+              .filter((u): u is string => Boolean(u));
+            const noneStored = task.photos.length > 0 && !anyPending && resolvedUrls.length === 0;
 
             return (
               <li key={task.id} className="rounded-lg border border-border p-3">
                 <div className="flex items-start gap-3">
-                  {task.photo_path &&
-                    (photoState === undefined ? (
+                  {task.photos.length > 0 &&
+                    (anyPending && resolvedUrls.length === 0 ? (
                       <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-bg">
                         <Loader2 className="h-4 w-4 animate-spin text-ink/40" aria-hidden="true" />
                       </div>
-                    ) : photoState === null ? null : (
+                    ) : resolvedUrls.length > 0 ? (
                       <button
                         type="button"
-                        onClick={() => setLightboxUrl(photoState)}
-                        aria-label="View submitted photo"
-                        className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg"
+                        onClick={() => setLightbox({ urls: resolvedUrls, index: 0 })}
+                        aria-label="View submitted photos"
+                        className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-bg"
                       >
-                        <img src={photoState} alt="" className="h-full w-full object-cover" />
+                        <img src={resolvedUrls[0]} alt="" className="h-full w-full object-cover" />
+                        {task.photos.length > 1 && (
+                          <span className="absolute bottom-0.5 right-0.5 rounded-full bg-black/60 px-1 text-[10px] font-semibold text-white">
+                            {task.photos.length}
+                          </span>
+                        )}
                       </button>
-                    ))}
+                    ) : null)}
 
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
@@ -1709,9 +1860,12 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
                     </div>
                     <p className="mt-0.5 text-xs text-ink/60">
                       {formatTaskDay(task.task_day)} · {task.locations?.name ?? 'No location'} · {target}
+                      {!task.is_required && ' · Optional'}
                     </p>
-                    {task.photo_path && photoState === null && (
-                      <p className="mt-1 text-xs italic text-ink/40">Photo no longer stored</p>
+                    {noneStored && (
+                      <p className="mt-1 text-xs italic text-ink/40">
+                        {task.photos.length === 1 ? 'Photo' : 'Photos'} no longer stored
+                      </p>
                     )}
                     <p className="mt-1 text-xs text-ink/50">
                       {task.completer
@@ -1747,7 +1901,9 @@ function HistorySection({ locations }: { locations: Array<{ id: string; name: st
         </button>
       )}
 
-      {lightboxUrl && <PhotoLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      {lightbox && (
+        <PhotoLightbox urls={lightbox.urls} initialIndex={lightbox.index} onClose={() => setLightbox(null)} />
+      )}
     </CollapsibleSection>
   );
 }

@@ -8,6 +8,7 @@ import {
   MessageSquare,
   Send,
   X,
+  XCircle,
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
@@ -26,7 +27,8 @@ interface TaskRow {
   start_time: string;
   due_time: string;
   requires_photo: boolean;
-  photo_path: string | null;
+  is_required: boolean;
+  max_photos: number;
   status: TaskStatus;
   completed_by: string | null;
   completed_at: string | null;
@@ -44,7 +46,7 @@ interface CommentRow {
 }
 
 const TASK_FIELDS =
-  'id, title, description, assigned_role, assigned_user_id, start_time, due_time, requires_photo, photo_path, status, completed_by, completed_at, reviewed_by, reviewed_at, task_day';
+  'id, title, description, assigned_role, assigned_user_id, start_time, due_time, requires_photo, is_required, max_photos, status, completed_by, completed_at, reviewed_by, reviewed_at, task_day';
 
 const COMMENT_FIELDS = 'id, comment_text, created_at, sender_id, sender:sender_id ( first_name, full_name )';
 
@@ -263,6 +265,11 @@ function TaskCard({ task, onSelect }: { task: TaskRow; onSelect: (id: string) =>
         <div className="flex items-center gap-1.5">
           <p className="truncate text-sm font-medium text-ink">{task.title}</p>
           {task.requires_photo && <Camera className="h-3.5 w-3.5 shrink-0 text-ink/40" aria-hidden="true" />}
+          {!task.is_required && (
+            <span className="shrink-0 rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
+              Optional
+            </span>
+          )}
         </div>
         {task.description && <p className="mt-0.5 truncate text-xs text-ink/60">{task.description}</p>}
         <p className="mt-1 text-xs tabular-nums text-ink/50">
@@ -319,7 +326,7 @@ function TaskDetailSheet({
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
 
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [completing, setCompleting] = useState(false);
   const [completeFault, setCompleteFault] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -398,12 +405,12 @@ function TaskDetailSheet({
   };
 
   const canAct = task.status === 'pending' || task.status === 'rejected';
-  const readyToComplete = !task.requires_photo || photoFile !== null;
+  const readyToComplete = !task.requires_photo || photoFiles.length > 0;
 
   const handleComplete = async () => {
     setCompleteFault(null);
 
-    if (task.requires_photo && !photoFile) {
+    if (task.requires_photo && photoFiles.length === 0) {
       setCompleteFault('Attach a photo first.');
       return;
     }
@@ -411,15 +418,23 @@ function TaskDetailSheet({
     setCompleting(true);
 
     try {
-      let photoPath: string | null = null;
-
-      if (task.requires_photo && photoFile) {
-        photoPath = `${task.id}/${safeUuid()}.jpg`;
-        const { error: uploadError } = await supabase.storage
-          .from('task-photos')
-          .upload(photoPath, photoFile, { contentType: photoFile.type || 'image/jpeg' });
-        if (uploadError) throw uploadError;
-      }
+      // Upload before the conditional update below, same ordering the old
+      // single-photo flow used: a required photo must exist before the
+      // task can ever be marked submitted, never after. If the update
+      // below then loses a shared-pool race, these objects are simply
+      // never referenced by a task_photos row and sit as harmless orphans
+      // in storage — the same trade-off the old flow already accepted for
+      // its one photo.
+      const storagePaths = await Promise.all(
+        photoFiles.map(async (file) => {
+          const storagePath = `${task.id}/${safeUuid()}.jpg`;
+          const { error: uploadError } = await supabase.storage
+            .from('task-photos')
+            .upload(storagePath, file, { contentType: file.type || 'image/jpeg' });
+          if (uploadError) throw uploadError;
+          return storagePath;
+        })
+      );
 
       const { data, error: updateError } = await supabase
         .from('tasks')
@@ -427,7 +442,6 @@ function TaskDetailSheet({
           status: 'submitted',
           completed_by: profile.id,
           completed_at: new Date().toISOString(),
-          ...(photoPath ? { photo_path: photoPath } : {}),
         })
         .eq('id', task.id)
         .in('status', ['pending', 'rejected'])
@@ -437,6 +451,12 @@ function TaskDetailSheet({
       if (updateError) throw updateError;
 
       if (data) {
+        if (storagePaths.length > 0) {
+          const { error: photosError } = await supabase.from('task_photos').insert(
+            storagePaths.map((storage_path) => ({ task_id: task.id, storage_path, uploaded_by: profile.id }))
+          );
+          if (photosError) throw photosError;
+        }
         onCompleted(data);
         onClose();
         return;
@@ -478,9 +498,16 @@ function TaskDetailSheet({
       >
         <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
-            <h2 id="task-detail-title" className="text-base font-semibold text-ink">
-              {task.title}
-            </h2>
+            <div className="flex items-center gap-1.5">
+              <h2 id="task-detail-title" className="text-base font-semibold text-ink">
+                {task.title}
+              </h2>
+              {!task.is_required && (
+                <span className="shrink-0 rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-semibold text-ink/50">
+                  Optional
+                </span>
+              )}
+            </div>
             <p className="mt-0.5 text-xs tabular-nums text-ink/60">
               {formatClock(task.start_time)} – {formatClock(task.due_time)}
             </p>
@@ -521,22 +548,43 @@ function TaskDetailSheet({
               {task.requires_photo && (
                 <div>
                   <label htmlFor="task-photo-input" className="block text-xs font-medium text-ink/60">
-                    Photo required
+                    Photo required ({photoFiles.length} of {task.max_photos})
                   </label>
-                  <input
-                    id="task-photo-input"
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
-                    className="mt-1.5 block w-full text-base sm:text-xs text-ink/70 file:mr-3 file:min-h-[44px] file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-dark"
-                  />
-                  {photoFile && (
-                    <p className="mt-1 flex items-center gap-1 text-xs text-success">
-                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                      {photoFile.name}
-                    </p>
+                  {photoFiles.length < task.max_photos && (
+                    <input
+                      id="task-photo-input"
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setPhotoFiles((prev) => [...prev, file]);
+                        // Reset so choosing the same file again (a second
+                        // photo from the same camera roll pick) still fires
+                        // onChange rather than being a no-op.
+                        e.target.value = '';
+                      }}
+                      className="mt-1.5 block w-full text-base sm:text-xs text-ink/70 file:mr-3 file:min-h-[44px] file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-primary-dark"
+                    />
+                  )}
+                  {photoFiles.length > 0 && (
+                    <ul className="mt-1.5 space-y-1">
+                      {photoFiles.map((file, index) => (
+                        <li key={`${file.name}-${index}`} className="flex items-center gap-1.5 text-xs text-success">
+                          <Check className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                          <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => setPhotoFiles((prev) => prev.filter((_, i) => i !== index))}
+                            aria-label={`Remove ${file.name}`}
+                            className="shrink-0 text-ink/40 hover:text-danger"
+                          >
+                            <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}
