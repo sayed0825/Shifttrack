@@ -121,6 +121,54 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-20
+**Reminders module shipped and verified on device.** Admin/manager sends
+a titled message with a description, one-off or recurring, to a role or
+an individual, with an optional location narrowing a role target down
+to one site. Staff must acknowledge it — a blocking modal on app open
+and on tapping the notification, one at a time, oldest first, no
+dismiss but Acknowledge — and the sender sees who has and hasn't, with
+history filters (date range, target role, location, acknowledgement
+state). Deleting distinguishes a recurring instance from its series
+(deleting the instance never stops the series; deleting the template
+does, same relationship as a shift's `series_id`) and distinguishes
+retracting an outstanding reminder from clearing an already-acknowledged
+one out of history in the UI copy, though the delete itself is the same
+action either way.
+
+Migrations 0022 (`reminder_templates`/`reminders`/
+`reminder_acknowledgements`, the generation and notification crons,
+admin-only RLS), 0023 (`target_location_id` on both tables, location
+narrowing wired into the crons and RLS), and 0024 (managers can create
+reminders too — scoped to a role at a location they manage or an
+individual they manage via `manages_location()`/`manages_person()`,
+same shape as `tmpl_manager_all`/`tasks_manager_all`; a manager sending
+org-wide, i.e. a null `target_location_id`, is rejected; Administrators
+keep full scope through the same mechanism) are all run and confirmed
+working live. Two real bugs found and fixed along the way, both from
+testing on the actual device rather than assuming the migration was
+enough: a PostgREST embed named the FK column instead of the table
+(`target_location_id` vs `locations!reminders_location_org_fkey`) —
+composite FKs don't get PostgREST's column-name shorthand the way a
+plain single-column FK does; and a 401 on `profiles` from the same
+session-restore race already fixed in the module-scoped hooks
+(`usePermissions`/`useRoles`/`useOrganisation`/`useLateGrace`/
+`useManagedLocations`), reached this time through a new component that
+fired its own unguarded query in a separate effect from the one
+confirming the session.
+
+Also fixed this session, unrelated to reminders:
+- **More tab drill-down position now persists across a backgrounded
+  reload** — the active top-level tab already survived it
+  (sessionStorage), but leaving and returning from inside a More
+  subsection (or the two-level Staff submenu) landed back on the top of
+  the list. `MoreTabSections` now persists both levels the same way.
+- **Timesheet Location column restored** — added in `beb52ca`, lost
+  when that commit was fully reverted (`6a40915`) along with its
+  unrelated nav-drift and live-map fixes. The nav drift was later
+  re-fixed properly (`09bc803`), but the timesheet column never came
+  back until this session.
+
 ### 2026-09-19
 Two native-only WKWebView bugs, both confirmed fixed on a real device
 this session, plus one process failure that cost most of the session
