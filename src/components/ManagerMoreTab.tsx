@@ -170,7 +170,7 @@ export default function ManagerMoreTab({
       : []),
   ];
 
-  return <MoreTabSections sections={sections} />;
+  return <MoreTabSections sections={sections} storageKey="shifttrack:manager-more" />;
 }
 
 // ===========================================================================

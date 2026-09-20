@@ -1176,7 +1176,7 @@ function EmployeeMoreTab({ profile }: { profile: Profile }): ReactNode {
   return (
     <div>
       <h2 className="mb-4 font-display text-lg tracking-tight text-ink">More</h2>
-      <MoreTabSections sections={sections} />
+      <MoreTabSections sections={sections} storageKey="shifttrack:employee-more" />
     </div>
   );
 }

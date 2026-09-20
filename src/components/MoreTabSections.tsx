@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, type LucideIcon } from 'lucide-react';
+import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 
 export interface MoreTabSection {
   id: string;
@@ -57,12 +58,62 @@ function BackHeader({ title, Icon, onBack }: { title: string; Icon: LucideIcon; 
   );
 }
 
-export default function MoreTabSections({ sections }: { sections: MoreTabSection[] }): ReactNode {
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [subActiveId, setSubActiveId] = useState<string | null>(null);
+export default function MoreTabSections({
+  sections,
+  storageKey,
+}: {
+  sections: MoreTabSection[];
+  /** Distinct per dashboard (manager vs employee More tab) so their drill-
+   *  down positions don't collide in sessionStorage. See persistedTab.ts —
+   *  same "iOS can drop a backgrounded tab's JS context" reasoning as the
+   *  top-level tab bar, one level deeper. */
+  storageKey: string;
+}): ReactNode {
+  const sectionKey = `${storageKey}:section`;
+  const subSectionKey = `${storageKey}:subsection`;
+
+  const [activeId, setActiveId] = useState<string | null>(() =>
+    loadPersistedTab(sectionKey, sections.map((s) => s.id))
+  );
+  const [subActiveId, setSubActiveId] = useState<string | null>(() => {
+    const persistedActiveId = loadPersistedTab(sectionKey, sections.map((s) => s.id));
+    const persistedActive = sections.find((s) => s.id === persistedActiveId);
+    if (!persistedActive?.sections) return null;
+    return loadPersistedTab(subSectionKey, persistedActive.sections.map((s) => s.id));
+  });
+
+  useEffect(() => {
+    if (activeId) savePersistedTab(sectionKey, activeId);
+    else {
+      try { sessionStorage.removeItem(sectionKey); } catch { /* see persistedTab.ts */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
+  useEffect(() => {
+    if (subActiveId) savePersistedTab(subSectionKey, subActiveId);
+    else {
+      try { sessionStorage.removeItem(subSectionKey); } catch { /* see persistedTab.ts */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subActiveId]);
+
   const active = sections.find((s) => s.id === activeId) ?? null;
   const subSections = active?.sections ?? null;
   const subActive = subSections?.find((s) => s.id === subActiveId) ?? null;
+
+  // Both used on any navigation that leaves a section's own subsection
+  // context — selecting a different top-level section, or backing out of
+  // one entirely — so a stale subActiveId can never resurface against an
+  // unrelated section that happens to reuse the same child id.
+  const selectSection = (id: string) => {
+    setActiveId(id);
+    setSubActiveId(null);
+  };
+  const backToTop = () => {
+    setActiveId(null);
+    setSubActiveId(null);
+  };
 
   if (active && subSections) {
     if (subActive) {
@@ -76,7 +127,7 @@ export default function MoreTabSections({ sections }: { sections: MoreTabSection
 
     return (
       <div className="mx-auto max-w-3xl">
-        <BackHeader title={active.title} Icon={active.icon} onBack={() => setActiveId(null)} />
+        <BackHeader title={active.title} Icon={active.icon} onBack={backToTop} />
         <SectionList sections={subSections} onSelect={setSubActiveId} />
       </div>
     );
@@ -85,11 +136,11 @@ export default function MoreTabSections({ sections }: { sections: MoreTabSection
   if (active) {
     return (
       <div className="mx-auto max-w-3xl">
-        <BackHeader title={active.title} Icon={active.icon} onBack={() => setActiveId(null)} />
+        <BackHeader title={active.title} Icon={active.icon} onBack={backToTop} />
         {active.render?.()}
       </div>
     );
   }
 
-  return <SectionList sections={sections} onSelect={setActiveId} />;
+  return <SectionList sections={sections} onSelect={selectSection} />;
 }
