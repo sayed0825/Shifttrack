@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, Check, CheckSquare, Clock, MapPin, UserCog, X } from 'lucide-react';
+import { Bell, Check, CheckSquare, Clock, MapPin, Megaphone, UserCog, X } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useAnchoredPopoverPosition } from '../hooks/useAnchoredPopoverPosition';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
@@ -9,7 +9,7 @@ const POPOVER_WIDTH = 320; // matches w-80
 
 export interface NotificationRow {
   id: string;
-  type: 'shift_changed' | 'timesheet_edited' | 'location_changed' | 'role_changed' | 'task';
+  type: 'shift_changed' | 'timesheet_edited' | 'location_changed' | 'role_changed' | 'task' | 'reminder';
   title: string;
   body: string | null;
   is_read: boolean;
@@ -22,6 +22,7 @@ const TYPE_ICONS: Record<NotificationRow['type'], typeof Bell> = {
   location_changed: MapPin,
   role_changed: UserCog,
   task: CheckSquare,
+  reminder: Megaphone,
 };
 
 function formatRelative(iso: string): string {
@@ -36,7 +37,17 @@ function formatRelative(iso: string): string {
   return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-export default function NotificationBell(): ReactNode {
+export default function NotificationBell({
+  onReminderTap,
+}: {
+  /** Called when a 'reminder'-type row is tapped, in addition to the
+   *  normal close-and-mark-read behaviour — the employee dashboard uses
+   *  this to force ReminderAcknowledgeModal to recheck immediately rather
+   *  than waiting for the next app open, same pattern as the driver
+   *  orders modal's checkSignal. Omitted (e.g. on the manager dashboard)
+   *  means tapping a reminder row does nothing beyond the normal close. */
+  onReminderTap?: () => void;
+} = {}): ReactNode {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,10 +217,21 @@ export default function NotificationBell(): ReactNode {
                 <ul className="divide-y divide-border">
                   {notifications.map((n) => {
                     const Icon = TYPE_ICONS[n.type] ?? Bell;
+                    const isReminder = n.type === 'reminder';
                     return (
                       <li
                         key={n.id}
-                        className={`flex gap-3 px-4 py-3 ${n.is_read ? 'bg-surface' : 'bg-primary/5'}`}
+                        onClick={
+                          isReminder
+                            ? () => {
+                                setOpen(false);
+                                onReminderTap?.();
+                              }
+                            : undefined
+                        }
+                        className={`flex gap-3 px-4 py-3 ${n.is_read ? 'bg-surface' : 'bg-primary/5'} ${
+                          isReminder ? 'cursor-pointer hover:bg-bg' : ''
+                        }`}
                       >
                         <div
                           className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${

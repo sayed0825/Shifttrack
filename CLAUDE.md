@@ -197,6 +197,47 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
     'Europe/London')::date) STORED` — select it, never write it. Any
     insert/update payload that includes the column, even as null, fails
     with "cannot insert a non-DEFAULT value into column".
+- Reminders module (migration 0022) — same shape as the task module, admin-
+  authored instead of manager-authored:
+  - `reminder_templates` (id, org_id, title, body, target_role,
+    target_user_id, recurrence, weekdays smallint[], send_at time,
+    is_active, created_by, created_at) — the recurring definition only. A
+    one-off reminder skips this table entirely and writes straight to
+    `reminders`. Admin-only RLS (`reminder_templates_admin_all`) — unlike
+    task_templates, there is no manager-scoped policy at all.
+  - `reminders` (id, org_id, template_id, title, body, target_role,
+    target_user_id, send_at timestamptz, reminder_notified_at,
+    created_by, created_at, reminder_day) — the instances staff see and
+    acknowledge. `reminder_day` is `GENERATED ALWAYS AS ((send_at at time
+    zone 'Europe/London')::date) STORED`, same pattern as `tasks.task_day`
+    — select it, never write it. A unique index on
+    `(template_id, reminder_day) WHERE template_id IS NOT NULL` gives one
+    instance per template per day, same as tasks. `reminder_notified_at`
+    mirrors `tasks.overdue_notified_at`, tracking whether
+    `notify_reminders()` has already inserted the notifications for this
+    reminder.
+  - `reminder_acknowledgements` (id, org_id, reminder_id, profile_id,
+    acknowledged_at) — one row per person who has dismissed a reminder,
+    unique on `(reminder_id, profile_id)`. Insert is gated on the
+    reminder actually targeting the caller (by role or individually), not
+    just on `profile_id = auth.uid()`.
+  - `generate_reminder_instances()` (pg_cron, hourly) mirrors
+    `generate_task_instances()` exactly, including reading `current_date`
+    in the session's own timezone rather than Europe/London — an existing
+    quirk of the task cron, not a new one introduced here.
+  - `notify_reminders()` (pg_cron, every 15 minutes) inserts a
+    `notifications` row (type `'reminder'`) for everyone a reminder
+    targets once its `send_at` has passed, mirroring
+    `notify_overdue_tasks()`.
+  - A manager's read access to `reminders` isn't location-scoped the way
+    tasks are (a reminder has no `location_id`) — `manages_person(created_by)`
+    is the closest equivalent: can they manage the person who sent it.
+  - The employee-side blocking modal (`ReminderAcknowledgeModal.tsx`,
+    mounted at the `EmployeeDashboard` root like `OwedOrdersModal`) shows
+    one outstanding reminder at a time, oldest first, no dismiss but
+    Acknowledge. Tapping a `'reminder'`-type notification
+    (`NotificationBell`'s `onReminderTap`) bumps the same check-signal
+    pattern as the driver orders modal, forcing it to recheck immediately.
 
 ### UI — design system
 

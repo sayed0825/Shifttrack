@@ -13,6 +13,7 @@ import {
   EyeOff,
   Loader2,
   MapPin,
+  Megaphone,
   Palette,
   Pencil,
   Plus,
@@ -39,6 +40,7 @@ import ManagerShiftRequests from './ManagerShiftRequests';
 import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeApprovals from './OvertimeApprovals';
 import ProfileSettingsCard from './ProfileSettingsCard';
+import RemindersCard from './RemindersCard';
 import StaffManager from './StaffManager';
 import type { Profile } from './ManagerDashboard';
 
@@ -161,6 +163,7 @@ export default function ManagerMoreTab({
     // manager's call.
     ...(isAdmin
       ? [
+          { id: 'reminders', title: 'Reminders', icon: Megaphone, render: () => <RemindersCard /> },
           { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
           { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
         ]

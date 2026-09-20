@@ -51,6 +51,7 @@ import MoreTabSections, { type MoreTabSection } from './MoreTabSections';
 import OvertimeClaim from './OvertimeClaim';
 import OwedOrdersModal from './OwedOrdersModal';
 import ProfileSettingsCard from './ProfileSettingsCard';
+import ReminderAcknowledgeModal from './ReminderAcknowledgeModal';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import type { Profile } from './ManagerDashboard';
@@ -198,6 +199,12 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
   const [ordersCheckSignal, setOrdersCheckSignal] = useState(0);
   const recheckOwedOrders = useCallback(() => setOrdersCheckSignal((n) => n + 1), []);
 
+  // Bumped on mount and whenever a 'reminder' notification is tapped, so
+  // ReminderAcknowledgeModal surfaces immediately rather than waiting for
+  // the next app open — same pattern as ordersCheckSignal above.
+  const [remindersCheckSignal, setRemindersCheckSignal] = useState(0);
+  const recheckReminders = useCallback(() => setRemindersCheckSignal((n) => n + 1), []);
+
   useEffect(() => {
     savePersistedTab(TAB_STORAGE_KEY, tab);
     resetDocumentScroll();
@@ -257,7 +264,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
-            <NotificationBell />
+            <NotificationBell onReminderTap={recheckReminders} />
             <button
               type="button"
               onClick={async () => {
@@ -274,6 +281,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
       </header>
 
       <OwedOrdersModal profile={profile} checkSignal={ordersCheckSignal} />
+      <ReminderAcknowledgeModal checkSignal={remindersCheckSignal} />
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-md px-4 py-4 pb-[calc(4rem+env(safe-area-inset-bottom))] md:max-w-3xl md:px-6 md:pb-6 lg:max-w-4xl">
