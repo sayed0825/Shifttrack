@@ -197,41 +197,62 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
     'Europe/London')::date) STORED` — select it, never write it. Any
     insert/update payload that includes the column, even as null, fails
     with "cannot insert a non-DEFAULT value into column".
-- Reminders module (migration 0022) — same shape as the task module, admin-
-  authored instead of manager-authored:
+- Reminders module (migrations 0022, 0023) — same shape as the task module,
+  admin-authored instead of manager-authored:
   - `reminder_templates` (id, org_id, title, body, target_role,
-    target_user_id, recurrence, weekdays smallint[], send_at time,
-    is_active, created_by, created_at) — the recurring definition only. A
-    one-off reminder skips this table entirely and writes straight to
-    `reminders`. Admin-only RLS (`reminder_templates_admin_all`) — unlike
-    task_templates, there is no manager-scoped policy at all.
+    target_user_id, target_location_id, recurrence, weekdays smallint[],
+    send_at time, is_active, created_by, created_at) — the recurring
+    definition only. A one-off reminder skips this table entirely and
+    writes straight to `reminders`. Admin-only RLS
+    (`reminder_templates_admin_all`) — unlike task_templates, there is no
+    manager-scoped policy at all.
   - `reminders` (id, org_id, template_id, title, body, target_role,
-    target_user_id, send_at timestamptz, reminder_notified_at,
-    created_by, created_at, reminder_day) — the instances staff see and
-    acknowledge. `reminder_day` is `GENERATED ALWAYS AS ((send_at at time
-    zone 'Europe/London')::date) STORED`, same pattern as `tasks.task_day`
-    — select it, never write it. A unique index on
-    `(template_id, reminder_day) WHERE template_id IS NOT NULL` gives one
-    instance per template per day, same as tasks. `reminder_notified_at`
-    mirrors `tasks.overdue_notified_at`, tracking whether
-    `notify_reminders()` has already inserted the notifications for this
-    reminder.
+    target_user_id, target_location_id, send_at timestamptz,
+    reminder_notified_at, created_by, created_at, reminder_day) — the
+    instances staff see and acknowledge. `reminder_day` is `GENERATED
+    ALWAYS AS ((send_at at time zone 'Europe/London')::date) STORED`,
+    same pattern as `tasks.task_day` — select it, never write it. A
+    unique index on `(template_id, reminder_day) WHERE template_id IS NOT
+    NULL` gives one instance per template per day, same as tasks.
+    `reminder_notified_at` mirrors `tasks.overdue_notified_at`, tracking
+    whether `notify_reminders()` has already inserted the notifications
+    for this reminder.
+  - `target_location_id` (0023) narrows a role target to one location —
+    null means every location with that role (unchanged default
+    behaviour), set means only staff assigned to it via
+    `profile_locations`. Composite `(target_location_id, org_id)` FK to
+    `locations (id, org_id)`, same cross-tenant pattern as every other
+    location_id in the schema (0013). Only meaningful for a role target;
+    an individual target ignores it (the UI never sets it in that mode).
   - `reminder_acknowledgements` (id, org_id, reminder_id, profile_id,
     acknowledged_at) — one row per person who has dismissed a reminder,
     unique on `(reminder_id, profile_id)`. Insert is gated on the
-    reminder actually targeting the caller (by role or individually), not
-    just on `profile_id = auth.uid()`.
+    reminder actually targeting the caller (by role and location, or
+    individually), not just on `profile_id = auth.uid()`. `reminder_id`
+    is `ON DELETE CASCADE`, so deleting a reminder takes its
+    acknowledgements with it.
   - `generate_reminder_instances()` (pg_cron, hourly) mirrors
     `generate_task_instances()` exactly, including reading `current_date`
     in the session's own timezone rather than Europe/London — an existing
     quirk of the task cron, not a new one introduced here.
   - `notify_reminders()` (pg_cron, every 15 minutes) inserts a
     `notifications` row (type `'reminder'`) for everyone a reminder
-    targets once its `send_at` has passed, mirroring
+    targets — matching role AND, if `target_location_id` is set, assigned
+    to it — once its `send_at` has passed, mirroring
     `notify_overdue_tasks()`.
   - A manager's read access to `reminders` isn't location-scoped the way
-    tasks are (a reminder has no `location_id`) — `manages_person(created_by)`
-    is the closest equivalent: can they manage the person who sent it.
+    tasks are — `manages_person(created_by)` is the check instead:
+    can they manage the person who sent it, not the reminder's own
+    (optional) `target_location_id`.
+  - Deleting a reminder instance never stops a recurring series — deleting
+    its template does (`reminders.template_id` is `ON DELETE SET NULL`,
+    so past instances are untouched). `RemindersCard.tsx`'s delete button
+    mirrors `ManagerScheduler`'s shift-series delete: a non-recurring
+    reminder deletes immediately, no confirm; a recurring instance gets
+    one `window.confirm` deciding scope (OK stops the series by deleting
+    the template too, Cancel deletes just that occurrence) — never a
+    plain "are you sure", since the trash icon has already committed to
+    deleting *something*.
   - The employee-side blocking modal (`ReminderAcknowledgeModal.tsx`,
     mounted at the `EmployeeDashboard` root like `OwedOrdersModal`) shows
     one outstanding reminder at a time, oldest first, no dismiss but

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   Calendar,
@@ -10,6 +10,7 @@ import {
   Megaphone,
   Plus,
   Repeat,
+  Trash2,
   User,
   Users,
   X,
@@ -18,9 +19,16 @@ import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
 import { friendlyError } from '../lib/friendlyError';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
+import FilterButton from './FilterButton';
 
 type Target = 'role' | 'individual';
 type Recurrence = 'daily' | 'weekly';
+type AckFilter = 'all' | 'complete' | 'outstanding';
+
+interface LocationLite {
+  id: string;
+  name: string;
+}
 
 interface StaffLite {
   id: string;
@@ -35,13 +43,16 @@ interface ReminderRow {
   body: string | null;
   target_role: string | null;
   target_user_id: string | null;
+  target_location_id: string | null;
   send_at: string;
   template_id: string | null;
   target_profile: { first_name: string | null; full_name: string | null } | null;
+  target_location: { name: string } | null;
 }
 
 const REMINDER_FIELDS =
-  'id, title, body, target_role, target_user_id, send_at, template_id, target_profile:target_user_id ( first_name, full_name )';
+  'id, title, body, target_role, target_user_id, target_location_id, send_at, template_id, ' +
+  'target_profile:target_user_id ( first_name, full_name ), target_location:target_location_id ( name )';
 
 const WEEKDAYS = [
   { value: 1, short: 'Mon' },
@@ -76,16 +87,25 @@ function toLocalIso(dateKey: string, hhmm: string): string {
 // Root
 // ===========================================================================
 
-export default function RemindersCard(): ReactNode {
+export default function RemindersCard({ locations }: { locations: LocationLite[] }): ReactNode {
+  const { roles } = useRoles();
   const [userId, setUserId] = useState<string | null>(null);
   const [reminders, setReminders] = useState<ReminderRow[]>([]);
   const [staff, setStaff] = useState<StaffLite[]>([]);
+  const [staffLocations, setStaffLocations] = useState<Map<string, Set<string>>>(new Map());
   const [acks, setAcks] = useState<Map<string, Set<string>>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionFault, setActionFault] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+  const [filterRole, setFilterRole] = useState('all');
+  const [filterLocation, setFilterLocation] = useState('all');
+  const [filterAck, setFilterAck] = useState<AckFilter>('all');
 
   useEffect(() => {
     void (async () => {
@@ -96,15 +116,15 @@ export default function RemindersCard(): ReactNode {
 
   const load = useCallback(async () => {
     setError(null);
-    const [remindersRes, staffRes] = await Promise.all([
+    const [remindersRes, staffRes, staffLocRes] = await Promise.all([
       supabase
         .from('reminders')
         .select(REMINDER_FIELDS)
         .order('send_at', { ascending: false })
-        .limit(50)
+        .limit(200)
         .returns<ReminderRow[]>(),
-      // Org-wide, not location-scoped — a reminder has no location_id, and
-      // this is also what sizes a role-targeted reminder's audience.
+      // Org-wide, not location-scoped — this sizes a role-targeted
+      // reminder's audience regardless of any location narrowing on it.
       supabase
         .from('profiles')
         .select('id, first_name, full_name, role')
@@ -112,6 +132,9 @@ export default function RemindersCard(): ReactNode {
         .not('accepted_at', 'is', null)
         .order('full_name')
         .returns<StaffLite[]>(),
+      // Which locations each person is assigned to — needed to narrow a
+      // role's audience down to one location when a reminder sets it.
+      supabase.from('profile_locations').select('profile_id, location_id'),
     ]);
 
     if (remindersRes.error || staffRes.error) {
@@ -123,6 +146,12 @@ export default function RemindersCard(): ReactNode {
     const rows = remindersRes.data ?? [];
     setReminders(rows);
     setStaff(staffRes.data ?? []);
+
+    const locMap = new Map<string, Set<string>>();
+    for (const row of staffLocRes.data ?? []) {
+      (locMap.get(row.profile_id) ?? locMap.set(row.profile_id, new Set()).get(row.profile_id)!).add(row.location_id);
+    }
+    setStaffLocations(locMap);
 
     if (rows.length > 0) {
       const { data: ackRows } = await supabase
@@ -151,10 +180,87 @@ export default function RemindersCard(): ReactNode {
           ? [person]
           : [{ id: reminder.target_user_id, first_name: null, full_name: nameOf(reminder.target_profile), role: null }];
       }
-      return staff.filter((s) => s.role === reminder.target_role);
+      return staff.filter((s) => {
+        if (s.role !== reminder.target_role) return false;
+        if (!reminder.target_location_id) return true;
+        return (staffLocations.get(s.id) ?? new Set()).has(reminder.target_location_id);
+      });
     },
-    [staff]
+    [staff, staffLocations]
   );
+
+  const activeFilterCount =
+    (filterFrom ? 1 : 0) + (filterTo ? 1 : 0) + (filterRole !== 'all' ? 1 : 0) +
+    (filterLocation !== 'all' ? 1 : 0) + (filterAck !== 'all' ? 1 : 0);
+
+  const filteredReminders = useMemo(() => {
+    return reminders.filter((reminder) => {
+      const sendDate = reminder.send_at.slice(0, 10);
+      if (filterFrom && sendDate < filterFrom) return false;
+      if (filterTo && sendDate > filterTo) return false;
+      if (filterRole !== 'all' && reminder.target_role !== filterRole) return false;
+      if (filterLocation !== 'all' && reminder.target_location_id !== filterLocation) return false;
+      if (filterAck !== 'all') {
+        const audience = audienceFor(reminder);
+        const acked = acks.get(reminder.id) ?? new Set<string>();
+        const complete = audience.length > 0 && acked.size >= audience.length;
+        if (filterAck === 'complete' && !complete) return false;
+        if (filterAck === 'outstanding' && complete) return false;
+      }
+      return true;
+    });
+  }, [reminders, filterFrom, filterTo, filterRole, filterLocation, filterAck, audienceFor, acks]);
+
+  // Deleting a reminder always deletes just that row (its acknowledgements
+  // cascade). For a recurring instance, that alone does not stop the
+  // series — deleting the template does, same relationship as a shift's
+  // series_id: deleting one occurrence never touches the others. One
+  // confirm resolves the scope, same shape as ManagerScheduler's shift
+  // delete (OK = the wider scope, Cancel = just this one) — a non-
+  // recurring reminder has no scope to choose, so it deletes immediately,
+  // same as a non-recurring shift.
+  const handleDelete = async (reminder: ReminderRow) => {
+    setActionFault(null);
+    const audience = audienceFor(reminder);
+    const acked = acks.get(reminder.id) ?? new Set<string>();
+    const outstanding = acked.size < audience.length;
+
+    let stopSeries = false;
+    if (reminder.template_id) {
+      stopSeries = window.confirm(
+        outstanding
+          ? 'Stop the whole recurring series and delete this reminder? Cancel deletes just this occurrence — the series keeps going.'
+          : 'Stop the whole recurring series? Cancel just clears this old occurrence from history — the series keeps going.'
+      );
+      if (stopSeries) {
+        const { error: templateError } = await supabase
+          .from('reminder_templates')
+          .delete()
+          .eq('id', reminder.template_id);
+        if (templateError) {
+          setActionFault(friendlyError(templateError, 'Could not stop the series.'));
+          return;
+        }
+      }
+    }
+
+    const { error: deleteError } = await supabase.from('reminders').delete().eq('id', reminder.id);
+    if (deleteError) {
+      setActionFault(friendlyError(deleteError, 'Could not delete the reminder.'));
+      return;
+    }
+
+    setNotice(
+      reminder.template_id
+        ? stopSeries
+          ? 'Series stopped — this reminder deleted.'
+          : 'This occurrence retracted — the series continues.'
+        : outstanding
+          ? 'Reminder retracted.'
+          : 'Reminder removed from history.'
+    );
+    await load();
+  };
 
   return (
     <div className="space-y-4">
@@ -173,11 +279,75 @@ export default function RemindersCard(): ReactNode {
       </div>
 
       {notice && <p className="rounded-lg bg-success-bg px-3 py-2 text-sm text-success">{notice}</p>}
+      {actionFault && <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{actionFault}</p>}
 
       <section className="rounded-2xl border border-border bg-surface p-5">
         <div className="flex items-center gap-2">
-          <Megaphone className="h-5 w-5 text-ink/50" aria-hidden="true" />
-          <h3 className="text-sm font-semibold text-ink">Sent reminders</h3>
+          <Megaphone className="h-5 w-5 shrink-0 text-ink/50" aria-hidden="true" />
+          <h3 className="flex-1 text-sm font-semibold text-ink">Sent reminders</h3>
+          <FilterButton activeCount={activeFilterCount}>
+            <div>
+              <label htmlFor="reminder-filter-from" className="block text-xs font-medium text-ink/60">From</label>
+              <input
+                id="reminder-filter-from"
+                type="date"
+                value={filterFrom}
+                onChange={(e) => setFilterFrom(e.target.value)}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm tabular-nums"
+              />
+            </div>
+            <div>
+              <label htmlFor="reminder-filter-to" className="block text-xs font-medium text-ink/60">To</label>
+              <input
+                id="reminder-filter-to"
+                type="date"
+                value={filterTo}
+                onChange={(e) => setFilterTo(e.target.value)}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm tabular-nums"
+              />
+            </div>
+            <div>
+              <label htmlFor="reminder-filter-role" className="block text-xs font-medium text-ink/60">Target role</label>
+              <select
+                id="reminder-filter-role"
+                value={filterRole}
+                onChange={(e) => setFilterRole(e.target.value)}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
+              >
+                <option value="all">All roles</option>
+                {roles.map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="reminder-filter-location" className="block text-xs font-medium text-ink/60">Location</label>
+              <select
+                id="reminder-filter-location"
+                value={filterLocation}
+                onChange={(e) => setFilterLocation(e.target.value)}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
+              >
+                <option value="all">All locations</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="reminder-filter-ack" className="block text-xs font-medium text-ink/60">Acknowledgement</label>
+              <select
+                id="reminder-filter-ack"
+                value={filterAck}
+                onChange={(e) => setFilterAck(e.target.value as AckFilter)}
+                className="mt-1.5 min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
+              >
+                <option value="all">All</option>
+                <option value="complete">Fully acknowledged</option>
+                <option value="outstanding">Outstanding</option>
+              </select>
+            </div>
+          </FilterButton>
         </div>
 
         {loading ? (
@@ -187,42 +357,56 @@ export default function RemindersCard(): ReactNode {
           </div>
         ) : error ? (
           <p className="mt-4 text-sm text-danger">{error}</p>
-        ) : reminders.length === 0 ? (
-          <p className="mt-4 text-sm text-ink/60">No reminders sent yet.</p>
+        ) : filteredReminders.length === 0 ? (
+          <p className="mt-4 text-sm text-ink/60">
+            {reminders.length === 0 ? 'No reminders sent yet.' : 'Nothing matches these filters.'}
+          </p>
         ) : (
           <ul className="mt-3 divide-y divide-border">
-            {reminders.map((reminder) => {
+            {filteredReminders.map((reminder) => {
               const audience = audienceFor(reminder);
               const acked = acks.get(reminder.id) ?? new Set<string>();
               const expanded = expandedId === reminder.id;
 
               return (
                 <li key={reminder.id} className="py-3">
-                  <button
-                    type="button"
-                    onClick={() => setExpandedId(expanded ? null : reminder.id)}
-                    aria-expanded={expanded}
-                    className="flex w-full min-h-[44px] items-start justify-between gap-3 text-left"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-ink">{reminder.title}</p>
-                      <p className="mt-0.5 text-xs text-ink/60">
-                        {reminder.target_user_id ? nameOf(reminder.target_profile) : `Role: ${reminder.target_role}`}
-                        {' · '}
-                        {formatSendAt(reminder.send_at)}
-                        {reminder.template_id && ' · recurring'}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className="text-xs font-medium tabular-nums text-ink/70">
-                        {acked.size} of {audience.length} acknowledged
-                      </span>
-                      <ChevronDown
-                        className={`h-4 w-4 text-ink/50 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                        aria-hidden="true"
-                      />
-                    </div>
-                  </button>
+                  <div className="flex w-full items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(expanded ? null : reminder.id)}
+                      aria-expanded={expanded}
+                      className="flex min-h-[44px] flex-1 items-start justify-between gap-3 text-left"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-ink">{reminder.title}</p>
+                        <p className="mt-0.5 text-xs text-ink/60">
+                          {reminder.target_user_id
+                            ? nameOf(reminder.target_profile)
+                            : `Role: ${reminder.target_role}${reminder.target_location ? ` (${reminder.target_location.name})` : ''}`}
+                          {' · '}
+                          {formatSendAt(reminder.send_at)}
+                          {reminder.template_id && ' · recurring'}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="text-xs font-medium tabular-nums text-ink/70">
+                          {acked.size} of {audience.length} acknowledged
+                        </span>
+                        <ChevronDown
+                          className={`h-4 w-4 text-ink/50 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete(reminder)}
+                      aria-label={`Delete ${reminder.title}`}
+                      className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg text-ink/40 hover:bg-danger-bg hover:text-danger"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
 
                   {expanded && (
                     <ul className="mt-2 space-y-1 rounded-lg bg-bg p-2">
@@ -254,6 +438,7 @@ export default function RemindersCard(): ReactNode {
         <ReminderFormModal
           userId={userId}
           staff={staff}
+          locations={locations}
           onClose={() => setShowForm(false)}
           onSaved={async (message) => {
             setShowForm(false);
@@ -282,6 +467,9 @@ function TargetPicker({
   staffId,
   onStaffChange,
   staff,
+  locationId,
+  onLocationChange,
+  locations,
 }: {
   target: Target;
   onTargetChange: (t: Target) => void;
@@ -292,6 +480,9 @@ function TargetPicker({
   staffId: string;
   onStaffChange: (id: string) => void;
   staff: StaffLite[];
+  locationId: string;
+  onLocationChange: (id: string) => void;
+  locations: LocationLite[];
 }): ReactNode {
   return (
     <div>
@@ -321,19 +512,32 @@ function TargetPicker({
         </button>
       </div>
 
-      <div className="mt-2">
+      <div className="mt-2 space-y-2">
         {target === 'role' ? (
-          <select
-            aria-label="Role"
-            value={role}
-            onChange={(e) => onRoleChange(e.target.value)}
-            disabled={rolesLoading || roles.length === 0}
-            className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {roles.map((r) => (
-              <option key={r.id} value={r.name}>{r.name}</option>
-            ))}
-          </select>
+          <>
+            <select
+              aria-label="Role"
+              value={role}
+              onChange={(e) => onRoleChange(e.target.value)}
+              disabled={rolesLoading || roles.length === 0}
+              className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {roles.map((r) => (
+                <option key={r.id} value={r.name}>{r.name}</option>
+              ))}
+            </select>
+            <select
+              aria-label="Location (optional narrowing)"
+              value={locationId}
+              onChange={(e) => onLocationChange(e.target.value)}
+              className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
+            >
+              <option value="">All locations</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>{l.name} only</option>
+              ))}
+            </select>
+          </>
         ) : (
           <select
             aria-label="Staff member"
@@ -381,11 +585,13 @@ function WeekdayPicker({ selected, onToggle }: { selected: number[]; onToggle: (
 function ReminderFormModal({
   userId,
   staff,
+  locations,
   onClose,
   onSaved,
 }: {
   userId: string | null;
   staff: StaffLite[];
+  locations: LocationLite[];
   onClose: () => void;
   onSaved: (message: string) => Promise<void>;
 }): ReactNode {
@@ -397,6 +603,7 @@ function ReminderFormModal({
   const [target, setTarget] = useState<Target>('role');
   const [role, setRole] = useState('');
   const [staffId, setStaffId] = useState('');
+  const [locationId, setLocationId] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('09:00');
   const [recurrence, setRecurrence] = useState<Recurrence>('daily');
@@ -435,6 +642,11 @@ function ReminderFormModal({
     if (recurring && recurrence === 'weekly' && weekdays.length === 0) return setFault('Pick at least one day.');
     if (!userId) return setFault('Your session has expired. Sign in again.');
 
+    // Location narrowing only applies to a role target — an individual is
+    // already one specific person, so it's silently ignored rather than
+    // stored, regardless of whatever the picker last showed.
+    const resolvedLocationId = target === 'role' && locationId ? locationId : null;
+
     setSaving(true);
 
     if (recurring) {
@@ -443,6 +655,7 @@ function ReminderFormModal({
         body: body.trim() || null,
         target_role: target === 'role' ? role : null,
         target_user_id: target === 'individual' ? staffId : null,
+        target_location_id: resolvedLocationId,
         recurrence,
         weekdays: recurrence === 'weekly' ? [...weekdays].sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6],
         send_at: time,
@@ -460,6 +673,7 @@ function ReminderFormModal({
       body: body.trim() || null,
       target_role: target === 'role' ? role : null,
       target_user_id: target === 'individual' ? staffId : null,
+      target_location_id: resolvedLocationId,
       send_at: toLocalIso(date, time),
       template_id: null,
       created_by: userId,
@@ -546,6 +760,9 @@ function ReminderFormModal({
             staffId={staffId}
             onStaffChange={setStaffId}
             staff={staff}
+            locationId={locationId}
+            onLocationChange={setLocationId}
+            locations={locations}
           />
 
           {!recurring && (

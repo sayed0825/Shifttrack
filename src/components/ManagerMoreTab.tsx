@@ -163,7 +163,7 @@ export default function ManagerMoreTab({
     // manager's call.
     ...(isAdmin
       ? [
-          { id: 'reminders', title: 'Reminders', icon: Megaphone, render: () => <RemindersCard /> },
+          { id: 'reminders', title: 'Reminders', icon: Megaphone, render: () => <RemindersCard locations={locations} /> },
           { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
           { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
         ]
