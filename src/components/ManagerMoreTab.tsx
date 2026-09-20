@@ -157,13 +157,18 @@ export default function ManagerMoreTab({
       count: pendingBadge(shiftRequestCount),
       render: () => <ManagerShiftRequests locations={locations} />,
     },
+    // Not admin-only: a location-scoped Manager can send a reminder to a
+    // role at a location they manage, or to an individual they manage —
+    // RemindersCard itself narrows the pickers to their scope and the
+    // location field is required for them (0024's manages_location(null)
+    // check rejects an org-wide reminder from anyone but an Administrator).
+    { id: 'reminders', title: 'Reminders', icon: Megaphone, render: () => <RemindersCard locations={locations} isAdmin={isAdmin} /> },
     // Admin-only: a location-scoped Manager doesn't see these rows at all,
     // not just a blocked drill-in. Locations belongs here too — editing a
     // geofence changes where staff can clock in, which isn't a location
     // manager's call.
     ...(isAdmin
       ? [
-          { id: 'reminders', title: 'Reminders', icon: Megaphone, render: () => <RemindersCard locations={locations} /> },
           { id: 'locations', title: 'Locations', icon: MapPin, render: () => <LocationsCard /> },
           { id: 'branding', title: 'Branding', icon: Palette, render: () => <BrandingCard /> },
         ]

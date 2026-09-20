@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { useRoles, type Role } from '../hooks/useRoles';
+import { useManagedLocations } from '../hooks/useManagedLocations';
 import { friendlyError } from '../lib/friendlyError';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import FilterButton from './FilterButton';
@@ -50,9 +51,16 @@ interface ReminderRow {
   target_location: { name: string } | null;
 }
 
+// target_location must be embedded via the table name (locations) plus an
+// explicit !constraint hint, not the column name — target_location_id is
+// half of a composite (target_location_id, org_id) FK (0023), and
+// PostgREST's column-name-as-relationship shorthand only resolves a plain
+// single-column FK. target_profile:target_user_id works because
+// target_user_id *is* a plain single-column FK to profiles(id).
 const REMINDER_FIELDS =
   'id, title, body, target_role, target_user_id, target_location_id, send_at, template_id, ' +
-  'target_profile:target_user_id ( first_name, full_name ), target_location:target_location_id ( name )';
+  'target_profile:target_user_id ( first_name, full_name ), ' +
+  'target_location:locations!reminders_location_org_fkey ( name )';
 
 const WEEKDAYS = [
   { value: 1, short: 'Mon' },
@@ -87,8 +95,16 @@ function toLocalIso(dateKey: string, hhmm: string): string {
 // Root
 // ===========================================================================
 
-export default function RemindersCard({ locations }: { locations: LocationLite[] }): ReactNode {
+export default function RemindersCard({
+  locations,
+  isAdmin,
+}: {
+  locations: LocationLite[];
+  isAdmin: boolean;
+}): ReactNode {
   const { roles } = useRoles();
+  const { locationIds: managedLocationIds } = useManagedLocations();
+  const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
   const [userId, setUserId] = useState<string | null>(null);
   const [reminders, setReminders] = useState<ReminderRow[]>([]);
   const [staff, setStaff] = useState<StaffLite[]>([]);
@@ -114,6 +130,13 @@ export default function RemindersCard({ locations }: { locations: LocationLite[]
     })();
   }, []);
 
+  // load() used to fire unconditionally on mount, in its own effect
+  // independent of the userId fetch above — if this component mounted a
+  // beat before the Supabase session finished restoring, the profiles
+  // query below went out with no auth token and 401'd (the same
+  // session-restore race already fixed in usePermissions/useRoles/
+  // useOrganisation/useLateGrace). Gating on userId (set only once
+  // getUser() has actually confirmed a session) closes it here too.
   const load = useCallback(async () => {
     setError(null);
     const [remindersRes, staffRes, staffLocRes] = await Promise.all([
@@ -138,7 +161,7 @@ export default function RemindersCard({ locations }: { locations: LocationLite[]
     ]);
 
     if (remindersRes.error || staffRes.error) {
-      setError('Reminders could not be loaded.');
+      setError(friendlyError(remindersRes.error ?? staffRes.error, 'Reminders could not be loaded.'));
       setLoading(false);
       return;
     }
@@ -169,8 +192,8 @@ export default function RemindersCard({ locations }: { locations: LocationLite[]
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (userId) void load();
+  }, [userId, load]);
 
   const audienceFor = useCallback(
     (reminder: ReminderRow): StaffLite[] => {
@@ -187,6 +210,29 @@ export default function RemindersCard({ locations }: { locations: LocationLite[]
       });
     },
     [staff, staffLocations]
+  );
+
+  // Never offer a location or person the database would reject the viewer
+  // for choosing (same principle as ManagerTasks' visibleLocations). An
+  // Administrator manages every org location, so this is a no-op for them
+  // — deliberately not applied to the staff list for an admin, though:
+  // filtering staff by location membership would also hide anyone with no
+  // profile_locations row at all, and an Administrator can target such a
+  // person while a location-scoped Manager genuinely cannot (manages_person
+  // requires the same overlap RLS itself checks).
+  const visibleLocations = useMemo(
+    () => (isAdmin ? locations : locations.filter((l) => managedLocationSet.has(l.id))),
+    [locations, isAdmin, managedLocationSet]
+  );
+  const visibleStaff = useMemo(
+    () =>
+      isAdmin
+        ? staff
+        : staff.filter((s) => {
+            const locs = staffLocations.get(s.id);
+            return locs ? [...locs].some((id) => managedLocationSet.has(id)) : false;
+          }),
+    [staff, isAdmin, managedLocationSet, staffLocations]
   );
 
   const activeFilterCount =
@@ -437,8 +483,9 @@ export default function RemindersCard({ locations }: { locations: LocationLite[]
       {showForm && (
         <ReminderFormModal
           userId={userId}
-          staff={staff}
-          locations={locations}
+          staff={visibleStaff}
+          locations={visibleLocations}
+          isAdmin={isAdmin}
           onClose={() => setShowForm(false)}
           onSaved={async (message) => {
             setShowForm(false);
@@ -470,6 +517,7 @@ function TargetPicker({
   locationId,
   onLocationChange,
   locations,
+  locationRequired,
 }: {
   target: Target;
   onTargetChange: (t: Target) => void;
@@ -483,6 +531,9 @@ function TargetPicker({
   locationId: string;
   onLocationChange: (id: string) => void;
   locations: LocationLite[];
+  /** True for a location-scoped Manager — "all locations" isn't an option
+   *  they can send to, so it's not offered rather than offered and refused. */
+  locationRequired: boolean;
 }): ReactNode {
   return (
     <div>
@@ -527,14 +578,16 @@ function TargetPicker({
               ))}
             </select>
             <select
-              aria-label="Location (optional narrowing)"
+              aria-label={locationRequired ? 'Location' : 'Location (optional narrowing)'}
               value={locationId}
               onChange={(e) => onLocationChange(e.target.value)}
-              className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm"
+              disabled={locationRequired && locations.length === 0}
+              className="min-h-[44px] w-full rounded-lg border border-border bg-surface px-3 py-2 text-base sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <option value="">All locations</option>
+              {!locationRequired && <option value="">All locations</option>}
+              {locationRequired && !locationId && <option value="" disabled>Choose a location</option>}
               {locations.map((l) => (
-                <option key={l.id} value={l.id}>{l.name} only</option>
+                <option key={l.id} value={l.id}>{locationRequired ? l.name : `${l.name} only`}</option>
               ))}
             </select>
           </>
@@ -586,12 +639,17 @@ function ReminderFormModal({
   userId,
   staff,
   locations,
+  isAdmin,
   onClose,
   onSaved,
 }: {
   userId: string | null;
   staff: StaffLite[];
   locations: LocationLite[];
+  /** A location-scoped Manager must narrow a role target to one of their
+   *  own locations — "all locations" is org-wide, which only an
+   *  Administrator can send to (see 0024's manages_location(null) check). */
+  isAdmin: boolean;
   onClose: () => void;
   onSaved: (message: string) => Promise<void>;
 }): ReactNode {
@@ -620,6 +678,11 @@ function ReminderFormModal({
   }, [staff, staffId]);
 
   useEffect(() => {
+    if (isAdmin) return;
+    if (locations.length > 0 && !locationId) setLocationId(locations[0].id);
+  }, [isAdmin, locations, locationId]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
@@ -637,6 +700,7 @@ function ReminderFormModal({
 
     if (!title.trim()) return setFault('Enter a title.');
     if (target === 'role' && !role) return setFault('Choose a role.');
+    if (target === 'role' && !isAdmin && !locationId) return setFault('Choose a location.');
     if (target === 'individual' && !staffId) return setFault('Choose a staff member.');
     if (!recurring && !date) return setFault('Pick a date.');
     if (recurring && recurrence === 'weekly' && weekdays.length === 0) return setFault('Pick at least one day.');
@@ -763,6 +827,7 @@ function ReminderFormModal({
             locationId={locationId}
             onLocationChange={setLocationId}
             locations={locations}
+            locationRequired={!isAdmin}
           />
 
           {!recurring && (

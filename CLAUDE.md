@@ -197,15 +197,30 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
     'Europe/London')::date) STORED` — select it, never write it. Any
     insert/update payload that includes the column, even as null, fails
     with "cannot insert a non-DEFAULT value into column".
-- Reminders module (migrations 0022, 0023) — same shape as the task module,
-  admin-authored instead of manager-authored:
+- Reminders module (migrations 0022, 0023, 0024) — same shape as the task
+  module:
   - `reminder_templates` (id, org_id, title, body, target_role,
     target_user_id, target_location_id, recurrence, weekdays smallint[],
     send_at time, is_active, created_by, created_at) — the recurring
     definition only. A one-off reminder skips this table entirely and
-    writes straight to `reminders`. Admin-only RLS
-    (`reminder_templates_admin_all`) — unlike task_templates, there is no
-    manager-scoped policy at all.
+    writes straight to `reminders`. Write RLS
+    (`reminder_templates_manager_write`, `reminders_manager_write` on the
+    two tables, 0024) is `is_manager()` plus
+    `manages_person(target_user_id)` (individual target) or
+    `manages_location(target_location_id)` (role target) — same shape as
+    `tmpl_manager_all`/`tasks_manager_all`, and covers Administrators
+    through the same mechanism those do: `manages_location()`/
+    `manages_person()` both return true unconditionally for `is_admin()`
+    internally, so there is deliberately no separate admin-only policy.
+    A location-scoped Manager's role-targeted reminder is rejected if
+    `target_location_id` is null (org-wide) — `manages_location(null)`
+    is false for a non-admin caller, true only for `is_admin()`. The
+    explicit `is_manager()` clause matters even though
+    `manages_location()`/`manages_person()` branch on `is_admin()`
+    internally: `my_managed_locations()` (what both are built on) returns
+    a *non-admin* caller's own `profile_locations` rows regardless of
+    `can_manage`, so without it a plain employee could satisfy
+    `manages_location()` for their own location.
   - `reminders` (id, org_id, template_id, title, body, target_role,
     target_user_id, target_location_id, send_at timestamptz,
     reminder_notified_at, created_by, created_at, reminder_day) — the
