@@ -22,6 +22,8 @@ describe('an administrator reaches everything in their own org', () => {
     ['shifts', fixtures.orgA.shiftEmployee2Id],
     ['time_logs', fixtures.orgA.timeLogEmployee2Id],
     ['tasks', fixtures.orgA.taskEmployee2Id],
+    ['task_items', fixtures.orgA.taskItemEmployee2Id],
+    ['task_photos', fixtures.orgA.taskPhotoEmployee2Id],
     ['employee_notes', fixtures.orgA.noteEmployee2Id],
     ['overtime_claims', fixtures.orgA.overtimeClaimEmployee2Id],
     ['staff_wage_rates', fixtures.orgA.wageRateEmployee2Id],

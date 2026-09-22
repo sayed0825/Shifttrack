@@ -40,7 +40,10 @@ export async function teardownFixtures(fixtures: FixtureManifest): Promise<void>
   const orgIds = [fixtures.orgA.orgId, fixtures.orgB.orgId];
 
   const tablesInDependencyOrder = [
+    'task_photos',
     'task_comments',
+    'task_items',
+    'task_template_items',
     'tasks',
     'task_templates',
     'notifications',

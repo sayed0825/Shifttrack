@@ -37,9 +37,16 @@ export interface OrgAFixture {
   timeLogManagerId: string;
   timeLogAdminId: string;
 
+  /** The list. Still holds title/location/assignment/start/due; status,
+   *  completion and photos moved to task_items (0026). */
   taskEmployee1Id: string;
   taskEmployee2Id: string;
+  /** The one item each fixture list is required to have. */
+  taskItemEmployee1Id: string;
+  taskItemEmployee2Id: string;
   taskCommentEmployee1Id: string;
+  taskPhotoEmployee1Id: string;
+  taskPhotoEmployee2Id: string;
 
   /** employee_notes rows — about employee1 and employee2 respectively. */
   noteEmployee1Id: string;
@@ -73,7 +80,9 @@ export interface OrgBFixture {
   shiftId: string;
   timeLogId: string;
   taskId: string;
+  taskItemId: string;
   taskCommentId: string;
+  taskPhotoId: string;
   noteId: string;
   wageRateId: string;
   notificationId: string;

@@ -22,8 +22,11 @@ const ALL_TABLES = [
   'roles',
   'employee_notes',
   'task_templates',
+  'task_template_items',
   'tasks',
+  'task_items',
   'task_comments',
+  'task_photos',
   'staff_wage_rates',
 ];
 
@@ -36,6 +39,7 @@ const RPCS: Array<{ name: string; args: Record<string, unknown> }> = [
   { name: 'approve_shift_application', args: { p_application_id: NIL_UUID } },
   { name: 'approve_shift_swap', args: { p_swap_id: NIL_UUID } },
   { name: 'can_see_task', args: { p_task_id: NIL_UUID } },
+  { name: 'can_see_task_item', args: { p_item_id: NIL_UUID } },
   { name: 'decide_overtime_claim', args: { p_claim_id: NIL_UUID, p_approve: true } },
   { name: 'delete_my_account', args: {} },
   { name: 'delete_staff_member', args: { p_user_id: NIL_UUID } },

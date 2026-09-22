@@ -26,8 +26,12 @@ const ORG_SCOPED_TABLES = [
   'overtime_claims',
   'roles',
   'employee_notes',
+  'task_templates',
+  'task_template_items',
   'tasks',
+  'task_items',
   'task_comments',
+  'task_photos',
   'staff_wage_rates',
 ];
 

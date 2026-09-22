@@ -33,6 +33,27 @@ describe('an employee can reach their own data', () => {
     expect(data).toHaveLength(1);
   });
 
+  // The item is the unit of work now (0026) — completion, review and
+  // photos all live here, not on the list.
+  it('reads their own task item', async () => {
+    const { data, error } = await employee1.from('task_items').select('id').eq('id', fixtures.orgA.taskItemEmployee1Id);
+    expect(error).toBeNull();
+    expect(data).toHaveLength(1);
+  });
+
+  it('can submit their own task item', async () => {
+    const { error: updateError } = await employee1
+      .from('task_items')
+      .update({ status: 'submitted', completed_by: fixtures.orgA.employee1.id, completed_at: new Date().toISOString() })
+      .eq('id', fixtures.orgA.taskItemEmployee1Id)
+      .in('status', ['pending', 'rejected']);
+    expect(updateError).toBeNull();
+
+    const { data, error } = await adminClient.from('task_items').select('status').eq('id', fixtures.orgA.taskItemEmployee1Id).single();
+    expect(error).toBeNull();
+    expect(data?.status).toBe('submitted');
+  });
+
   it('can set orders_count on their own closed log', async () => {
     const { error: updateError } = await employee1.from('time_logs').update({ orders_count: 7 }).eq('id', fixtures.orgA.timeLogEmployee1Id);
     expect(updateError).toBeNull();

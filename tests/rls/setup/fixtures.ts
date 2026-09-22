@@ -167,7 +167,14 @@ interface TaskArgs {
   assignedUserId: string;
 }
 
-async function createTask({ orgId, locationId, assignedUserId }: TaskArgs): Promise<string> {
+interface TaskWithItem {
+  taskId: string;
+  itemId: string;
+}
+
+/** The item is the unit of work now — every list needs at least one, so
+ *  the fixture task is never created without one. */
+async function createTask({ orgId, locationId, assignedUserId }: TaskArgs): Promise<TaskWithItem> {
   const start = new Date(Date.now() - 3_600_000);
   const due = new Date(Date.now() + 3_600_000);
   const result = await adminClient
@@ -179,17 +186,36 @@ async function createTask({ orgId, locationId, assignedUserId }: TaskArgs): Prom
       assigned_user_id: assignedUserId,
       start_time: start.toISOString(),
       due_time: due.toISOString(),
-      status: 'pending',
     })
     .select('id')
     .single();
-  return mustSucceed(result, 'create task').id;
+  const taskId = mustSucceed(result, 'create task').id;
+  const itemId = await createTaskItem(orgId, taskId);
+  return { taskId, itemId };
 }
 
-async function createTaskComment(orgId: string, taskId: string, senderId: string): Promise<string> {
+async function createTaskItem(orgId: string, taskId: string): Promise<string> {
+  const result = await adminClient
+    .from('task_items')
+    .insert({ org_id: orgId, task_id: taskId, title: 'RLS fixture item', is_required: true, requires_photo: false, max_photos: 1 })
+    .select('id')
+    .single();
+  return mustSucceed(result, 'create task item').id;
+}
+
+async function createTaskPhoto(orgId: string, taskItemId: string, uploadedBy: string): Promise<string> {
+  const result = await adminClient
+    .from('task_photos')
+    .insert({ org_id: orgId, task_item_id: taskItemId, storage_path: `${taskItemId}/rls-fixture.jpg`, uploaded_by: uploadedBy })
+    .select('id')
+    .single();
+  return mustSucceed(result, 'create task photo').id;
+}
+
+async function createTaskComment(orgId: string, taskItemId: string, senderId: string): Promise<string> {
   const result = await adminClient
     .from('task_comments')
-    .insert({ org_id: orgId, task_id: taskId, sender_id: senderId, comment_text: 'RLS fixture comment' })
+    .insert({ org_id: orgId, task_item_id: taskItemId, sender_id: senderId, comment_text: 'RLS fixture comment' })
     .select('id')
     .single();
   return mustSucceed(result, 'create task comment').id;
@@ -342,9 +368,11 @@ async function buildOrgA(): Promise<OrgAFixture> {
   const timeLogManager = await createClosedTimeLog({ orgId, userId: manager.id, locationId: locationA1Id, roleAtClockIn: roleNames.manager });
   const timeLogAdmin = await createClosedTimeLog({ orgId, userId: admin.id, locationId: locationA1Id, roleAtClockIn: roleNames.administrator });
 
-  const taskEmployee1Id = await createTask({ orgId, locationId: locationA1Id, assignedUserId: employee1.id });
-  const taskEmployee2Id = await createTask({ orgId, locationId: locationA2Id, assignedUserId: employee2.id });
-  const taskCommentEmployee1Id = await createTaskComment(orgId, taskEmployee1Id, employee1.id);
+  const taskEmployee1 = await createTask({ orgId, locationId: locationA1Id, assignedUserId: employee1.id });
+  const taskEmployee2 = await createTask({ orgId, locationId: locationA2Id, assignedUserId: employee2.id });
+  const taskCommentEmployee1Id = await createTaskComment(orgId, taskEmployee1.itemId, employee1.id);
+  const taskPhotoEmployee1Id = await createTaskPhoto(orgId, taskEmployee1.itemId, employee1.id);
+  const taskPhotoEmployee2Id = await createTaskPhoto(orgId, taskEmployee2.itemId, employee2.id);
 
   const noteEmployee1Id = await createNote(orgId, employee1.id, manager.id);
   const noteEmployee2Id = await createNote(orgId, employee2.id, admin.id);
@@ -380,9 +408,13 @@ async function buildOrgA(): Promise<OrgAFixture> {
     timeLogEmployee2Id: timeLogEmployee2.id,
     timeLogManagerId: timeLogManager.id,
     timeLogAdminId: timeLogAdmin.id,
-    taskEmployee1Id,
-    taskEmployee2Id,
+    taskEmployee1Id: taskEmployee1.taskId,
+    taskEmployee2Id: taskEmployee2.taskId,
+    taskItemEmployee1Id: taskEmployee1.itemId,
+    taskItemEmployee2Id: taskEmployee2.itemId,
     taskCommentEmployee1Id,
+    taskPhotoEmployee1Id,
+    taskPhotoEmployee2Id,
     noteEmployee1Id,
     noteEmployee2Id,
     wageRateEmployee1Id,
@@ -414,8 +446,9 @@ async function buildOrgB(): Promise<OrgBFixture> {
 
   const timeLog = await createClosedTimeLog({ orgId, userId: employee.id, locationId, shiftId, roleAtClockIn: roleNames.employee });
 
-  const taskId = await createTask({ orgId, locationId, assignedUserId: employee.id });
-  const taskCommentId = await createTaskComment(orgId, taskId, employee.id);
+  const task = await createTask({ orgId, locationId, assignedUserId: employee.id });
+  const taskCommentId = await createTaskComment(orgId, task.itemId, employee.id);
+  const taskPhotoId = await createTaskPhoto(orgId, task.itemId, employee.id);
 
   const noteId = await createNote(orgId, employee.id, admin.id);
   const wageRateId = await createWageRate(orgId, employee.id, admin.id);
@@ -439,8 +472,10 @@ async function buildOrgB(): Promise<OrgBFixture> {
     employee,
     shiftId,
     timeLogId: timeLog.id,
-    taskId,
+    taskId: task.taskId,
+    taskItemId: task.itemId,
     taskCommentId,
+    taskPhotoId,
     noteId,
     wageRateId,
     notificationId,

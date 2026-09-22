@@ -22,8 +22,8 @@ describe('a location manager cannot read or update staff/shifts/time_logs/tasks/
   });
 
   // employee2 is at Location A2; the manager's scope (profile_locations) is
-  // A1 only. overtime_claims is scoped by manages_person(); shifts/tasks
-  // are scoped by manages_location() — both resolve to false here, but
+  // A1 only. overtime_claims is scoped by manages_person(); shifts/tasks/
+  // task_items are scoped by manages_location() — both resolve to false here, but
   // through different RLS mechanisms, which is worth covering separately
   // rather than assuming they behave identically. profiles is deliberately
   // NOT in this table — see the dedicated block below for why reading one
@@ -48,6 +48,16 @@ describe('a location manager cannot read or update staff/shifts/time_logs/tasks/
       id: fixtures.orgA.taskEmployee2Id,
       field: 'title',
       original: 'RLS fixture task',
+      attempted: 'out-of-scope edit attempt',
+    },
+    // The item is the unit of work now (0026) — a manager reviews/edits
+    // it directly, scoped by manages_location() through its parent list,
+    // same mechanism as tasks above but a separate policy to cover.
+    {
+      table: 'task_items',
+      id: fixtures.orgA.taskItemEmployee2Id,
+      field: 'title',
+      original: 'RLS fixture item',
       attempted: 'out-of-scope edit attempt',
     },
     {
@@ -80,6 +90,13 @@ describe('a location manager cannot read or update staff/shifts/time_logs/tasks/
       );
     });
   }
+
+  // task_photos has no manager UPDATE policy at all (append-only, same as
+  // task_comments) — only its SELECT/INSERT scope is meaningful to test.
+  it('cannot read task_photos outside their locations', async () => {
+    const result = await manager.from('task_photos').select('id').eq('id', fixtures.orgA.taskPhotoEmployee2Id);
+    expectNoRows(result, "manager reading an out-of-scope employee's task_photos");
+  });
 
   // profiles_select_org deliberately reads org-wide, not location-scoped —
   // NOT a case of "outside their locations" excluding a row. It was

@@ -37,7 +37,14 @@ actually run each time, not just left green from the last policy
 shape. Supabase Pro (point-in-time backups) is deliberately deferred
 until ready to pay — see "Known broken" below. The repo is now the
 source of truth for schema, not Supabase — see CLAUDE.md.
-**Next up:** per `launch-plan-fast.md` Week 2, running in parallel:
+**Next up, before anything else:** run migration `0026_task_lists_and_items.sql`
+and push the already-committed-but-not-pushed app code (`EmployeeTasks.tsx`,
+`ManagerTasks.tsx`, `tests/rls/`) back to back, at a quiet time — see the
+2026-09-22 (later) log entry. Run `npm run test:rls` right after. Until
+this happens, `main` is on the OLD schema and the migration/app code sit
+committed locally only.
+
+**Next up otherwise:** per `launch-plan-fast.md` Week 2, running in parallel:
 1. **Capacitor build** — `cap add ios` and `android`, wire background
    geolocation into clock-in, verify `Info.plist` and
    `AndroidManifest.xml`, build and test on a real device, icons and
@@ -120,6 +127,91 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-22 (later)
+**Task lists/items redesign — the item becomes the unit of work.**
+Migration `0026_task_lists_and_items.sql` is written, self-reviewed, and
+committed, but **NOT YET RUN against the live database** — the user is
+running it manually together with the app deploy, back to back at a
+quiet time, to keep the broken window short. Do not assume it's live
+without checking `mcp__supabase__list_migrations` first.
+
+- `tasks`/`task_templates` become pure list containers (title,
+  description, location, assignment, shared start/due time,
+  recurrence). Everything that used to carry per-completion state —
+  `status`, `completed_by/at`, `reviewed_by/at`, `requires_photo`,
+  `is_required`, `max_photos` — moves down to new `task_items`/
+  `task_template_items` tables, one row per unit of work. An item is
+  submitted, reviewed, approved or rejected individually; a list with
+  zero items can't be created (the create forms enforce at least one)
+  and a template with zero items generates nothing.
+- Data safety: existing data migrates losslessly — every existing task
+  becomes a list with exactly one item carrying its old state. An
+  in-transaction reconciliation check (`RAISE EXCEPTION` on mismatch)
+  aborts the whole migration if any count doesn't add up, rather than
+  leaving a half-migrated table. `tasks.photo_path` is deliberately
+  NOT dropped yet, per instruction — its data was already copied to
+  `task_photos` by 0025, reconciled again here, and the column itself
+  waits for a later migration once nothing reads it.
+- Everything the design review flagged got updated to match:
+  `generate_task_instances()`, `notify_overdue_tasks()` (now one
+  notification per LIST naming how many required items remain, not one
+  per item — avoids burying a manager under a dozen at once),
+  `tg_task_notify`/new `tg_task_item_notify`, `tg_task_comment_notify`,
+  `purge_old_task_photos()`, new `can_see_task_item()`, the
+  `task-photos` storage policy (now checks the new item-scoped
+  function OR the old task-scoped one, permanently, since photos
+  uploaded before this migration are still keyed by the old task id in
+  the object store and can't be renamed via SQL), and every affected
+  RLS policy.
+- Two real bugs caught in self-review before this ever reached the
+  user, both Postgres-semantics issues rather than typos: (1) explicit
+  `DROP INDEX` statements after a `DROP COLUMN` that had already
+  auto-dropped the same index (no `CASCADE` needed for a plain index —
+  the redundant drops would have errored "does not exist"); (2)
+  `tg_task_notify`'s rewritten body lost its `TG_OP = 'INSERT'` guard
+  while the trigger itself was still `AFTER INSERT OR UPDATE`, which
+  would have spuriously re-fired "New task" notifications on any edit
+  to a one-off task's assignee — fixed by re-scoping the trigger
+  definition itself to `AFTER INSERT` only.
+- App code rewritten to match, committed in the same batch but **not
+  pushed** (pushing triggers this project's Cloudflare Pages
+  auto-deploy — deploying now, against the pre-migration schema, would
+  break the live app immediately, the opposite of the "short broken
+  window" goal):
+  - `EmployeeTasks.tsx` — items are ticked off and submitted one at a
+    time (`ItemCard`, self-contained per-item photo/comment state);
+    list grouping (due now / upcoming / done) is derived from aggregate
+    item state; realtime now watches both `tasks` and `task_items`.
+  - `ManagerTasks.tsx` — `ReviewSection` reviews/approves/rejects
+    individual items, not lists; `TemplateFormModal`/`OneOffFormModal`
+    gained an `ItemsEditor` to draft one-or-more items per list
+    (enforces at least one, can't remove the last); `HistorySection`
+    fetches lists with items embedded (a proven query shape) and
+    flattens to one row per item client-side, same place the existing
+    role filter already ran client-side, to sidestep uncertainty about
+    whether PostgREST supports ordering by an embedded resource's
+    column. Editing an existing template's item set after creation is
+    deliberately NOT implemented this pass — out of scope for what was
+    asked, worth a follow-up.
+- RLS test suite (`tests/rls/`) rewritten to match: `task_items` and
+  `task_photos` added to fixtures (every fixture task now also creates
+  exactly one item and one photo, so cross-org/anon sweeps aren't
+  vacuous), `createTaskComment` takes a `task_item_id` now, teardown's
+  delete order gained `task_photos`/`task_items`/`task_template_items`.
+  New coverage: an employee can read and submit their own item; a
+  manager is blocked from reading/updating an out-of-scope item or
+  reading an out-of-scope photo, same boundary as before just moved
+  down a table. **Could not run this against the live database this
+  session** — no `.env.test` configured in this environment, and even
+  with one, the new tests target tables/columns that don't exist until
+  0026 actually runs. Run `npm run test:rls` manually right after the
+  migration, before or instead of relying on the pre-push hook, since
+  this is exactly the kind of change the hook exists to catch and it's
+  never been exercised against the real schema yet.
+- Both `npm run build` and a scoped `tsc --noEmit` (app + tests) are
+  clean. No UI testing was possible this session (no device/browser
+  access) — build and typecheck only.
 
 ### 2026-09-22
 **Multi-photo task submission failing on iPhone (PGRST116), Mac Safari
