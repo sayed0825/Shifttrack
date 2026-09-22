@@ -28,6 +28,9 @@ const ALL_TABLES = [
   'task_comments',
   'task_photos',
   'staff_wage_rates',
+  'org_pay_settings',
+  'delivery_runs',
+  'delivery_drops',
 ];
 
 // Every function the app actually calls via .rpc() (see supabase/migrations
@@ -40,6 +43,7 @@ const RPCS: Array<{ name: string; args: Record<string, unknown> }> = [
   { name: 'approve_shift_swap', args: { p_swap_id: NIL_UUID } },
   { name: 'can_see_task', args: { p_task_id: NIL_UUID } },
   { name: 'can_see_task_item', args: { p_item_id: NIL_UUID } },
+  { name: 'shift_pay', args: { p_time_log_id: NIL_UUID } },
   { name: 'decide_overtime_claim', args: { p_claim_id: NIL_UUID, p_approve: true } },
   { name: 'delete_my_account', args: {} },
   { name: 'delete_staff_member', args: { p_user_id: NIL_UUID } },

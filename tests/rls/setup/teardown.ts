@@ -52,6 +52,8 @@ export async function teardownFixtures(fixtures: FixtureManifest): Promise<void>
     'overtime_claims',
     'unavailability_requests',
     'live_locations',
+    'delivery_drops',
+    'delivery_runs',
     'time_logs',
     'staff_wage_rates',
     'employee_notes',
@@ -59,6 +61,7 @@ export async function teardownFixtures(fixtures: FixtureManifest): Promise<void>
     'shifts',
     'locations',
     'roles',
+    'org_pay_settings',
     'profiles',
   ];
 

@@ -33,6 +33,9 @@ const ORG_SCOPED_TABLES = [
   'task_comments',
   'task_photos',
   'staff_wage_rates',
+  'org_pay_settings',
+  'delivery_runs',
+  'delivery_drops',
 ];
 
 describe('cross-org isolation', () => {
