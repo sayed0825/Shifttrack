@@ -37,12 +37,14 @@ actually run each time, not just left green from the last policy
 shape. Supabase Pro (point-in-time backups) is deliberately deferred
 until ready to pay — see "Known broken" below. The repo is now the
 source of truth for schema, not Supabase — see CLAUDE.md.
-**Next up, before anything else:** run migration `0026_task_lists_and_items.sql`
-and push the already-committed-but-not-pushed app code (`EmployeeTasks.tsx`,
-`ManagerTasks.tsx`, `tests/rls/`) back to back, at a quiet time — see the
-2026-09-22 (later) log entry. Run `npm run test:rls` right after. Until
-this happens, `main` is on the OLD schema and the migration/app code sit
-committed locally only.
+**Next up, before anything else:** `0026_task_lists_and_items.sql` is
+RUN and confirmed clean (8 tasks → 8 task_items, `tasks.status`/
+`task_photos.task_id` gone). **Run `0027_fix_can_see_task_item_grant.sql`
+next** — the pre-push RLS suite caught `can_see_task_item()` missing
+the anon EXECUTE revoke every other RPC-exposed helper got in 0007 (see
+2026-09-22 (later) log entry). The app code push (`EmployeeTasks.tsx`,
+`ManagerTasks.tsx`, `tests/rls/`) is still blocked on this — the suite
+runs pre-push and will keep failing that one test until 0027 is live.
 
 **Next up otherwise:** per `launch-plan-fast.md` Week 2, running in parallel:
 1. **Capacitor build** — `cap add ios` and `android`, wire background
