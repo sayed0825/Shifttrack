@@ -13,58 +13,76 @@ Newest entries at the top.
 
 ## Current state
 
-**Phase:** 3 complete — capability-flag permissions and full schema
-baseline (2a–2c), SMTP + Cloudflare hosting + custom domain +
-pending-invite handling (2d), and the Phase 3 security review, Sentry,
-and UptimeRobot (3). Migrations 0015 (orders/cleanup), 0016 (App Store
-account-deletion compliance), 0017 (time_logs recursion fix), 0018
-(`staff_wage_rates`), 0019 (`organisations.order_rate`), and 0020
-(tightens the time_logs self-edit trigger from 0017 — see log below)
-are all run and verified. **0021 (guards tg_shift_delete_notify/
-tg_shift_update_notify against an already-deleted profile — see log
-below) is written and pushed but NOT YET CONFIRMED RUN.** **Week 1 UI
-batch (10 items) complete and verified on the live site**, and this
-session's batch — add-shift availability warnings, driver order
-capture, wage rates, per-order pay, and a full responsiveness pass —
-is also done and verified. **The automated RLS test suite (`tests/rls/`)
-runs green: 128 tests across 11 files, run against the live database
-with teardown confirmed clean via the MCP** — see log below.
-**Re-run it after any RLS policy or trigger change** — it exists
-specifically because that class of bug (the 0017 recursion, the 0020
-self-edit gap, the 0021 notify-trigger FK violation) keeps getting
-found by accident, and it only protects against the next one if it's
-actually run each time, not just left green from the last policy
-shape. Supabase Pro (point-in-time backups) is deliberately deferred
-until ready to pay — see "Known broken" below. The repo is now the
-source of truth for schema, not Supabase — see CLAUDE.md.
-**Next up, before anything else:** `0026_task_lists_and_items.sql` is
-RUN and confirmed clean (8 tasks → 8 task_items, `tasks.status`/
-`task_photos.task_id` gone). **Run `0027_fix_can_see_task_item_grant.sql`
-next** — the pre-push RLS suite caught `can_see_task_item()` missing
-the anon EXECUTE revoke every other RPC-exposed helper got in 0007 (see
-2026-09-22 (later) log entry). The app code push (`EmployeeTasks.tsx`,
-`ManagerTasks.tsx`, `tests/rls/`) is still blocked on this — the suite
-runs pre-push and will keep failing that one test until 0027 is live.
+**This session, in order:** task lists shipped — the item is now the
+unit of work, submitted and reviewed individually (migration 0026,
+which needed three rolled-back attempts before it ran clean,
+reconciled against manual backups each time; 0027 followed immediately
+to revoke an anon EXECUTE grant on `can_see_task_item()` the pre-push
+suite caught). Then the driver pay engine, steps 1-4: effective-dated
+`org_pay_settings` (also fixing a real pre-existing bug where changing
+`organisations.order_rate` silently rewrote every past shift's pay);
+`delivery_runs`/`delivery_drops`; `shift_pay()`/`shift_pay_range()`
+computed on demand, never stored, admin-only, verified against the
+user's own worked example (2 drops, one 6.5mi run, defaults → £3.50
+exactly); manager editing of runs with a full audit trail; native
+compliance for background location, tracked for `tracks_orders`
+drivers only, gated on the role FLAG not a role name; and finally the
+real GPS engine and the Delivered button. **Also, mid-session: a
+serious pre-existing bug, unrelated to any of the above, found and
+fixed** — `tg_protect_own_time_log` (since migration 0020) rejected
+ANY change to `clock_out` in its non-admin/non-manager-of-someone-else
+branch, meaning an ordinary employee could never clock themselves out
+at all. Confirmed live by impersonating a driver in SQL, fixed live,
+recorded as `0031_time_log_clock_out_window.sql`, **pushed**
+(`ccd033ea00be3282b1b4f477b36b0fe11335ea18`), with RLS tests covering
+an ordinary employee clocking out their own shift, the 5-minute
+window's edges, and the sweep's exemption from it — see the log below
+for the full audit (a client-side auto clock-out fallback was removed
+entirely, and two more findings were reported rather than silently
+fixed: the app sends its own device timestamp for clock_out, and a
+clock-out queued offline replays with its original, now possibly
+stale, timestamp).
 
-**Next up otherwise:** per `launch-plan-fast.md` Week 2, running in parallel:
-1. **Capacitor build** — `cap add ios` and `android`, wire background
-   geolocation into clock-in, verify `Info.plist` and
-   `AndroidManifest.xml`, build and test on a real device, icons and
-   splash screens.
-2. **Run migration 0021**, then re-run `npm run test:rls` to confirm
-   it's still green with the fix actually applied — right now neither
-   a manual run nor the suite has confirmed it live (see "Known
-   broken").
-3. Real-device check of the branding + visual redesign pass pushed
-   2026-09-09 (see log below) — NOT YET REVIEWED on a real device, unlike
-   everything else in this file so far.
-4. Wire `organisations.primary_colour` into actual theming — it's
-   fetched by `useOrganisation` but nothing consumes it yet; the app is
-   still hardcoded to brand green (#14532D) everywhere.
-5. The purged-photo fallback in Task History (a task older than the
-   one-month photo-purge cron, where the signed URL request should fail
-   gracefully) hasn't actually been exercised. Needs a task old enough
-   for the purge to have already run against it.
+**Not yet tested: the GPS engine (step 4)** — needs an actual drive
+with a test store geofence set up at home; nothing about it has been
+verified on a real device this session. See "Known broken" below for
+the exact testing note (1.5 m/s floor filters walking pace — test in a
+car, not on foot).
+
+**Next up, before anything else:**
+1. Run `0032_record_delivery_run.sql` (driver pay engine step 4's last
+   piece — the atomic run+drops insert), then push the already-committed
+   app code (`626e706dec90a3a2a770090e5ddecab258cc6375`, currently
+   local-only — GPS engine, Delivered button, offlineQueue.js's
+   `delivery_run_complete` entry type) and re-run `npm run test:rls`
+   to confirm.
+2. The actual device test drive for the GPS engine, once the above is
+   live.
+
+**Older, still open, unrelated to this session:**
+- Migration 0021 (guards the two shift-notify triggers against an
+  already-deleted profile) — still not confirmed run against the live
+  database; see "Known broken" below, unchanged since it was first
+  logged.
+- Real-device check of the branding + visual redesign pass pushed
+  2026-09-09 — still not reviewed on a real device.
+- Wire `organisations.primary_colour` into actual theming — still
+  fetched by `useOrganisation` but nothing consumes it; the app is
+  still hardcoded to brand green everywhere.
+- The purged-photo fallback in Task History still hasn't been
+  exercised — needs a task old enough for the one-month purge cron to
+  have already run against it.
+
+The automated RLS test suite (`tests/rls/`) is at 164 tests across 14
+files as of the clock-out fix, run against the live database with
+teardown confirmed clean. Re-run it after any RLS policy or trigger
+change — it exists specifically because that class of bug (0017's
+recursion, 0020's self-edit gap, 0021's notify-trigger FK violation,
+and now the clock-out window) keeps getting found by accident, and it
+only protects against the next one if it's actually run each time.
+Supabase Pro (point-in-time backups) is deliberately deferred until
+ready to pay — see "Known broken" below. The repo is the source of
+truth for schema, not Supabase — see CLAUDE.md.
 
 **Outside engineering, gates the launch date:** Apple Developer and
 Google Play accounts — not yet started. Pure calendar time (Apple
