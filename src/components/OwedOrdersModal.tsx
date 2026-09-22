@@ -13,6 +13,11 @@ interface OwedLog {
   clock_out: string;
   role_at_clock_in: string | null;
   locations: { name: string } | null;
+  // Runs/drops this shift already has, via GPS taps -- a shift with any
+  // shows the one-tap "N orders across M runs" confirmation instead of
+  // the blank manual entry. A missed Delivered tap would otherwise
+  // silently underpay the driver, so this is never skipped outright.
+  delivery_runs: { id: string; delivery_drops: { id: string }[] }[];
 }
 
 function formatShiftLabel(log: OwedLog): string {
@@ -32,6 +37,15 @@ function formatShiftLabel(log: OwedLog): string {
  * for has one. Mounted once at the dashboard root so it fires on login
  * regardless of which tab last persisted, and re-checked whenever `checkSignal`
  * changes (the Clock/Tasks tabs becoming active, or right after a clock-out).
+ *
+ * A shift with zero delivery_runs shows the plain manual entry, as
+ * always. A shift with any shows a one-tap confirmation of the
+ * tap-derived drop count instead — never skipped outright, since a
+ * missed Delivered tap would otherwise silently underpay the driver.
+ * Confirming as-is or adjusting both write orders_count (see shift_pay's
+ * override precedence, migration 0028) — either way this shift drops out
+ * of the `.is('orders_count', null)` queue below for good, rather than
+ * re-prompting forever.
  */
 export default function OwedOrdersModal({
   profile,
@@ -53,7 +67,7 @@ export default function OwedOrdersModal({
 
     const { data, error } = await supabase
       .from('time_logs')
-      .select('id, clock_in, clock_out, role_at_clock_in, locations ( name )')
+      .select('id, clock_in, clock_out, role_at_clock_in, locations ( name ), delivery_runs ( id, delivery_drops ( id ) )')
       .eq('user_id', profile.id)
       .not('clock_out', 'is', null)
       .is('orders_count', null)
@@ -63,7 +77,7 @@ export default function OwedOrdersModal({
     if (error || !data) return;
 
     setQueue(
-      data.filter((log) => logNeedsOrdersReport(log.role_at_clock_in, profile.role, trackedRoleNames))
+      data.filter((log: OwedLog) => logNeedsOrdersReport(log.role_at_clock_in, profile.role, trackedRoleNames))
     );
   }, [profile.id, profile.role, roles, trackedRoleNames]);
 
@@ -72,6 +86,9 @@ export default function OwedOrdersModal({
   }, [load, checkSignal]);
 
   const current = queue[0] ?? null;
+  const runsCount = current?.delivery_runs.length ?? 0;
+  const dropsCount = current?.delivery_runs.reduce((sum, r) => sum + r.delivery_drops.length, 0) ?? 0;
+  const hasRuns = runsCount > 0;
 
   // This component stays mounted the whole session and only toggles
   // between rendering null and the dialog — reset on every fall to null,
@@ -79,6 +96,15 @@ export default function OwedOrdersModal({
   // resetDocumentScroll for why this matters only in the native build.
   useEffect(() => {
     if (!current) resetDocumentScroll();
+  }, [current]);
+
+  // A shift with runs starts pre-filled with the tap-derived count, so
+  // accepting it is one tap (submit without changing anything); a plain
+  // manual-entry shift still starts blank, as before.
+  useEffect(() => {
+    setOrders(current && current.delivery_runs.length > 0
+      ? String(current.delivery_runs.reduce((sum, r) => sum + r.delivery_drops.length, 0))
+      : '');
   }, [current]);
 
   const handleSubmit = async () => {
@@ -135,22 +161,44 @@ export default function OwedOrdersModal({
         </div>
 
         <div className="mt-4 space-y-3">
-          <div>
-            <label htmlFor="owed-orders-count" className="block text-sm font-medium text-ink">
-              Orders completed
-            </label>
-            <input
-              id="owed-orders-count"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              step={1}
-              value={orders}
-              onChange={(e) => setOrders(e.target.value)}
-              autoFocus
-              className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            />
-          </div>
+          {hasRuns ? (
+            <div>
+              <p className="text-sm text-ink">
+                {dropsCount} order{dropsCount === 1 ? '' : 's'} across {runsCount} run{runsCount === 1 ? '' : 's'}{' '}
+                — correct?
+              </p>
+              <label htmlFor="owed-orders-count" className="mt-2 block text-xs font-medium text-ink/60">
+                Adjust if that's not right
+              </label>
+              <input
+                id="owed-orders-count"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={orders}
+                onChange={(e) => setOrders(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              />
+            </div>
+          ) : (
+            <div>
+              <label htmlFor="owed-orders-count" className="block text-sm font-medium text-ink">
+                Orders completed
+              </label>
+              <input
+                id="owed-orders-count"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                step={1}
+                value={orders}
+                onChange={(e) => setOrders(e.target.value)}
+                autoFocus
+                className="mt-1.5 w-full rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              />
+            </div>
+          )}
 
           {fault && <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">{fault}</p>}
 
@@ -161,7 +209,7 @@ export default function OwedOrdersModal({
             className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-dark disabled:opacity-60"
           >
             {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Check className="h-4 w-4" aria-hidden="true" />}
-            Submit
+            {hasRuns ? 'Confirm' : 'Submit'}
           </button>
         </div>
       </div>

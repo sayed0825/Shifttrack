@@ -104,6 +104,9 @@ interface TimeLogRow {
   locations?: { name: string } | null;
   orders_count?: number | null;
   role_at_clock_in?: string | null;
+  // Hours, drops and miles are the driver's own -- never money, matching
+  // shift_pay()'s own gating (a driver's RPC call always returns null).
+  delivery_runs?: { one_way_miles: number | null }[];
 }
 
 /** A time log joined with its shift's start_time, for late detection. */
@@ -1000,7 +1003,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
     const { data } = await supabase
       .from('time_logs')
       .select(
-        'id, clock_in, clock_out, notes, location_id, orders_count, role_at_clock_in, locations:location_id ( name ), shifts:shift_id ( start_time )'
+        'id, clock_in, clock_out, notes, location_id, orders_count, role_at_clock_in, locations:location_id ( name ), shifts:shift_id ( start_time ), delivery_runs ( one_way_miles )'
       )
       .eq('user_id', user.id)
       .gte('clock_in', weekStart.toISOString())
@@ -1015,6 +1018,9 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
 
   const totalHours = useMemo(() => logs.reduce((sum, log) => sum + durationHours(log.clock_in, log.clock_out), 0), [logs]);
   const hasOpenLog = logs.some((log) => log.clock_out === null);
+
+  const milesFor = (log: TimeLogWithShift): number =>
+    (log.delivery_runs ?? []).reduce((sum, r) => sum + (r.one_way_miles ?? 0), 0);
 
   return (
     <div className="space-y-4">
@@ -1100,6 +1106,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                     {needsReport && (
                       <p className="mt-1 text-xs text-ink/60">
                         {log.orders_count == null ? ORDERS_NOT_YET_REPORTED : `${log.orders_count} orders`}
+                        {milesFor(log) > 0 && ` · ${milesFor(log).toFixed(1)} mi`}
                       </p>
                     )}
                   </div>
@@ -1119,6 +1126,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                 <th scope="col">Clock out</th>
                 <th scope="col">Location</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
+                {showOrdersColumns && <th scope="col">Miles</th>}
                 <th scope="col">Hours</th>
               </tr>
             </thead>
@@ -1127,6 +1135,7 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                 const shiftStart = log.shifts?.start_time ?? null;
                 const late = isLate(log.clock_in, shiftStart, graceMinutes);
                 const needsReport = logNeedsOrdersReport(log.role_at_clock_in, profile.role, trackedRoleNames);
+                const miles = milesFor(log);
 
                 return (
                   <tr key={log.id}>
@@ -1147,6 +1156,9 @@ function MyTimesheetsTab({ profile }: { profile: Profile }): ReactNode {
                       <td className="px-2 py-3 tabular-nums text-ink">
                         {ordersCellText(needsReport, log.orders_count ?? null)}
                       </td>
+                    )}
+                    {showOrdersColumns && (
+                      <td className="px-2 py-3 tabular-nums text-ink">{miles > 0 ? miles.toFixed(1) : '—'}</td>
                     )}
                     <td className="px-4 py-3 text-right tabular-nums font-medium text-ink">
                       {formatHours(durationHours(log.clock_in, log.clock_out))}

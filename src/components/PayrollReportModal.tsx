@@ -4,17 +4,9 @@ import { supabase } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useManagedLocations } from '../hooks/useManagedLocations';
 import { usePermissions } from '../hooks/usePermissions';
-import { useOrderRate } from '../hooks/useOrderRate';
 import { orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
-import {
-  WAGE_RATE_FIELDS,
-  formatCurrencyAmount,
-  groupWageRatesByProfile,
-  localDateKeyFromIso,
-  rateOnDate,
-  type WageRateRow,
-} from '../lib/wageRates';
+import { formatCurrencyAmount } from '../lib/wageRates';
 
 interface TimeLogRow {
   id: string;
@@ -28,20 +20,39 @@ interface TimeLogRow {
   locations: { name: string } | null;
 }
 
+// The one and only shape of a shift's pay -- always sourced from
+// shift_pay()/shift_pay_range(), never recomputed here. See migrations
+// 0028/0029: two implementations of the same formula can only ever
+// drift apart from each other.
+interface ShiftPayBreakdown {
+  hours: number;
+  hourly_rate: number | null;
+  hours_pay: number;
+  orders_count: number;
+  order_rate: number;
+  orders_pay: number;
+  total_miles: number;
+  mileage_pay: number;
+  total_pay: number;
+}
+
+interface ShiftPayRangeRow {
+  time_log_id: string;
+  breakdown: ShiftPayBreakdown;
+}
+
 interface ReportRow {
   location: string;
   role: string;
   name: string;
   userId: string;
   hours: number;
+  // Resolved order count (drops-or-override, via shift_pay_range) for an
+  // Administrator; the raw manual entry for anyone else, same as before.
   orders: number;
-  // Sum of hours × the rate effective on each log's date. Stays 0 when the
-  // viewer isn't an Administrator, or no rate is on file for a date — see
-  // the same "missing rate contributes 0" choice in ManagerDashboard's
-  // TimesheetsPanel.
   cost: number;
-  // cost + (orders × the org's order rate, captured at generation time —
-  // see reportOrderRate). Stays 0 for anyone but an Administrator.
+  miles: number;
+  mileagePay: number;
   total: number;
 }
 
@@ -54,10 +65,12 @@ interface PersonTotal {
   hours: number;
   orders: number;
   cost: number;
+  miles: number;
+  mileagePay: number;
   total: number;
 }
 
-type ColumnKey = 'location' | 'role' | 'name' | 'hours' | 'orders' | 'cost' | 'total';
+type ColumnKey = 'location' | 'role' | 'name' | 'hours' | 'orders' | 'cost' | 'miles' | 'mileagePay' | 'total';
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
   location: 'Location',
@@ -66,13 +79,15 @@ const COLUMN_LABELS: Record<ColumnKey, string> = {
   hours: 'Hours',
   orders: 'Orders',
   cost: 'Cost',
+  miles: 'Miles',
+  mileagePay: 'Mileage pay',
   total: 'Total',
 };
 
 // Columns that make sense on a per-person summary — Location and Role don't,
 // since one person's total spans every location/role they worked in the
 // period.
-const PERSON_COLUMNS: ColumnKey[] = ['name', 'hours', 'orders', 'cost', 'total'];
+const PERSON_COLUMNS: ColumnKey[] = ['name', 'hours', 'orders', 'cost', 'miles', 'mileagePay', 'total'];
 
 function localDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -106,7 +121,6 @@ export default function PayrollReportModal({
   const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
   const showOrdersColumns = orgTracksOrders(roles);
   const { isAdmin } = usePermissions();
-  const { orderRate } = useOrderRate();
   const { locationIds: managedLocationIds } = useManagedLocations();
   const managedLocationSet = useMemo(() => new Set(managedLocationIds), [managedLocationIds]);
   // Never offer a location the database would reject the viewer for
@@ -129,19 +143,17 @@ export default function PayrollReportModal({
   const [fault, setFault] = useState<string | null>(null);
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [personTotals, setPersonTotals] = useState<PersonTotal[] | null>(null);
-  // The order rate as it stood when this report was generated, so the
-  // figures stay correct even if the setting changes later — and so it can
-  // be printed into the report header/CSV, months later, self-explanatory.
-  const [reportOrderRate, setReportOrderRate] = useState<number | null>(null);
   const [excludedCount, setExcludedCount] = useState(0);
 
   // Which columns are available at all depends on the org (orders) and the
-  // viewer (cost/total, Administrator only) — neither is ever even offered
-  // as an option to anyone else.
+  // viewer (money columns, Administrator only) — neither is ever even
+  // offered as an option to anyone else. Miles/Mileage pay are sourced
+  // from shift_pay_range same as Cost/Total, so they're admin-gated too —
+  // there's no manager-facing query for them yet.
   const availableColumns = useMemo<ColumnKey[]>(() => {
     const cols: ColumnKey[] = ['location', 'role', 'name', 'hours'];
     if (showOrdersColumns) cols.push('orders');
-    if (isAdmin) cols.push('cost', 'total');
+    if (isAdmin) cols.push('cost', 'miles', 'mileagePay', 'total');
     return cols;
   }, [showOrdersColumns, isAdmin]);
   const [selectedColumns, setSelectedColumns] = useState<Set<ColumnKey>>(new Set());
@@ -208,12 +220,12 @@ export default function PayrollReportModal({
     setFault(null);
     setRows(null);
     setPersonTotals(null);
-    setReportOrderRate(null);
 
-    // Rates are only ever fetched for an Administrator — staff_wage_rates
-    // RLS would return nothing to anyone else, but this skips the request
-    // entirely rather than firing it and discarding an empty result.
-    const [{ data, error }, ratesResult] = await Promise.all([
+    // shift_pay_range is only ever called for an Administrator — it
+    // returns no rows to anyone else anyway (see migration 0029), but
+    // this skips the request entirely rather than firing it and
+    // discarding an empty result.
+    const [{ data, error }, payResult] = await Promise.all([
       supabase
         .from('time_logs')
         .select(
@@ -224,27 +236,38 @@ export default function PayrollReportModal({
         .order('clock_in')
         .returns<TimeLogRow[]>(),
       isAdmin
-        ? supabase.from('staff_wage_rates').select(WAGE_RATE_FIELDS).returns<WageRateRow[]>()
-        : Promise.resolve({ data: [] as WageRateRow[], error: null }),
+        ? supabase.rpc('shift_pay_range', {
+            p_from: startDate,
+            p_to: endDate,
+            p_location_ids: Array.from(selectedLocations),
+            p_roles: Array.from(selectedRoles),
+          })
+        : Promise.resolve({ data: [] as ShiftPayRangeRow[], error: null }),
     ]);
 
     setLoading(false);
 
-    if (error) {
+    if (error || payResult.error) {
       setFault('Could not load timesheet data. Try again.');
       return;
     }
 
     const logs = data ?? [];
-    const ratesByProfile = groupWageRatesByProfile(ratesResult.data ?? []);
-    // Snapshot the org's order rate at generation time — a later change to
-    // the setting must not silently rewrite an already-generated report.
-    const currentOrderRate = isAdmin ? orderRate : 0;
+    // shift_pay_range filters by (clock_in at Europe/London)::date, this
+    // query by the browser's own local-day boundaries — the same
+    // pre-existing timezone inconsistency wageRates.ts's rateOnDate has
+    // always had, not something new here. A row missing from the map
+    // (only possible right at a range edge) contributes 0 rather than
+    // throwing, same as a genuinely missing rate always has.
+    const payMap = new Map<string, ShiftPayBreakdown>();
+    for (const row of (payResult.data ?? []) as ShiftPayRangeRow[]) {
+      payMap.set(row.time_log_id, row.breakdown);
+    }
 
     // An open shift has no final duration and would understate or inflate
     // the total, so it's excluded — but silently dropping hours before
     // payroll is worse than the gap, hence the count surfaced below.
-    const withClockOut = logs.filter((log) => log.clock_out !== null);
+    const withClockOut = logs.filter((log: TimeLogRow) => log.clock_out !== null);
     setExcludedCount(logs.length - withClockOut.length);
 
     // The role a person held at clock-in, not their current one — a
@@ -253,7 +276,7 @@ export default function PayrollReportModal({
     // column ever being set.
     const roleFor = (log: TimeLogRow) => log.role_at_clock_in ?? log.profiles?.role ?? null;
 
-    const scoped = withClockOut.filter((log) => {
+    const scoped = withClockOut.filter((log: TimeLogRow) => {
       if (log.location_id && !selectedLocations.has(log.location_id)) return false;
       const role = roleFor(log);
       if (role && !selectedRoles.has(role)) return false;
@@ -269,25 +292,26 @@ export default function PayrollReportModal({
       const name = log.profiles?.full_name ?? log.profiles?.first_name ?? 'Unknown';
       const key = `${location}|${role}|${name}`;
       const hours = (new Date(log.clock_out as string).getTime() - new Date(log.clock_in).getTime()) / 3_600_000;
-      // Null (still owed, or a role that never tracked orders) contributes
-      // nothing to the total rather than being treated as a hard zero.
-      const orders = log.orders_count ?? 0;
-      // The rate effective on the shift's own date, not today's — a rate
-      // change must never rewrite the cost of a shift that already
-      // happened. Missing rate contributes 0, same as an unset order count.
-      const rate = isAdmin ? rateOnDate(ratesByProfile.get(log.user_id), localDateKeyFromIso(log.clock_in)) : null;
-      const cost = rate === null ? 0 : rate * hours;
-      const orderPay = orders * currentOrderRate;
-      const rowTotal = cost + orderPay;
+      const breakdown = isAdmin ? payMap.get(log.id) : undefined;
+      // Resolved order count (drops-or-override) when it's on file;
+      // falls back to the raw manual entry, same "missing contributes 0"
+      // choice as the money figures below.
+      const orders = breakdown ? breakdown.orders_count : (log.orders_count ?? 0);
+      const cost = breakdown ? breakdown.hours_pay : 0;
+      const miles = breakdown ? breakdown.total_miles : 0;
+      const mileagePay = breakdown ? breakdown.mileage_pay : 0;
+      const rowTotal = breakdown ? breakdown.total_pay : 0;
 
       const existing = grouped.get(key);
       if (existing) {
         existing.hours += hours;
         existing.orders += orders;
         existing.cost += cost;
+        existing.miles += miles;
+        existing.mileagePay += mileagePay;
         existing.total += rowTotal;
       } else {
-        grouped.set(key, { location, role, name, userId: log.user_id, hours, orders, cost, total: rowTotal });
+        grouped.set(key, { location, role, name, userId: log.user_id, hours, orders, cost, miles, mileagePay, total: rowTotal });
       }
 
       // Across every row for this person in the period — not just this one
@@ -301,11 +325,15 @@ export default function PayrollReportModal({
           hours: 0,
           orders: 0,
           cost: 0,
+          miles: 0,
+          mileagePay: 0,
           total: 0,
         };
         personEntry.hours += hours;
         personEntry.orders += orders;
         personEntry.cost += cost;
+        personEntry.miles += miles;
+        personEntry.mileagePay += mileagePay;
         personEntry.total += rowTotal;
         personTotalsMap.set(log.user_id, personEntry);
       }
@@ -322,12 +350,13 @@ export default function PayrollReportModal({
         ? Array.from(personTotalsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
         : null
     );
-    setReportOrderRate(isAdmin ? currentOrderRate : null);
   };
 
   const total = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.hours, 0), [rows]);
   const totalOrders = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.orders, 0), [rows]);
   const totalCost = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.cost, 0), [rows]);
+  const totalMiles = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.miles, 0), [rows]);
+  const totalMileagePay = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.mileagePay, 0), [rows]);
   const grandTotal = useMemo(() => (rows ?? []).reduce((sum, r) => sum + r.total, 0), [rows]);
 
   const downloadCsv = () => {
@@ -350,6 +379,10 @@ export default function PayrollReportModal({
           return trackedRoleNames.has(row.role) ? String(row.orders) : '';
         case 'cost':
           return row.cost.toFixed(2);
+        case 'miles':
+          return row.miles.toFixed(2);
+        case 'mileagePay':
+          return row.mileagePay.toFixed(2);
         case 'total':
           return row.total.toFixed(2);
       }
@@ -364,6 +397,10 @@ export default function PayrollReportModal({
           return String(totalOrders);
         case 'cost':
           return totalCost.toFixed(2);
+        case 'miles':
+          return totalMiles.toFixed(2);
+        case 'mileagePay':
+          return totalMileagePay.toFixed(2);
         case 'total':
           return grandTotal.toFixed(2);
         default:
@@ -375,12 +412,7 @@ export default function PayrollReportModal({
     const rowLine = (row: ReportRow) => columns.map((col) => cellFor(row, col)).join(',');
     const totalLine = columns.map(totalFor).join(',');
 
-    const metaLines = [`${startDate},${endDate}`];
-    if (isAdmin && reportOrderRate !== null) {
-      metaLines.push(`Order rate per completed order,${reportOrderRate.toFixed(2)}`);
-    }
-
-    const lines: string[] = [...metaLines, '', header, ...rows.map(rowLine), totalLine];
+    const lines: string[] = [`${startDate},${endDate}`, '', header, ...rows.map(rowLine), totalLine];
 
     // Per-person totals across the whole period, not just one row — a
     // second table in the same file, using whichever of the same columns
@@ -399,6 +431,10 @@ export default function PayrollReportModal({
               return String(person.orders);
             case 'cost':
               return person.cost.toFixed(2);
+            case 'miles':
+              return person.miles.toFixed(2);
+            case 'mileagePay':
+              return person.mileagePay.toFixed(2);
             case 'total':
               return person.total.toFixed(2);
             default:
@@ -551,15 +587,6 @@ export default function PayrollReportModal({
             </p>
           )}
 
-          {/* Printed into the CSV too, so an exported file stays
-              self-explanatory months after the setting may have changed. */}
-          {rows && isAdmin && reportOrderRate !== null && (
-            <p className="rounded-lg bg-bg px-3 py-2 text-xs text-ink/60">
-              Cost and Total include order pay at {formatCurrencyAmount(reportOrderRate)} per completed
-              order — the rate in effect when this report was generated.
-            </p>
-          )}
-
           {rows &&
             (rows.length === 0 ? (
               <p className="text-sm text-ink/60">No completed time logs in this range for the selected filters.</p>
@@ -581,12 +608,20 @@ export default function PayrollReportModal({
                           {showOrdersColumns && rowTracksOrders && (
                             <p className="mt-1 text-xs text-ink/60">{row.orders} orders</p>
                           )}
+                          {isAdmin && row.miles > 0 && (
+                            <p className="text-xs text-ink/60">{row.miles.toFixed(1)} mi</p>
+                          )}
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-sm font-medium tabular-nums text-ink">{row.hours.toFixed(2)}h</p>
                           {isAdmin && (
                             <>
                               <p className="text-xs tabular-nums text-ink/60">{formatCurrencyAmount(row.cost)}</p>
+                              {row.mileagePay > 0 && (
+                                <p className="text-xs tabular-nums text-ink/60">
+                                  +{formatCurrencyAmount(row.mileagePay)} mi
+                                </p>
+                              )}
                               <p className="text-xs font-semibold tabular-nums text-ink">
                                 {formatCurrencyAmount(row.total)}
                               </p>
@@ -608,6 +643,8 @@ export default function PayrollReportModal({
                         <th className="px-3 py-2 text-right">Hours</th>
                         {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
                         {isAdmin && <th className="px-3 py-2 text-right">Cost</th>}
+                        {isAdmin && <th className="px-3 py-2 text-right">Miles</th>}
+                        {isAdmin && <th className="px-3 py-2 text-right">Mileage pay</th>}
                         {isAdmin && <th className="px-3 py-2 text-right">Total</th>}
                       </tr>
                     </thead>
@@ -633,6 +670,16 @@ export default function PayrollReportModal({
                             </td>
                           )}
                           {isAdmin && (
+                            <td className="px-3 py-2 text-right tabular-nums text-ink">
+                              {row.miles > 0 ? row.miles.toFixed(1) : '—'}
+                            </td>
+                          )}
+                          {isAdmin && (
+                            <td className="px-3 py-2 text-right tabular-nums text-ink">
+                              {row.mileagePay > 0 ? formatCurrencyAmount(row.mileagePay) : '—'}
+                            </td>
+                          )}
+                          {isAdmin && (
                             <td className="px-3 py-2 text-right tabular-nums font-medium text-ink">
                               {formatCurrencyAmount(row.total)}
                             </td>
@@ -653,6 +700,7 @@ export default function PayrollReportModal({
                 <span>{total.toFixed(2)}h</span>
                 {showOrdersColumns && <span>{totalOrders} orders</span>}
                 {isAdmin && <span>{formatCurrencyAmount(totalCost)} cost</span>}
+                {isAdmin && totalMileagePay > 0 && <span>{formatCurrencyAmount(totalMileagePay)} mileage</span>}
                 {isAdmin && <span>{formatCurrencyAmount(grandTotal)} total</span>}
               </span>
             </div>
@@ -672,10 +720,14 @@ export default function PayrollReportModal({
                         {showOrdersColumns && (
                           <p className="text-xs text-ink/60">{person.orders} orders</p>
                         )}
+                        {person.miles > 0 && <p className="text-xs text-ink/60">{person.miles.toFixed(1)} mi</p>}
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-sm font-medium tabular-nums text-ink">{person.hours.toFixed(2)}h</p>
                         <p className="text-xs tabular-nums text-ink/60">{formatCurrencyAmount(person.cost)}</p>
+                        {person.mileagePay > 0 && (
+                          <p className="text-xs tabular-nums text-ink/60">+{formatCurrencyAmount(person.mileagePay)} mi</p>
+                        )}
                         <p className="text-xs font-semibold tabular-nums text-ink">
                           {formatCurrencyAmount(person.total)}
                         </p>
@@ -692,6 +744,8 @@ export default function PayrollReportModal({
                         <th className="px-3 py-2 text-right">Hours</th>
                         {showOrdersColumns && <th className="px-3 py-2 text-right">Orders</th>}
                         <th className="px-3 py-2 text-right">Cost</th>
+                        <th className="px-3 py-2 text-right">Miles</th>
+                        <th className="px-3 py-2 text-right">Mileage pay</th>
                         <th className="px-3 py-2 text-right">Total</th>
                       </tr>
                     </thead>
@@ -707,6 +761,12 @@ export default function PayrollReportModal({
                           )}
                           <td className="px-3 py-2 text-right tabular-nums text-ink">
                             {formatCurrencyAmount(person.cost)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">
+                            {person.miles > 0 ? person.miles.toFixed(1) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-ink">
+                            {person.mileagePay > 0 ? formatCurrencyAmount(person.mileagePay) : '—'}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums font-semibold text-ink">
                             {formatCurrencyAmount(person.total)}

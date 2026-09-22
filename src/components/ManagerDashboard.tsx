@@ -24,6 +24,9 @@ import {
   MapPin,
   LogOut,
   MoreHorizontal,
+  Plus,
+  Route,
+  Trash2,
   Users,
   X,
 } from 'lucide-react';
@@ -38,14 +41,28 @@ import { friendlyError } from '../lib/friendlyError';
 import { logNeedsOrdersReport, ordersCellText, ORDERS_NOT_YET_REPORTED, orgTracksOrders, tracksOrdersRoleNames } from '../lib/tracksOrders';
 import { loadPersistedTab, savePersistedTab } from '../lib/persistedTab';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
-import {
-  WAGE_RATE_FIELDS,
-  formatCurrencyAmount,
-  groupWageRatesByProfile,
-  localDateKeyFromIso,
-  rateOnDate,
-  type WageRateRow,
-} from '../lib/wageRates';
+import { formatCurrencyAmount } from '../lib/wageRates';
+
+// The one and only shape of a shift's pay -- always sourced from
+// shift_pay()/shift_pay_range(), never recomputed client-side. See
+// migrations 0028/0029: two implementations of the same formula can only
+// ever drift apart from each other.
+interface ShiftPayBreakdown {
+  hours: number;
+  hourly_rate: number | null;
+  hours_pay: number;
+  orders_count: number;
+  order_rate: number;
+  orders_pay: number;
+  total_miles: number;
+  mileage_pay: number;
+  total_pay: number;
+}
+
+interface ShiftPayRangeRow {
+  time_log_id: string;
+  breakdown: ShiftPayBreakdown;
+}
 import FilterButton from './FilterButton';
 import LiveMap from './LiveMap';
 import ManagerScheduler from './ManagerScheduler';
@@ -128,9 +145,10 @@ export interface TimesheetSummary {
   profile: Profile | null;
   logs: TimeLogWithShift[];
   totalHours: number;
-  // Sum of hours × the rate effective on each log's date. Admin-only: stays
-  // 0 for anyone else, since TimesheetsPanel never fetches rates for them.
+  // Sourced from shift_pay_range() — admin-only: stays 0 for anyone else,
+  // since TimesheetsPanel never calls it for them.
   totalCost: number;
+  totalMileagePay: number;
   hasOpenLog: boolean;
 }
 
@@ -171,6 +189,10 @@ function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
+}
+
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function startOfDay(date: Date): Date {
@@ -837,46 +859,42 @@ function TimesheetsPanel({
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<TimeLogRow | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const [wageRates, setWageRates] = useState<WageRateRow[]>([]);
+  const [payByLog, setPayByLog] = useState<Map<string, ShiftPayBreakdown>>(new Map());
 
   const { graceMinutes } = useLateGrace();
   const trackedRoleNames = useMemo(() => tracksOrdersRoleNames(roles), [roles]);
   const showOrdersColumns = orgTracksOrders(roles);
 
-  // Pay data. Never fetched for anyone but an Administrator — staff_wage_rates
-  // RLS would return nothing to anyone else anyway, but this also skips the
-  // request entirely rather than firing it and discarding an empty result.
+  // Pay for the whole week in one call — never fetched for anyone but an
+  // Administrator, since shift_pay_range() returns nothing to anyone else
+  // anyway (see migration 0029), but this also skips the request entirely
+  // rather than firing it and discarding an empty result.
   useEffect(() => {
     if (!isAdmin) {
-      setWageRates([]);
+      setPayByLog(new Map());
       return undefined;
     }
     let cancelled = false;
 
     (async () => {
-      const { data } = await supabase.from('staff_wage_rates').select(WAGE_RATE_FIELDS).returns<WageRateRow[]>();
-      if (!cancelled) setWageRates(data ?? []);
+      const { data } = await supabase.rpc('shift_pay_range', {
+        p_from: localDateKey(weekStart),
+        p_to: localDateKey(addDays(weekStart, 6)),
+        p_location_ids: null,
+        p_roles: null,
+      });
+      if (cancelled) return;
+      const map = new Map<string, ShiftPayBreakdown>();
+      for (const row of (data ?? []) as ShiftPayRangeRow[]) map.set(row.time_log_id, row.breakdown);
+      setPayByLog(map);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [isAdmin]);
+  }, [isAdmin, weekStart]);
 
-  const ratesByProfile = useMemo(() => groupWageRatesByProfile(wageRates), [wageRates]);
-
-  // Cost for one log: hours × the rate effective on the shift's own date
-  // (its clock-in date), not today's rate — a rate change must not silently
-  // rewrite the cost of a shift that already happened. Null when there's no
-  // rate on file for that date, so it renders as "—" rather than a false 0.
-  const costForLog = useCallback(
-    (log: TimeLogWithShift): number | null => {
-      if (!isAdmin) return null;
-      const rate = rateOnDate(ratesByProfile.get(log.user_id), localDateKeyFromIso(log.clock_in));
-      return rate === null ? null : rate * durationHours(log.clock_in, log.clock_out);
-    },
-    [isAdmin, ratesByProfile]
-  );
+  const costForLog = useCallback((log: TimeLogWithShift): number | null => payByLog.get(log.id)?.hours_pay ?? null, [payByLog]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -919,21 +937,24 @@ function TimesheetsPanel({
         logs: [],
         totalHours: 0,
         totalCost: 0,
+        totalMileagePay: 0,
         hasOpenLog: false,
       };
 
       entry.logs.push(log);
       entry.totalHours += durationHours(log.clock_in, log.clock_out);
       entry.totalCost += costForLog(log) ?? 0;
+      entry.totalMileagePay += payByLog.get(log.id)?.mileage_pay ?? 0;
       entry.hasOpenLog ||= log.clock_out === null;
       grouped.set(log.user_id, entry);
     }
 
     return Array.from(grouped.values()).sort((a, b) => b.totalHours - a.totalHours);
-  }, [logs, costForLog]);
+  }, [logs, costForLog, payByLog]);
 
   const weekTotal = summaries.reduce((sum, entry) => sum + entry.totalHours, 0);
   const weekTotalCost = summaries.reduce((sum, entry) => sum + entry.totalCost, 0);
+  const weekTotalMileagePay = summaries.reduce((sum, entry) => sum + entry.totalMileagePay, 0);
 
   if (loading) {
     return (
@@ -1008,6 +1029,7 @@ function TimesheetsPanel({
               {isAdmin && (
                 <p className="text-xs font-medium tabular-nums text-ink/70">
                   {formatCurrencyAmount(summary.totalCost)}
+                  {summary.totalMileagePay > 0 && ` +${formatCurrencyAmount(summary.totalMileagePay)} mi`}
                 </p>
               )}
               <p className="text-xs text-ink/60">
@@ -1056,11 +1078,22 @@ function TimesheetsPanel({
                       <span className="block text-sm font-medium tabular-nums text-ink">
                         {formatHours(durationHours(log.clock_in, log.clock_out))}
                       </span>
-                      {isAdmin && (
-                        <span className="block text-xs tabular-nums text-ink/60">
-                          {costForLog(log) === null ? '—' : formatCurrencyAmount(costForLog(log) as number)}
-                        </span>
-                      )}
+                      {isAdmin && (() => {
+                        const pay = payByLog.get(log.id);
+                        if (!pay) return <span className="block text-xs tabular-nums text-ink/60">—</span>;
+                        return (
+                          <>
+                            <span className="block text-xs tabular-nums text-ink/60">
+                              {formatCurrencyAmount(pay.hours_pay)} hrs
+                              {pay.orders_pay > 0 && ` + ${formatCurrencyAmount(pay.orders_pay)} ord`}
+                              {pay.mileage_pay > 0 && ` + ${formatCurrencyAmount(pay.mileage_pay)} mi`}
+                            </span>
+                            <span className="block text-xs font-semibold tabular-nums text-ink">
+                              {formatCurrencyAmount(pay.total_pay)}
+                            </span>
+                          </>
+                        );
+                      })()}
                     </span>
                     {canManage && (
                       <button
@@ -1087,7 +1120,8 @@ function TimesheetsPanel({
                 <th scope="col">Location</th>
                 {showOrdersColumns && <th scope="col">Orders</th>}
                 <th scope="col">Hours</th>
-                {isAdmin && <th scope="col">Cost</th>}
+                {isAdmin && <th scope="col">Pay</th>}
+                {isAdmin && <th scope="col">Total</th>}
                 {canManage && <th scope="col">Actions</th>}
               </tr>
             </thead>
@@ -1135,11 +1169,29 @@ function TimesheetsPanel({
                   <td className="px-2 py-2.5 text-right tabular-nums font-medium text-ink">
                     {formatHours(durationHours(log.clock_in, log.clock_out))}
                   </td>
-                  {isAdmin && (
-                    <td className="px-2 py-2.5 text-right tabular-nums text-ink">
-                      {costForLog(log) === null ? '—' : formatCurrencyAmount(costForLog(log) as number)}
-                    </td>
-                  )}
+                  {isAdmin && (() => {
+                    const pay = payByLog.get(log.id);
+                    if (!pay) {
+                      return (
+                        <>
+                          <td className="px-2 py-2.5 text-right tabular-nums text-ink">—</td>
+                          <td className="px-2 py-2.5 text-right tabular-nums text-ink">—</td>
+                        </>
+                      );
+                    }
+                    return (
+                      <>
+                        <td className="px-2 py-2.5 text-right text-xs tabular-nums text-ink/70">
+                          {formatCurrencyAmount(pay.hours_pay)} hrs
+                          {pay.orders_pay > 0 && <><br />+{formatCurrencyAmount(pay.orders_pay)} ord</>}
+                          {pay.mileage_pay > 0 && <><br />+{formatCurrencyAmount(pay.mileage_pay)} mi</>}
+                        </td>
+                        <td className="px-2 py-2.5 text-right tabular-nums font-medium text-ink">
+                          {formatCurrencyAmount(pay.total_pay)}
+                        </td>
+                      </>
+                    );
+                  })()}
                   {canManage && (
                     <td className="px-4 py-2.5 text-right">
                       <button
@@ -1379,6 +1431,8 @@ function EditLogModal({
             </div>
           )}
 
+          {showOrdersFields && <RunsSection timeLogId={log.id} />}
+
           <div>
             <label htmlFor="edit-notes" className="block text-sm font-medium text-ink">
               Note
@@ -1424,6 +1478,226 @@ function EditLogModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+// Delivery runs — manager editing (step 2: web-testable, no GPS yet). A
+// manually-added drop has no real device reading, so latitude/longitude/
+// odometer_miles are placeholder zeros — the count is what matters for
+// orders_pay at this stage, not the individual GPS fields, which land in
+// a later step.
+// ===========================================================================
+
+interface DeliveryDropRow {
+  id: string;
+  sequence: number;
+}
+
+interface DeliveryRunRow {
+  id: string;
+  one_way_miles: number | null;
+  gps_one_way_miles: number | null;
+  mileage_source: string | null;
+  delivery_drops: DeliveryDropRow[];
+}
+
+const RUN_FIELDS = 'id, one_way_miles, gps_one_way_miles, mileage_source, delivery_drops ( id, sequence )';
+
+function RunsSection({ timeLogId }: { timeLogId: string }): ReactNode {
+  const [runs, setRuns] = useState<DeliveryRunRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fault, setFault] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [milesDraft, setMilesDraft] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('delivery_runs')
+      .select(RUN_FIELDS)
+      .eq('time_log_id', timeLogId)
+      .order('started_at')
+      .returns<DeliveryRunRow[]>();
+    if (!error) setRuns(data ?? []);
+    setLoading(false);
+  }, [timeLogId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Local drafts so typing doesn't fight a mid-edit refetch — one_way_miles
+  // only actually saves on blur.
+  useEffect(() => {
+    setMilesDraft((prev) => {
+      const next = { ...prev };
+      for (const run of runs) if (next[run.id] === undefined) next[run.id] = run.one_way_miles?.toString() ?? '';
+      return next;
+    });
+  }, [runs]);
+
+  const addRun = async () => {
+    setFault(null);
+    const { error } = await supabase
+      .from('delivery_runs')
+      .insert({ time_log_id: timeLogId, started_at: new Date().toISOString() });
+    if (error) setFault(friendlyError(error, 'Could not add a run.'));
+    else await load();
+  };
+
+  // tg_protect_delivery_run (0028) stamps mileage_source='manager' and the
+  // edit-audit fields server-side the moment one_way_miles actually
+  // changes — nothing to set from here.
+  const saveMiles = async (runId: string) => {
+    const raw = milesDraft[runId]?.trim() ?? '';
+    const value = raw === '' ? null : Number(raw);
+    if (raw !== '' && (!Number.isFinite(value) || (value as number) < 0)) {
+      setFault('One-way miles must be zero or more.');
+      return;
+    }
+    setBusyId(runId);
+    setFault(null);
+    const { error } = await supabase.from('delivery_runs').update({ one_way_miles: value }).eq('id', runId);
+    setBusyId(null);
+    if (error) setFault(friendlyError(error, 'Could not save one-way miles.'));
+    else await load();
+  };
+
+  const deleteRun = async (runId: string) => {
+    setBusyId(runId);
+    setFault(null);
+    const { error } = await supabase.from('delivery_runs').delete().eq('id', runId);
+    setBusyId(null);
+    if (error) setFault(friendlyError(error, 'Could not delete the run.'));
+    else await load();
+  };
+
+  const addDrop = async (run: DeliveryRunRow) => {
+    setBusyId(run.id);
+    setFault(null);
+    const nextSequence = run.delivery_drops.length > 0 ? Math.max(...run.delivery_drops.map((d) => d.sequence)) + 1 : 1;
+    const { error } = await supabase
+      .from('delivery_drops')
+      .insert({ run_id: run.id, sequence: nextSequence, latitude: 0, longitude: 0, odometer_miles: 0 });
+    setBusyId(null);
+    if (error) setFault(friendlyError(error, 'Could not add a drop.'));
+    else await load();
+  };
+
+  const removeDrop = async (dropId: string, runId: string) => {
+    setBusyId(runId);
+    setFault(null);
+    const { error } = await supabase.from('delivery_drops').delete().eq('id', dropId);
+    setBusyId(null);
+    if (error) setFault(friendlyError(error, 'Could not remove the drop.'));
+    else await load();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-ink/60">
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        Loading runs…
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-ink">Delivery runs</p>
+        <button
+          type="button"
+          onClick={() => void addRun()}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark"
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+          Add run
+        </button>
+      </div>
+
+      {fault && <p className="mt-1.5 text-xs text-danger">{fault}</p>}
+
+      {runs.length === 0 ? (
+        <p className="mt-1.5 text-xs text-ink/50">No runs recorded for this shift.</p>
+      ) : (
+        <ul className="mt-1.5 space-y-2">
+          {runs.map((run) => (
+            <li key={run.id} className="rounded-lg border border-border p-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Route className="h-3.5 w-3.5 shrink-0 text-ink/40" aria-hidden="true" />
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.1"
+                  value={milesDraft[run.id] ?? ''}
+                  onChange={(e) => setMilesDraft((prev) => ({ ...prev, [run.id]: e.target.value }))}
+                  onBlur={() => void saveMiles(run.id)}
+                  placeholder="One-way miles"
+                  disabled={busyId === run.id}
+                  aria-label="One-way miles"
+                  className="w-24 rounded-lg border border-border px-2 py-1 text-sm tabular-nums disabled:opacity-60"
+                />
+                <span className="text-xs text-ink/50">mi</span>
+                {/* The original device reading, kept visible alongside any
+                    manager edit — see tg_protect_delivery_run, which never
+                    lets this value itself change once set. */}
+                {run.gps_one_way_miles !== null && (
+                  <span className="text-xs text-ink/40">(GPS: {run.gps_one_way_miles} mi)</span>
+                )}
+                {run.mileage_source === 'manager' && (
+                  <span className="rounded-full bg-bg px-1.5 py-0.5 text-[10px] font-medium text-ink/50">
+                    edited
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void deleteRun(run.id)}
+                  disabled={busyId === run.id}
+                  aria-label="Delete run"
+                  className="ml-auto shrink-0 rounded-lg p-1.5 text-ink/40 hover:bg-danger-bg hover:text-danger disabled:opacity-60"
+                >
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {run.delivery_drops
+                  .slice()
+                  .sort((a, b) => a.sequence - b.sequence)
+                  .map((drop) => (
+                    <span
+                      key={drop.id}
+                      className="inline-flex items-center gap-1 rounded-full bg-bg px-2 py-1 text-xs text-ink/70"
+                    >
+                      Drop {drop.sequence}
+                      <button
+                        type="button"
+                        onClick={() => void removeDrop(drop.id, run.id)}
+                        disabled={busyId === run.id}
+                        aria-label={`Remove drop ${drop.sequence}`}
+                        className="text-ink/40 hover:text-danger disabled:opacity-60"
+                      >
+                        <X className="h-3 w-3" aria-hidden="true" />
+                      </button>
+                    </span>
+                  ))}
+                <button
+                  type="button"
+                  onClick={() => void addDrop(run)}
+                  disabled={busyId === run.id}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-1 text-xs text-ink/60 hover:border-primary/40 disabled:opacity-60"
+                >
+                  <Plus className="h-3 w-3" aria-hidden="true" />
+                  Drop
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
