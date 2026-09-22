@@ -893,6 +893,25 @@ function PhotoToggle({ value, onChange }: { value: boolean; onChange: (v: boolea
 }
 
 function MaxPhotosInput({ value, onChange }: { value: number; onChange: (n: number) => void }): ReactNode {
+  // Raw string while editing — clamping on every keystroke rejects a
+  // valid in-progress edit (e.g. backspacing "1" to type "3" passes
+  // through an empty or partial value that Number()/Math.round() can't
+  // parse, and a controlled input snaps straight back to the old value,
+  // fighting the next keystroke). Same pattern as GracePeriodCard/
+  // OrderRateCard: parse and clamp only once the user's done, on blur.
+  const [text, setText] = useState(String(value));
+
+  useEffect(() => {
+    setText(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const n = Math.round(Number(text));
+    const clamped = Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : 1;
+    setText(String(clamped));
+    onChange(clamped);
+  };
+
   return (
     <div>
       <label htmlFor="max-photos" className="block text-sm font-medium text-ink">
@@ -904,11 +923,9 @@ function MaxPhotosInput({ value, onChange }: { value: number; onChange: (n: numb
         inputMode="numeric"
         min={1}
         max={10}
-        value={value}
-        onChange={(e) => {
-          const n = Math.round(Number(e.target.value));
-          if (Number.isFinite(n)) onChange(Math.min(10, Math.max(1, n)));
-        }}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
         className="mt-1.5 min-h-[44px] w-24 rounded-lg border border-border px-3 py-2 text-base sm:text-sm tabular-nums focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       />
     </div>

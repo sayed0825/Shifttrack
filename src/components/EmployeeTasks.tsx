@@ -250,7 +250,11 @@ function TaskGroup({
 }
 
 function TaskCard({ task, onSelect }: { task: TaskRow; onSelect: (id: string) => void }): ReactNode {
-  const overdue = task.status === 'pending' && new Date(task.due_time).getTime() < Date.now();
+  const pastDue = task.status === 'pending' && new Date(task.due_time).getTime() < Date.now();
+  // Optional means missing it isn't a failure — it never gets the
+  // danger-styled Overdue treatment, just a neutral "Not done".
+  const overdue = pastDue && task.is_required;
+  const missedOptional = pastDue && !task.is_required;
   const rejected = task.status === 'rejected';
 
   return (
@@ -281,6 +285,11 @@ function TaskCard({ task, onSelect }: { task: TaskRow; onSelect: (id: string) =>
         {overdue && (
           <span className="rounded-full bg-danger-bg px-2 py-0.5 text-[11px] font-semibold text-danger">
             Overdue
+          </span>
+        )}
+        {missedOptional && (
+          <span className="rounded-full bg-bg px-2 py-0.5 text-[11px] font-semibold text-ink/50">
+            Not done
           </span>
         )}
         {rejected && (
