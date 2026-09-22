@@ -203,9 +203,11 @@ where ti.task_id = tp.task_id;
 -- Live check before writing this file found exactly this gap: 4 tasks
 -- have photo_path set, only 3 already had a matching task_photos row.
 -- Guarded on storage_path so this can never duplicate the 3 that are
--- already there.
-insert into public.task_photos (org_id, task_item_id, storage_path, uploaded_by, created_at)
-select t.org_id, ti.id, t.photo_path, t.completed_by, coalesce(t.completed_at, t.created_at)
+-- already there. task_id is still NOT NULL at this point in the
+-- migration (dropped further below, only once every row -- including
+-- these -- has a task_item_id), so it must be set on this insert too.
+insert into public.task_photos (org_id, task_id, task_item_id, storage_path, uploaded_by, created_at)
+select t.org_id, t.id, ti.id, t.photo_path, t.completed_by, coalesce(t.completed_at, t.created_at)
 from public.tasks t
 join public.task_items ti on ti.task_id = t.id
 where t.photo_path is not null
