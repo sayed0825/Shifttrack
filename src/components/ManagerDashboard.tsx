@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -201,12 +200,6 @@ function startOfDay(date: Date): Date {
   return result;
 }
 
-function sameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-  );
-}
-
 function formatClock(iso: string | null): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -251,78 +244,19 @@ function fromLocalInput(value: string): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-// ---------------------------------------------------------------------------
-// Auto clock-out
-// ---------------------------------------------------------------------------
-
-/**
- * Closes shifts left open past their scheduled end. Runs client-side as a
- * fallback; a scheduled Postgres job is the durable version of this, since a
- * dashboard that nobody opens never runs the sweep.
- */
-async function runAutoClockOut(viewer: Profile, canManage: boolean): Promise<number> {
-  const nowIso = new Date().toISOString();
-
-  let query = supabase
-    .from('time_logs')
-    .select('id, user_id, location_id, shift_id, clock_in, clock_out, notes')
-    .is('clock_out', null);
-
-  if (!canManage) query = query.eq('user_id', viewer.id);
-
-  const { data: openLogs, error } = await query.returns<Omit<TimeLogRow, 'profiles'>[]>();
-  if (error || !openLogs?.length) return 0;
-
-  const userIds = Array.from(new Set(openLogs.map((log) => log.user_id)));
-  const earliest = openLogs.reduce(
-    (min, log) => (log.clock_in < min ? log.clock_in : min),
-    openLogs[0].clock_in
-  );
-
-  const { data: endedShifts } = await supabase
-    .from('shifts')
-    .select('id, assigned_user_id, location_id, start_time, end_time')
-    .in('assigned_user_id', userIds)
-    .gte('start_time', startOfDay(new Date(earliest)).toISOString())
-    .lt('end_time', nowIso)
-    .returns<Omit<ShiftRow, 'profiles'>[]>();
-
-  if (!endedShifts?.length) return 0;
-
-  const updates = openLogs
-    .map((log) => {
-      const match =
-        endedShifts.find((shift) => shift.id === log.shift_id) ??
-        endedShifts
-          .filter(
-            (shift) =>
-              shift.assigned_user_id === log.user_id &&
-              sameDay(new Date(shift.start_time), new Date(log.clock_in))
-          )
-          .sort((a, b) => b.end_time.localeCompare(a.end_time))[0];
-
-      if (!match) return null;
-      // The time_logs_time_order CHECK rejects clock_out <= clock_in.
-      if (new Date(match.end_time) <= new Date(log.clock_in)) return null;
-
-      return { id: log.id, clock_out: match.end_time };
-    })
-    .filter((update): update is { id: string; clock_out: string } => update !== null);
-
-  if (!updates.length) return 0;
-
-  const results = await Promise.all(
-    updates.map((update) =>
-      supabase
-        .from('time_logs')
-        .update({ clock_out: update.clock_out, notes: AUTO_CLOCK_OUT_NOTE })
-        .eq('id', update.id)
-        .is('clock_out', null) // no-op if the user clocked out in the meantime
-    )
-  );
-
-  return results.filter((result) => !result.error).length;
-}
+// Auto clock-out is server-side only now (pg_cron's sweep_open_shifts(),
+// every 15 minutes) -- a client-side fallback used to run here too, but it
+// closed a shift by writing the shift's own (already-past) end_time as
+// clock_out, running AS the viewer. tg_protect_own_time_log's clock-out
+// window (own row, open -> closed, within 5 minutes of now) correctly
+// rejects that for an employee's own shift or a manager's own -- a
+// forgotten shift more than a few minutes overdue can never close through
+// this path by construction, mistaken timestamp or not. Restricting the
+// fallback to "managers closing someone else's shift" would still leave a
+// manager's own forgotten shift stuck until the cron caught up, so removed
+// outright rather than patched -- the cron already runs independent of
+// whether any dashboard is ever opened, which was the original rationale
+// for having a client-side version at all.
 
 // ===========================================================================
 // Root
@@ -337,8 +271,6 @@ export default function ManagerDashboard(): ReactNode {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
   const { roles } = useRoles();
   const { organisation } = useOrganisation();
   const { canManage, isAdmin } = usePermissions();
@@ -351,8 +283,6 @@ export default function ManagerDashboard(): ReactNode {
     () => locations.filter((l) => managedLocationSet.has(l.id)),
     [locations, managedLocationSet]
   );
-
-  const sweepRan = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -386,16 +316,6 @@ export default function ManagerDashboard(): ReactNode {
         const profile: Profile = profileResult.data;
         setViewer(profile);
         setLocations(locationResult.data ?? []);
-
-        if (!sweepRan.current) {
-          sweepRan.current = true;
-          const closed = await runAutoClockOut(profile, canManage);
-          if (!cancelled && closed > 0) {
-            setNotice(
-              `${closed} shift${closed === 1 ? '' : 's'} left open past the scheduled end were closed automatically.`
-            );
-          }
-        }
       } catch (cause) {
         if (!cancelled) setError(friendlyError(cause, 'The dashboard could not load.'));
       } finally {
@@ -530,21 +450,6 @@ export default function ManagerDashboard(): ReactNode {
             </button>
           </div>
         </div>
-
-        {notice && (
-          <div className="flex items-center gap-2 border-t border-white/20 bg-secondary px-4 py-2 text-xs text-white">
-            <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span className="flex-1">{notice}</span>
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="Dismiss"
-              className="rounded-lg p-0.5 hover:bg-white/20"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </div>
-        )}
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4">

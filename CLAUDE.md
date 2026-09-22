@@ -91,6 +91,24 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
 - Timesheet data is payroll data. Never delete or overwrite a time_log
   without an explicit instruction. Deactivate staff rather than delete —
   deleting a profile cascades to time_logs and erases payroll history.
+- tg_protect_own_time_log's clock-out window (migration 0031): an owner
+  (not admin, not a manager acting on someone else) may set clock_out
+  exactly once, open to closed, only to a value within 5 minutes before
+  now through 1 minute after. A caller with auth.uid() null (pg_cron's
+  sweep_open_shifts(), or the service role) is exempt entirely — that
+  branch exists specifically so the sweep can close a shift hours after
+  it ended. A prior version of this trigger (0020) rejected ANY
+  clock_out change unconditionally in the non-admin/non-manager branch,
+  meaning an ordinary employee could never clock themselves out at
+  all — caught live, not by the RLS suite, which is exactly why
+  tests/rls/negative/time-log-clock-out-window.test.ts now covers it.
+  There is NO client-side auto clock-out fallback any more (removed
+  from ManagerDashboard.tsx) — sweep_open_shifts() is the only thing
+  that closes an overdue shift, and it runs as a caller this window
+  doesn't apply to for exactly that reason. Do not add a client-side
+  version back without accounting for this window: it would write the
+  shift's own (already past) end_time as clock_out, running AS the
+  viewer, which this window correctly rejects.
 - time_logs.role_at_clock_in records the role a person held at the moment
   they clocked in, set on every clock-in insert (including a queued one in
   src/lib/offlineQueue.js — captured when the clock-in happens, not when it

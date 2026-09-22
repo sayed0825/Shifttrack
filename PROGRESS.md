@@ -130,6 +130,58 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-22 (clock-out window hotfix)
+**tg_protect_own_time_log blocked every non-manager clock-out.**
+0020's trigger rejected ANY change to clock_out unconditionally in its
+"everyone else" branch — an ordinary employee (or a manager acting on
+their own row) could never clock themselves out at all. Found and
+fixed live by the user (confirmed by impersonating a driver in SQL),
+pulled back out via the MCP and recorded as
+`0031_time_log_clock_out_window.sql` — already live, this migration
+file is the record, not the change. New rule: an owner may set
+clock_out exactly once, open to closed, within 5 minutes before now
+through 1 minute after; a null-auth.uid() caller (pg_cron's
+`sweep_open_shifts()`, an existing job — every 15 minutes — with no
+migration file of its own, a pre-existing gap noted but not closed
+here since it wasn't asked for) is exempt entirely.
+
+Audited every clock-out path against the new window:
+- **ManagerDashboard's client-side `runAutoClockOut` was broken by
+  this fix** — it wrote a shift's own (already past) end_time as
+  clock_out, running AS the viewer, for their own open shifts (and, if
+  they can manage, everyone else's too). For the viewer's own row (or
+  a manager's own), that's now always outside the window and always
+  rejected. Removed outright rather than restricted to "managers
+  closing someone else's shift" — that would still leave a manager's
+  own forgotten shift stuck, and the pg_cron sweep already runs
+  independent of whether any dashboard is ever opened, which was the
+  original reason a client-side fallback existed at all.
+- **The app sends its own timestamp for clock_out**
+  (`new Date().toISOString()`, both the direct path and the offline
+  queue), not a server-generated one. A device clock more than ~5
+  minutes off system time would have its own clock-out rejected.
+  Flagging, not fixing — not asked for, and the right fix (switch to a
+  server-side timestamp vs. widen the window vs. leave it) is a real
+  design choice.
+- **A clock-out IS queued offline**
+  (`src/lib/offlineQueue.js`'s `flushQueue`, `type: 'clock_out'`) and
+  replayed with its ORIGINAL timestamp whenever connectivity returns —
+  which can be well past 5 minutes later. That replay would now be
+  rejected by the window, and since the entry is re-queued on failure
+  with the same stale timestamp, it would fail identically forever
+  rather than eventually succeeding. **Confirmed real, not fixed** —
+  told rather than widening the window, per instruction. Needs a
+  decision: exempt offline-synced clock-outs somehow, or timestamp them
+  differently, or accept the manual-fix-required edge case.
+
+Tests added (`tests/rls/negative/time-log-clock-out-window.test.ts`):
+employee can clock out their own open shift; cannot set clock_out
+outside the window; cannot change clock_out once set; a null-auth.uid()
+caller (what the sweep runs as — the actual cron function can't be
+invoked directly here, same as every other cron-only function in this
+suite, guarded by a session_user/rolsuper check no service-role client
+satisfies) can close an overdue shift outside the window.
+
 ### 2026-09-22 (driver pay engine, step 3)
 **Native compliance for background location — gated on the role flag,
 disclosed before the prompt, hard-stopped on clock-out.** No migration
