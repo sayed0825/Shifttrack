@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import { safeUuid } from '../lib/ids';
+import { compressImage } from '../lib/compressImage';
 import { friendlyError } from '../lib/friendlyError';
 import { resetDocumentScroll } from '../lib/resetDocumentScroll';
 import type { Profile } from './ManagerDashboard';
@@ -436,10 +437,14 @@ function TaskDetailSheet({
       // its one photo.
       const storagePaths = await Promise.all(
         photoFiles.map(async (file) => {
+          // Resize + re-encode to JPEG before upload — an iPhone camera
+          // photo is HEIC and several MB by default; see compressImage's
+          // own comment for why that matters beyond just file size.
+          const compressed = await compressImage(file);
           const storagePath = `${task.id}/${safeUuid()}.jpg`;
           const { error: uploadError } = await supabase.storage
             .from('task-photos')
-            .upload(storagePath, file, { contentType: file.type || 'image/jpeg' });
+            .upload(storagePath, compressed, { contentType: compressed.type || 'image/jpeg' });
           if (uploadError) throw uploadError;
           return storagePath;
         })

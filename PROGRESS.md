@@ -121,6 +121,49 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-22
+**Multi-photo task submission failing on iPhone (PGRST116), Mac Safari
+fine, same account.** Investigated via code + live bucket config
+(read-only MCP), no device access this session to reproduce directly —
+report what was actually confirmed, not assumed:
+
+- Uploads are correctly awaited (`Promise.all`, all resolve or the
+  first rejection throws) before the `tasks` update ever runs — not a
+  race between upload and update.
+- A failed upload is not swallowed — `if (uploadError) throw
+  uploadError` inside the map propagates through `Promise.all` to the
+  outer `try/catch` and surfaces via `completeFault`, same as before.
+- `task-photos` bucket has no `file_size_limit` and no
+  `allowed_mime_types` restriction (both null, checked live) — HEIC
+  isn't blocked at the storage layer, and neither is file size short of
+  the project-wide default.
+- Could not confirm a literal PGRST116 origin in this code path — every
+  query here already uses `.maybeSingle()`, not `.single()`; grepped
+  the whole app for `.single()` and none of the three remaining call
+  sites (ManagerMoreTab, EmployeeDashboard, offlineQueue.js) are in
+  this flow. Left as an open question rather than a confirmed
+  diagnosis — possible it's a stale build on the test device, or a
+  device-specific retry/double-tap path not fully traced here.
+
+**Fixed regardless, since it's correct either way**: every task photo
+now goes through `src/lib/compressImage.ts` before upload — resized to
+1600px on the long edge, re-encoded as JPEG via
+`createImageBitmap`/canvas, falling back to the original file untouched
+if this browser can't decode it. Closes a real gap independent of the
+PGRST116 report: WebKit's canvas typically can't decode HEIC in a web
+content process even where Safari itself can display one directly, so
+a HEIC photo was being stored exactly as captured but wasn't
+guaranteed renderable as an `<img>` in the manager's own review/history
+screens. Also directly helps the 1GB free-tier constraint multiple
+photos per task already made more pressing (see the 2026-09-20 (later)
+entry below).
+
+**Next up if the failure recurs after this ships**: get the actual
+device console output (Safari Web Inspector against the TestFlight
+build, same as the nav-drift/zoom sessions) rather than continuing to
+guess from code alone — this class of bug has repeatedly turned out to
+be a WKWebView-specific behavior invisible to static review.
+
 ### 2026-09-20 (later)
 **Task module: optional tasks and multi-photo, migration 0025 pending
 (not yet run — read-only MCP, run manually).**

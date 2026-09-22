@@ -211,6 +211,14 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
     a later migration confirms nothing still reads it (nothing in the
     app does as of 0025; re-check with a grep for `photo_path` before
     actually dropping it, in case something added after this reads it).
+  - Every photo goes through `src/lib/compressImage.ts` before upload —
+    resized to 1600px on the long edge and re-encoded as JPEG via
+    `createImageBitmap`/canvas, falling back to the original file
+    untouched if this browser can't decode it (HEIC, the default format
+    an iPhone camera hands over, on an older WebKit that can't decode it
+    in a web content process). Not just a size optimisation: without
+    this, a HEIC upload stored correctly but wasn't renderable as an
+    `<img>` on every device that might review it.
   - `task_comments` (id, org_id, task_id, sender_id, comment_text,
     created_at) — a thread on one task, visible to the assignee(s) and
     managers.
