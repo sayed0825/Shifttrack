@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
   ArrowLeftRight,
@@ -15,6 +15,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  MapPinned,
   MoreHorizontal,
   Radio,
   RefreshCw,
@@ -36,6 +37,7 @@ import {
   setPersistedWatcherId,
   clearPersistedWatcherId,
 } from '../lib/backgroundGeolocation';
+import { applyFix, initialRunTrackState, isInsideGeofence, type RunTrackState } from '../lib/gpsFilter';
 import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
@@ -114,6 +116,25 @@ interface TimeLogRow {
   // Hours, drops and miles are the driver's own -- never money, matching
   // shift_pay()'s own gating (a driver's RPC call always returns null).
   delivery_runs?: { one_way_miles: number | null }[];
+}
+
+/** One Delivered tap, held in memory for the run's whole duration —
+ *  nothing is written to delivery_drops until the run ends (see
+ *  record_delivery_run, migration 0032), so this is also how "recorded
+ *  locally" while offline is satisfied: there is no per-tap network call
+ *  to fail in the first place. */
+interface DropDraft {
+  sequence: number;
+  delivered_at: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  odometer_miles: number;
+}
+
+interface ActiveRun {
+  startedAt: string;
+  drops: DropDraft[];
 }
 
 /** A time log joined with its shift's start_time, for late detection. */
@@ -300,9 +321,16 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-md px-4 py-4 pb-[calc(4rem+env(safe-area-inset-bottom))] md:max-w-3xl md:px-6 md:pb-6 lg:max-w-4xl">
-          {tab === 'clock' && (
+          {/* Always mounted, hidden via CSS rather than conditionally
+              rendered like every other tab below — ClockInTab owns the
+              background watcher and, since step 4, a run's drops held
+              only in its own component state until the run ends.
+              Unmounting on every tab switch would tear both down: the
+              driver checking Tasks or Timesheets mid-run would silently
+              lose everything recorded since the last Delivered tap. */}
+          <div className={tab === 'clock' ? '' : 'hidden'}>
             <ClockInTab profile={profile} canViewMap={canViewMap} tracksLocation={tracksLocation} onClockedOut={recheckOwedOrders} />
-          )}
+          </div>
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
           {tab === 'tasks' && <EmployeeTasks profile={profile} />}
@@ -368,6 +396,20 @@ function ClockInTab({
     }
   });
   const [showLocationConsentDismissed, setShowLocationConsentDismissed] = useState(false);
+
+  // The mileage engine's own state — refs, not useState, because the
+  // native watcher's callback is a long-lived closure (set up once per
+  // tracking effect run, firing on every GPS fix for the rest of the
+  // shift) and reading React state from inside it would capture a stale
+  // snapshot from whenever the effect last ran, not the latest value.
+  // dropCount is the one piece mirrored into real state, purely so the
+  // Delivered button's count re-renders.
+  const activeRunRef = useRef<ActiveRun | null>(null);
+  const trackStateRef = useRef<RunTrackState>(initialRunTrackState());
+  const insideGeofenceRef = useRef(true);
+  const lastFixRef = useRef<{ latitude: number; longitude: number; accuracy: number | null } | null>(null);
+  const [dropCount, setDropCount] = useState(0);
+  const [showDeliveredButton, setShowDeliveredButton] = useState(false);
 
   const tracking = Boolean(openLog);
 
@@ -441,6 +483,71 @@ function ClockInTab({
   // keep running in the background until the driver happened to reopen
   // the tab. Scoped to this user's own rows; RLS would block anyone
   // else's anyway.
+  // Ends a run: a run with no drops pays nothing and is discarded outright
+  // (nothing to write — it never existed as far as pay is concerned).
+  // Otherwise its one_way_miles is the odometer reading at the LAST
+  // drop — the drive back is excluded automatically, since nothing after
+  // that last tap is ever recorded. Writes both one_way_miles and
+  // gps_one_way_miles together, source 'gps', in one RPC
+  // (record_delivery_run, migration 0032) that inserts the run and all
+  // its drops in a single statement — not two separate requests, so a
+  // connection drop between them can never leave an orphaned run with no
+  // drops or a duplicate on retry.
+  //
+  // Called from three places, same function every time — "end the run at
+  // the last drop" doesn't distinguish how the run ended: geofence
+  // re-entry, clock-out without returning (handleClockOut), and a remote
+  // clock-out (the realtime listener just below — the manager-side auto
+  // clock-out sweep can close an overdue shift mid-run just as easily as
+  // the driver's own button can).
+  const finalizeRun = useCallback(
+    async (timeLogId: string, isLocalTimeLog: boolean, run: ActiveRun) => {
+      if (run.drops.length === 0) return;
+      const lastDrop = run.drops[run.drops.length - 1];
+      const endedAt = new Date().toISOString();
+      const payload = {
+        started_at: run.startedAt,
+        ended_at: endedAt,
+        one_way_miles: lastDrop.odometer_miles,
+        drops: run.drops,
+      };
+
+      // The shift itself may still be queued (never synced) — same
+      // local-id correlation clock_out already uses, so a run can attach
+      // to a clock-in that hasn't reached the server yet.
+      if (isLocalTimeLog) {
+        enqueue({ type: 'delivery_run_complete', logId: null, localTimeLogRef: timeLogId, ...payload });
+        return;
+      }
+
+      try {
+        const { error } = await supabase.rpc('record_delivery_run', {
+          p_time_log_id: timeLogId,
+          p_started_at: payload.started_at,
+          p_ended_at: payload.ended_at,
+          p_one_way_miles: payload.one_way_miles,
+          p_drops: payload.drops,
+        });
+        if (error) throw error;
+      } catch {
+        // Still offline, or the server rejected it — keep it for the next
+        // flushQueue attempt, same as a failed clock_out. Queued this way
+        // (rather than left in native GPS-engine state) so a route that
+        // clocks out right after is guaranteed to enqueue AFTER this run,
+        // preserving flushQueue's in-order replay — the run then lands on
+        // the server while the shift is still open, before the clock-out
+        // entry right behind it closes it.
+        enqueue({ type: 'delivery_run_complete', logId: timeLogId, localTimeLogRef: null, ...payload });
+      }
+    },
+    []
+  );
+
+  // Hard stop, part 2 of step 3 — extended here to also finalize any
+  // in-progress run before dropping the tracked shift. A remote clock-out
+  // (the manager-side auto clock-out sweep) can close an overdue shift
+  // mid-run just as easily as the driver's own clock-out button can, and
+  // the run's drops are only sitting in this tab's own memory until then.
   useEffect(() => {
     if (!openLog) return undefined;
     const channel = supabase
@@ -450,14 +557,26 @@ function ClockInTab({
         { event: 'UPDATE', schema: 'public', table: 'time_logs', filter: `user_id=eq.${profile.id}` },
         (payload: { new: { id: string; clock_out: string | null } }) => {
           const row = payload.new;
-          if (row.id === openLog.id && row.clock_out !== null) setOpenLog(null);
+          if (row.id !== openLog.id || row.clock_out === null) return;
+
+          const run = activeRunRef.current;
+          if (run) {
+            const isLocal = openLog.id.startsWith('local-');
+            activeRunRef.current = null;
+            insideGeofenceRef.current = true;
+            trackStateRef.current = initialRunTrackState();
+            setShowDeliveredButton(false);
+            setDropCount(0);
+            void finalizeRun(openLog.id, isLocal, run);
+          }
+          setOpenLog(null);
         }
       )
       .subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [openLog, profile.id]);
+  }, [openLog, profile.id, finalizeRun]);
 
   // Only a role with tracks_orders is ever tracked, and only while on
   // shift, and only once the in-app disclosure has been agreed to (see
@@ -478,7 +597,24 @@ function ClockInTab({
     if (!tracking || !tracksLocation || !locationConsent) return undefined;
     let cancelled = false;
 
+    // A fresh tracking session always starts inside the geofence — the
+    // clock-in flow itself already required being within it.
+    insideGeofenceRef.current = true;
+    activeRunRef.current = null;
+    trackStateRef.current = initialRunTrackState();
+    lastFixRef.current = null;
+    setShowDeliveredButton(false);
+    setDropCount(0);
+
     if (Capacitor.isNativePlatform()) {
+      // ONE watcher drives both the live map and the mileage engine — the
+      // live map already had drivers reporting position; adding a second,
+      // competing watcher here would mean two separate native location
+      // subscriptions running at once for no reason.
+      const timeLogId = openLog?.id ?? null;
+      const isLocalTimeLog = timeLogId?.startsWith('local-') ?? false;
+      const siteLocation = shift?.locations ?? null;
+
       const watcherPromise = addBackgroundLocationWatcher((location, error) => {
         if (cancelled || error || !location) return;
         void pushLiveLocation({
@@ -489,6 +625,54 @@ function ClockInTab({
           speed: location.speed ?? null,
           accuracy: location.accuracy,
         });
+
+        // The Delivered button always uses the freshest position
+        // available, whatever its accuracy — it's recorded alongside the
+        // drop for anyone reviewing to judge, not silently dropped. Only
+        // the mileage accumulation below is accuracy-gated.
+        lastFixRef.current = { latitude: location.latitude, longitude: location.longitude, accuracy: location.accuracy };
+
+        if (!timeLogId || !siteLocation) return;
+
+        const fixTime = location.time ?? Date.now();
+        const nowInsideGeofence = isInsideGeofence(
+          location.latitude,
+          location.longitude,
+          siteLocation.latitude,
+          siteLocation.longitude,
+          siteLocation.radius_meters
+        );
+
+        if (insideGeofenceRef.current && !nowInsideGeofence) {
+          // Left the store — a run starts. Reset accumulation so this
+          // run's odometer measures only the distance driven on it, not
+          // carried over from whatever the driver did before clocking in.
+          insideGeofenceRef.current = false;
+          activeRunRef.current = { startedAt: new Date().toISOString(), drops: [] };
+          trackStateRef.current = initialRunTrackState();
+          setShowDeliveredButton(true);
+          setDropCount(0);
+        } else if (!insideGeofenceRef.current && nowInsideGeofence) {
+          // Back at the store — the run ends here, same as clocking out
+          // without returning (handleClockOut) ends it at the last drop.
+          insideGeofenceRef.current = true;
+          const finishedRun = activeRunRef.current;
+          activeRunRef.current = null;
+          trackStateRef.current = initialRunTrackState();
+          setShowDeliveredButton(false);
+          setDropCount(0);
+          if (finishedRun) void finalizeRun(timeLogId, isLocalTimeLog, finishedRun);
+        }
+
+        if (!insideGeofenceRef.current) {
+          trackStateRef.current = applyFix(trackStateRef.current, {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            accuracy: location.accuracy,
+            speed: location.speed,
+            time: fixTime,
+          });
+        }
       });
       void watcherPromise.then((watcherId) => {
         if (!cancelled) setPersistedWatcherId(watcherId);
@@ -531,7 +715,7 @@ function ClockInTab({
       cancelled = true;
       clearInterval(id);
     };
-  }, [tracking, tracksLocation, locationConsent, profile.id]);
+  }, [tracking, tracksLocation, locationConsent, profile.id, openLog?.id, shift?.locations?.id, finalizeRun]);
 
   const checkFence = useCallback(async () => {
     if (!shift?.locations) return;
@@ -710,6 +894,23 @@ function ClockInTab({
     const clockOut = new Date().toISOString();
     const isLocal = openLog.id.startsWith('local-');
 
+    // Clocking out without returning to the store ends any run at its
+    // last drop, same as a geofence re-entry would — awaited before the
+    // clock-out request/enqueue below runs, so if this itself has to
+    // queue (offline), it queues AHEAD of the clock_out entry right after
+    // it. flushQueue replays in order, so the run reaches the server
+    // while the shift is still open, before the clock-out entry behind it
+    // closes it — delivery_runs_insert_own requires that.
+    if (activeRunRef.current) {
+      const runToFinalize = activeRunRef.current;
+      activeRunRef.current = null;
+      insideGeofenceRef.current = true;
+      trackStateRef.current = initialRunTrackState();
+      setShowDeliveredButton(false);
+      setDropCount(0);
+      await finalizeRun(openLog.id, isLocal, runToFinalize);
+    }
+
     try {
       if (isLocal) throw new Error('queued');
       const { error } = await supabase
@@ -733,6 +934,26 @@ function ClockInTab({
     } finally {
       setBusy(false);
     }
+  };
+
+  // Records a drop entirely in memory — see DropDraft's own comment for
+  // why that's also what makes this work offline with no special-casing:
+  // there is no network call here to fail.
+  const handleDelivered = () => {
+    const run = activeRunRef.current;
+    const fix = lastFixRef.current;
+    if (!run || !fix) return;
+
+    const drop: DropDraft = {
+      sequence: run.drops.length + 1,
+      delivered_at: new Date().toISOString(),
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      accuracy: fix.accuracy,
+      odometer_miles: trackStateRef.current.odometerMiles,
+    };
+    activeRunRef.current = { ...run, drops: [...run.drops, drop] };
+    setDropCount(activeRunRef.current.drops.length);
   };
 
   if (loading) {
@@ -899,13 +1120,30 @@ function ClockInTab({
               </div>
             )}
 
+            {/* Delivered — shown while clocked in and outside the store on
+                a delivery shift. Native only; web drivers keep entering
+                mileage manually (see OwedOrdersModal), since mobile
+                Safari suspends location the moment the screen locks. */}
+            {tracking && showDeliveredButton && (
+              <button
+                type="button"
+                onClick={handleDelivered}
+                disabled={!lastFixRef.current}
+                className="mt-5 flex h-16 w-full items-center justify-center gap-2 rounded-lg bg-secondary text-lg font-semibold text-white transition active:scale-[0.99] disabled:opacity-60"
+              >
+                <MapPinned className="h-6 w-6" aria-hidden="true" />
+                Delivered
+                <span className="ml-1 rounded-full bg-white/20 px-2.5 py-0.5 text-sm tabular-nums">{dropCount}</span>
+              </button>
+            )}
+
             {/* Action button */}
             {tracking ? (
               <button
                 type="button"
                 onClick={() => void handleClockOut()}
                 disabled={busy}
-                className="mt-5 flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-primary text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-60"
+                className={`${showDeliveredButton ? 'mt-3' : 'mt-5'} flex h-14 w-full items-center justify-center gap-2 rounded-lg bg-primary text-base font-semibold text-white transition active:scale-[0.99] disabled:opacity-60`}
               >
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <LogOut className="h-5 w-5" aria-hidden="true" />}
                 Clock out

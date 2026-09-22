@@ -369,6 +369,70 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
     Acknowledge. Tapping a `'reminder'`-type notification
     (`NotificationBell`'s `onReminderTap`) bumps the same check-signal
     pattern as the driver orders modal, forcing it to recheck immediately.
+- Driver pay engine (migrations 0028-0032; NOT device-tested yet, see
+  PROGRESS.md "Known broken"):
+  - `org_pay_settings` (org_id, effective_from, order_rate,
+    free_miles_per_run, excess_mile_rate, mileage_cap_per_order,
+    created_by, created_at) — effective-dated, replacing
+    `organisations.order_rate` (kept, unused by pay math, until
+    something else stops reading it) for the same reason
+    `staff_wage_rates` replaced a flat rate: a setting change must
+    never rewrite the cost of a shift that already happened. Admin-only
+    RLS (`is_admin()`), same shape as `staff_wage_rates`. Seeded on
+    `organisations` insert (`tg_seed_org_pay_settings`) and backfilled
+    once, both at the same sentinel `effective_from` (`2000-01-01`),
+    so a shift can never predate its own org's settings.
+  - `delivery_runs` (org_id, time_log_id, started_at, ended_at,
+    one_way_miles, gps_one_way_miles, mileage_source
+    `'gps'|'driver'|'manager'`, mileage_edited_by, mileage_edited_at)
+    and `delivery_drops` (org_id, run_id, sequence, delivered_at,
+    latitude, longitude, accuracy, odometer_miles) — one row per
+    delivery run and per Delivered tap on it. `delivery_drops` is
+    append-only (insert + select only, no update/delete for anyone,
+    same as `task_comments`/`task_photos`) except for a manager, who
+    can also delete one to correct a mistake (0030).
+    `gps_one_way_miles` is immutable once set, unconditionally, even
+    for an admin (`tg_protect_delivery_run`) — the original device
+    reading always stays visible alongside any later manager edit to
+    `one_way_miles`.
+  - `record_delivery_run(p_time_log_id, p_started_at, p_ended_at,
+    p_one_way_miles, p_drops jsonb)` (0032) — the only way the app
+    writes a completed run: inserts the run and every one of its drops
+    in one call, atomic by default, so a dropped connection between
+    what would otherwise be two separate requests can't leave an
+    orphaned run or a duplicate on retry. `security invoker`, not
+    `definer` — runs under the calling driver's own RLS, no privilege
+    beyond what a direct insert into both tables already allowed.
+  - `shift_pay(p_time_log_id)` / `shift_pay_range(p_from, p_to,
+    p_location_ids, p_roles)` — the ONLY place pay is computed; never
+    duplicate this formula client-side again (`PayrollReportModal.tsx`
+    and `ManagerDashboard.tsx`'s `TimesheetsPanel` both used to, causing
+    a real, fixed bug — see PROGRESS.md's clock-out-window and step-1/2
+    log entries). Admin-only (`is_admin()`, returns null/no rows
+    otherwise, same gating as `wage_rate_at`). `shift_pay_range` calls
+    `shift_pay` per matching row rather than reimplementing the
+    formula, specifically so the two can never disagree — see
+    `tests/rls/positive/shift-pay-range-parity.test.ts`.
+  - `tg_protect_own_time_log`'s clock-out window (0031): an owner may
+    set `clock_out` exactly once, open to closed, only within 5 minutes
+    before now through 1 minute after; a null-`auth.uid()` caller
+    (`sweep_open_shifts()`, pg_cron, or the service role) is exempt.
+    Do not add a client-side auto clock-out fallback — one existed,
+    wrote a shift's own past end_time as `clock_out` running as the
+    viewer, and this window now correctly rejects that. See the
+    Non-negotiables entry above.
+  - The GPS mileage engine (`EmployeeDashboard.tsx`'s `ClockInTab`,
+    `src/lib/gpsFilter.ts`) reuses the single background-location
+    watcher already driving the live map (step 3) rather than running a
+    second one. Filtering thresholds (accuracy, moving-speed floor,
+    max implied-speed jump, minimum accumulate displacement) are named
+    constants in `gpsFilter.ts` — change them there, nowhere else. A
+    run starts on geofence exit and ends on re-entry (or clock-out
+    without returning); its whole lifecycle lives in component state
+    until it ends, nothing is written mid-run. `ClockInTab` is always
+    mounted (hidden via CSS when another tab is active, not
+    conditionally rendered) specifically so a tab switch mid-run can't
+    silently lose an in-progress run's drops.
 
 ### UI — design system
 

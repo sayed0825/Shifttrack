@@ -5,7 +5,10 @@
  * fails, the hours worked are simply lost. Every other screen can wait for a
  * connection. So a failed clock-in is stored on the device and replayed when
  * the network returns, rather than shown as an error the employee can do
- * nothing about.
+ * nothing about. clock_out and delivery_run_complete (step 4 of the driver
+ * pay engine) reuse the exact same pattern for the same reason — a driver's
+ * mileage or hours lost to a dropped connection is money they didn't get
+ * paid, not just an inconvenience.
  */
 
 const QUEUE_KEY = 'shifttrack.pending';
@@ -101,6 +104,28 @@ export async function flushQueue(supabase) {
           .update({ clock_out: entry.clock_out })
           .eq('id', logId)
           .is('clock_out', null);
+
+        if (error) throw error;
+        synced += 1;
+      } else if (entry.type === 'delivery_run_complete') {
+        // Same local-id correlation as clock_out — a run may belong to a
+        // shift that itself hasn't synced yet. Queued ahead of that
+        // shift's own clock_out entry when both happened offline in the
+        // same session (see finalizeRun in EmployeeDashboard.tsx), so by
+        // the time this runs the shift is still open server-side, which
+        // record_delivery_run's own RLS requires.
+        const logId = entry.logId ?? localToReal.get(entry.localTimeLogRef);
+        if (!logId) {
+          remaining.push(entry);
+          continue;
+        }
+        const { error } = await supabase.rpc('record_delivery_run', {
+          p_time_log_id: logId,
+          p_started_at: entry.started_at,
+          p_ended_at: entry.ended_at,
+          p_one_way_miles: entry.one_way_miles,
+          p_drops: entry.drops,
+        });
 
         if (error) throw error;
         synced += 1;

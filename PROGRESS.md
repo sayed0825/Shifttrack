@@ -78,6 +78,18 @@ and approval all verified against real data). Manager task tooling has
 since grown well past the original spec — see the log below.
 
 **Known broken / unverified:**
+- **The GPS mileage engine (driver pay engine step 4) is UNTESTED on a
+  real device** — Android can't be device-tested yet, iOS is pending
+  TestFlight. **Test it in a car, not on foot**: the 1.5 m/s
+  moving-speed floor (`MIN_MOVING_SPEED_MPS`, `src/lib/gpsFilter.ts`)
+  filters out walking pace, so a test done on foot will record almost
+  nothing and look broken when the filtering is actually working as
+  designed. Also unverified: whether a realtime `postgres_changes`
+  subscription survives deep OS backgrounding long enough to catch a
+  remote clock-out (the manager sweep) mid-run — if the WebSocket has
+  disconnected by the time the sweep fires, the app won't learn its
+  shift closed until next relaunch, and any run in progress at that
+  point is lost (see the log entry below for the full reasoning).
 - Migration 0021 (guards the two shift-notify triggers against an
   already-deleted profile) is written and pushed but NOT CONFIRMED RUN
   against the live database. Notably, the RLS suite passing green does
@@ -129,6 +141,100 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-22 (driver pay engine, step 4)
+**The GPS engine and the Delivered button — native only.** Web drivers
+keep entering mileage manually (OwedOrdersModal, step 2) since mobile
+Safari suspends location the moment the screen locks. **NOT
+DEVICE-TESTED** — see "Known broken" above for the testing note
+(1.5 m/s floor filters walking pace; test in a car).
+
+- **One watcher**: the existing background-geolocation watcher
+  (step 3, already pushing live location) now also drives the mileage
+  engine — not a second, competing watcher. Its callback pushes live
+  location exactly as before, then (native only) feeds the same fix
+  through geofence-transition detection and, while a run is active,
+  through `src/lib/gpsFilter.ts`'s `applyFix`.
+- **Filtering** (`gpsFilter.ts`, every threshold a named constant in
+  one place): reject accuracy worse than `MIN_FIX_ACCURACY_M` (20m);
+  reject speed below `MIN_MOVING_SPEED_MPS` (1.5 m/s) when the device
+  reports one, rely on displacement alone when it doesn't; reject if
+  implied speed from the last ACCEPTED point exceeds
+  `MAX_IMPLIED_SPEED_MPS` (40 m/s) — a GPS jump; only accumulate once
+  displacement from the last accepted point reaches
+  `MIN_ACCUMULATE_DISPLACEMENT_M` (15m) — a fix that doesn't cross
+  that is neither accumulated nor promoted to the new reference point,
+  so small back-and-forth jitter around one spot can never compound
+  into distance. Pure functions, no Capacitor/Supabase imports, so
+  they're at least reasoned-about independent of a device even though
+  this repo has no unit-test runner beyond the live-DB RLS suite to
+  actually exercise them automatically.
+- **Runs**: start on geofence exit, end on geofence re-entry (or
+  clock-out without returning — handleClockOut finalizes any active
+  run first, same as a remote clock-out via the realtime listener
+  does). A run's whole lifecycle — drops, odometer — lives in
+  `ClockInTab`'s own component state until it ends; nothing is written
+  to `delivery_runs`/`delivery_drops` mid-run. That's also what makes
+  "record drops... locally" while offline need no special-casing at
+  the per-tap level: there's no network call at tap time to fail in
+  the first place.
+- **One-way distance**: a run's `one_way_miles` is the last drop's
+  odometer reading — the return leg is excluded automatically, since
+  nothing recorded after that last tap ever counts. Zero drops pays
+  nothing and the run is discarded outright (never written at all).
+  Written to `one_way_miles` and `gps_one_way_miles` together, source
+  `'gps'`, via one new RPC (`record_delivery_run`, migration 0032)
+  that inserts the run and all its drops in a single call — not two
+  separate requests, so a connection drop between them can never leave
+  an orphaned run with no drops or, on retry, a duplicate. `security
+  invoker`, not `definer` — runs under the calling driver's own RLS,
+  no new privilege over what 0028's `delivery_runs_insert_own`/
+  `delivery_drops_insert_own` already allowed directly.
+- **Offline**: reuses `offlineQueue.js`'s exact pattern (new
+  `delivery_run_complete` entry type, same local-id correlation
+  `clock_out` already uses for a shift that hasn't synced yet). A
+  queued drop keeps its original timestamp and odometer reading
+  because it was never anything else — it's been sitting in the
+  in-memory drops array since the tap, untouched. `handleClockOut`
+  awaits any pending run-finalize BEFORE its own clock-out
+  request/enqueue, specifically so that if both end up queued offline,
+  they queue in that order — `flushQueue` replays in order, so the run
+  reaches the server while the shift is still open (required by its
+  own RLS) before the clock-out entry right behind it closes it. This
+  ordering is an implicit invariant (queue order = dependency order),
+  not something the database enforces on its own.
+- **Confirmed against step 2's orders confirmation**: no code change
+  needed — OwedOrdersModal already reads `delivery_runs`/
+  `delivery_drops` however they got there, manager-entered (step 2) or
+  GPS-entered (this step); "N orders across M runs — correct?" fires
+  the same way either way.
+- **A real pre-existing gap this step exposed, fixed**: `ClockInTab`
+  was conditionally rendered per active tab (`{tab === 'clock' &&
+  <ClockInTab/>}`), unmounting — and tearing down the watcher — on
+  every tab switch. Harmless before (a live-location ping just resumes
+  a bit later), not harmless now: a driver checking Tasks or
+  Timesheets mid-run would have silently lost every drop recorded
+  since the last sync. Now always mounted, hidden via CSS
+  (`display:none`) when another tab is active, so its state and
+  effects survive a tab switch. Incidental fix: this also means
+  tracking now starts on dashboard load regardless of which tab was
+  last persisted, rather than only once the driver happens to visit
+  Clock — previously, a driver whose persisted tab was e.g. Timesheets
+  wouldn't be tracked at all until they manually switched tabs.
+- **Disclosed, not fixed** (see "Known broken" above): a realtime
+  listener catches a remote clock-out (the manager sweep) mid-run and
+  finalizes the run — but only if the WebSocket subscription is still
+  connected when the sweep fires. Deep OS backgrounding could have
+  disconnected it; Postgres realtime doesn't backfill missed events on
+  reconnect. True app/process death mid-run also loses that run's
+  in-memory drops — no crash-recovery layer was built for this
+  (deliberately out of scope: point 6 asked for network-loss
+  resilience, a distinct concern from process-death resilience).
+
+Build and a scoped `tsc --noEmit` are clean. No RLS suite changes this
+step (no new RLS boundary, just wiring an existing schema up to a real
+GPS source instead of a manager typing numbers in) — confirm it still
+passes regardless before pushing, since 0032 is a new migration.
 
 ### 2026-09-22 (clock-out window hotfix)
 **tg_protect_own_time_log blocked every non-manager clock-out.**
