@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — Kite Scheduling</title>
+<meta name="description" content="Kite Scheduling's privacy policy — what we collect, why, and your rights." />
+<meta name="robots" content="index, follow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap" rel="stylesheet" />
+<style>
+  /*
+   * Standalone by design — this page ships as a static file (public/privacy.html,
+   * copied verbatim by Vite), served at /privacy with no build step and no
+   * session, so it must never depend on the app's own hashed CSS bundle. Every
+   * token below is copied from src/index.css's @theme block by hand; if the
+   * app's palette or type scale changes, update both places.
+   */
+  :root {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-display: 'Instrument Serif', ui-serif, Georgia, serif;
+    --color-bg: #F7F2E7;
+    --color-surface: #FFFDF8;
+    --color-primary: #0B3B1F;
+    --color-primary-dark: #082C17;
+    --color-border: #E3D9C6;
+    --color-ink: #1A1A1A;
+    --color-ink-muted: #5C5648;
+    --color-warning: #B45309;
+    --color-warning-bg: #FEF3C7;
+    --color-danger: #B91C1C;
+    --color-danger-bg: #FEE2E2;
+    --radius-lg: 0.625rem;
+    --radius-2xl: 1.25rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { color: var(--color-primary-dark); }
+
+  header.site-header {
+    background: var(--color-primary);
+  }
+
+  .wordmark {
+    display: inline-block;
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 1rem 1.25rem;
+    color: #FFFFFF;
+    text-decoration: none;
+    font-family: var(--font-display);
+    font-size: 1.375rem;
+    letter-spacing: -0.01em;
+  }
+  .wordmark:hover { color: #FFFFFF; opacity: 0.85; }
+
+  main {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 1rem;
+  }
+
+  h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.375rem;
+  }
+
+  .effective-date {
+    color: var(--color-ink-muted);
+    font-size: 0.875rem;
+    margin: 0 0 2rem;
+  }
+
+  h2 {
+    font-family: var(--font-display);
+    font-size: 1.375rem;
+    letter-spacing: -0.01em;
+    margin: 2.5rem 0 0.875rem;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--color-border);
+  }
+  h2:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+
+  h3 {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 1rem;
+    margin: 1.5rem 0 0.625rem;
+  }
+
+  p, ul, ol { margin: 0 0 1.125rem; }
+  li { margin: 0 0 0.5rem; }
+  ul, ol { padding-left: 1.375rem; }
+  p:last-child, ul:last-child, ol:last-child { margin-bottom: 0; }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 0 1.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+  th, td { text-align: left; padding: 0.625rem 0.875rem; border-bottom: 1px solid var(--color-border); vertical-align: top; }
+  th { font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+
+  .placeholder {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+    padding: 0.05em 0.4em;
+    border-radius: 4px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .draft-notice {
+    background: var(--color-danger-bg);
+    border: 1px solid var(--color-danger);
+    border-radius: var(--radius-2xl);
+    padding: 1.25rem 1.375rem;
+    margin: 0 0 2.5rem;
+  }
+  .draft-notice h2 {
+    margin: 0 0 0.75rem;
+    padding-top: 0;
+    border-top: none;
+    color: var(--color-danger);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 1.0625rem;
+  }
+  .draft-notice ul { margin-bottom: 0; }
+
+  footer.page-footer {
+    max-width: 42rem;
+    margin: 0 auto;
+    padding: 1rem 1.25rem 3rem;
+    font-size: 0.875rem;
+    color: var(--color-ink-muted);
+  }
+  footer.page-footer a { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <a class="wordmark" href="/">Kite Scheduling</a>
+</header>
+
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="effective-date">Effective date: <span class="placeholder">[EFFECTIVE DATE]</span></p>
+
+  <div class="draft-notice">
+    <h2>Before publishing — delete this section before the page goes live</h2>
+    <p>This is a working draft, not legal advice. Because the app tracks employee location, have a solicitor review it before it goes live. Fill every bracketed item below.</p>
+    <ul>
+      <li><span class="placeholder">[BUSINESS NAME]</span> — the legal entity publishing the app</li>
+      <li><span class="placeholder">[REGISTERED ADDRESS]</span></li>
+      <li><span class="placeholder">[CONTACT EMAIL]</span> — suggest privacy@kitescheduling.com</li>
+      <li><span class="placeholder">[ICO REGISTRATION NUMBER]</span> — most organisations processing personal data must pay the ICO data protection fee</li>
+      <li><span class="placeholder">[SUPABASE REGION]</span> — where the database is hosted; check Supabase → Project Settings → General</li>
+      <li><span class="placeholder">[SENTRY RETENTION PERIOD]</span> — check your Sentry plan</li>
+      <li><span class="placeholder">[EFFECTIVE DATE]</span></li>
+    </ul>
+    <p>Publish at a stable public address, such as kitescheduling.com/privacy. Both app stores need that link before submission.</p>
+  </div>
+
+  <h2>Who we are</h2>
+  <p>Kite Scheduling is a staff scheduling, timesheet and task app used by businesses to manage their employees. It is published by <span class="placeholder">[BUSINESS NAME]</span>, <span class="placeholder">[REGISTERED ADDRESS]</span>.</p>
+  <p>There are two roles to understand:</p>
+  <ul>
+    <li><strong>Your employer</strong> decides what information is collected about you and why. For information about your work, your employer is the controller.</li>
+    <li><strong>We</strong> provide the app your employer uses and store the information on their behalf. For that information we act as a processor, following your employer's instructions.</li>
+  </ul>
+  <p>For questions about this policy, contact us at <span class="placeholder">[CONTACT EMAIL]</span>. For questions about how your employer uses your information, contact your employer directly.</p>
+
+  <h2>What we collect</h2>
+  <p>We collect only what the app needs to schedule shifts, record hours and pay staff correctly.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Category</th><th>What it includes</th><th>Where it comes from</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Account details</td><td>Name, email address, job role, the locations you work at</td><td>Your employer, when they invite you</td></tr>
+        <tr><td>Work schedule</td><td>Shifts, open shift applications, shift swaps, time-off requests</td><td>You and your employer</td></tr>
+        <tr><td>Timesheets</td><td>Clock-in and clock-out times, hours worked, overtime claims</td><td>You, when you clock in and out</td></tr>
+        <tr><td>Location</td><td>Your position at clock-in; for delivery drivers, position during a shift</td><td>Your device's GPS — see the next section</td></tr>
+        <tr><td>Delivery records</td><td>Number of orders, delivery drops, one-way distance per delivery run</td><td>Drivers' devices, and managers' corrections</td></tr>
+        <tr><td>Pay</td><td>Hourly wage rate and pay calculations</td><td>Your employer — visible only to administrators, never to you</td></tr>
+        <tr><td>Tasks</td><td>Task completions, photos taken as proof of work, comments</td><td>You and your managers</td></tr>
+        <tr><td>Manager notes</td><td>Notes managers write about staff</td><td>Your managers</td></tr>
+        <tr><td>Technical</td><td>Error reports if the app crashes</td><td>Your device</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>We do not collect biometric data, contacts, or anything from other apps on your device. We do not sell your information or use it for advertising.</p>
+
+  <h2>Location data</h2>
+  <p>We use your location only while you are clocked in, and only for the reasons below. Tracking stops the moment you clock out.</p>
+  <p><strong>Everyone, at clock-in.</strong> When you clock in, the app checks you are within 75 metres of your workplace. We record that one position with your timesheet. We do not track staff who are not delivery drivers.</p>
+  <p><strong>Delivery drivers, during a shift.</strong> If your role involves deliveries, the app records your position in the background while you are clocked in, including when the app is closed or your screen is locked. We use this to:</p>
+  <ul>
+    <li>measure the one-way distance of each delivery run, from the store to your last drop, so extra mileage is paid correctly</li>
+    <li>show managers where drivers are during a shift, so deliveries can be coordinated</li>
+  </ul>
+  <p>The return journey to the store is not recorded as paid mileage. When you tap Delivered, we record the position of that drop.</p>
+  <p><strong>When it stops.</strong> Background tracking starts when you clock in and stops when you clock out, or when your shift is closed automatically. It never runs while you are off shift.</p>
+  <p><strong>How you'll know.</strong> Before tracking starts, the app explains what is recorded and asks your permission. On iPhone a blue location indicator shows at the top of the screen while it is running. On Android a notification stays visible while it is running.</p>
+  <p><strong>Your control.</strong> You can turn off location permission at any time in your device settings. If you do, you can still enter your mileage by hand and a manager can check it.</p>
+
+  <h2>How we use it, and why we're allowed to</h2>
+  <p>UK data protection law requires a lawful basis for each use of your information. We rely on the following.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Use</th><th>Lawful basis</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Scheduling shifts and recording hours worked</td><td>Performance of your employment contract</td></tr>
+        <tr><td>Calculating and paying wages, including mileage</td><td>Performance of your contract, and legal obligation to keep pay records</td></tr>
+        <tr><td>Checking you are at work when you clock in</td><td>Legitimate interests — accurate timekeeping</td></tr>
+        <tr><td>Tracking delivery drivers during a shift</td><td>Legitimate interests — paying mileage correctly and coordinating deliveries</td></tr>
+        <tr><td>Task photos and manager notes</td><td>Legitimate interests — managing work quality</td></tr>
+        <tr><td>Error reports</td><td>Legitimate interests — keeping the app working</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Where we rely on legitimate interests, we have weighed them against your privacy and limited collection to what is needed. For driver location in particular, tracking runs only during delivery shifts and a data protection impact assessment has been carried out.</p>
+  <p>We do not rely on your consent for these uses, because in an employment relationship consent is rarely considered freely given.</p>
+
+  <h2>Who we share it with</h2>
+  <p>We share information only with the service providers that run the app, each bound to protect it and use it only for us.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Provider</th><th>What they do</th><th>What they receive</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Supabase</td><td>Database, sign-in and file storage</td><td>All app data, stored in <span class="placeholder">[SUPABASE REGION]</span></td></tr>
+        <tr><td>Cloudflare</td><td>Hosts the app</td><td>Your IP address when you load it</td></tr>
+        <tr><td>Resend</td><td>Sends email invitations and password resets</td><td>Your name and email address</td></tr>
+        <tr><td>MapTiler</td><td>Map images on the live map</td><td>Your IP address when a map loads</td></tr>
+        <tr><td>Sentry</td><td>Error reporting</td><td>Technical details of crashes, with names, emails, locations and notes removed first</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Within your workplace, managers see information about staff at the locations they manage. Administrators see all of it, including pay.</p>
+  <p>We may disclose information if required by law, such as to HMRC or in response to a court order. We never sell it.</p>
+  <p><strong>International transfers.</strong> Where a provider stores or processes data outside the UK, we rely on UK adequacy regulations or the International Data Transfer Agreement to protect it.</p>
+
+  <h2>How long we keep it</h2>
+  <p>We keep information only as long as it is needed, then delete it.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Information</th><th>Kept for</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Task proof photos</td><td>One month, then deleted automatically</td></tr>
+        <tr><td>Live driver position</td><td>Overwritten continuously; only the latest position is held</td></tr>
+        <tr><td>Timesheets, delivery records and pay calculations</td><td>As long as needed for payroll and tax — HMRC requires payroll records to be kept for at least three years after the end of the tax year they relate to</td></tr>
+        <tr><td>Account details</td><td>While you work for your employer, and after that as set out under account deletion below</td></tr>
+        <tr><td>Error reports</td><td><span class="placeholder">[SENTRY RETENTION PERIOD]</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Your employer may set longer periods where the law requires them to.</p>
+
+  <h2>Security</h2>
+  <p>Information is encrypted in transit and access is restricted at the database itself, not only in the app.</p>
+  <ul>
+    <li>Each business's data is kept separate from every other business's.</li>
+    <li>Staff see only their own records. Managers see only staff at the locations they manage. Pay is visible only to administrators.</li>
+    <li>Every connection to the app uses encryption.</li>
+    <li>These access rules are checked by automated tests before every change is released.</li>
+  </ul>
+  <p>No system is perfectly secure. If a breach affects your information, we will tell your employer without undue delay so they can inform you and the Information Commissioner's Office where required.</p>
+
+  <h2>Your rights</h2>
+  <p>You have the right to see the information held about you, correct it, and in some cases have it deleted or restricted.</p>
+  <ul>
+    <li><strong>Access</strong> — ask for a copy of your information, including manager notes written about you.</li>
+    <li><strong>Correction</strong> — ask for anything inaccurate to be fixed. A manager can correct timesheets and mileage.</li>
+    <li><strong>Deletion and restriction</strong> — ask for information to be deleted or its use limited, where the law allows.</li>
+    <li><strong>Objection</strong> — object to uses based on legitimate interests, including driver location tracking.</li>
+    <li><strong>Portability</strong> — receive your information in a usable format.</li>
+  </ul>
+  <p>Most requests should go to your employer, as the controller. You can also contact us at <span class="placeholder">[CONTACT EMAIL]</span> and we will pass it on. We respond within one month.</p>
+
+  <h3>Deleting your account</h3>
+  <p>You can delete your account yourself, in the app under Profile settings. When you do:</p>
+  <ul>
+    <li>your login is removed permanently and you can no longer sign in</li>
+    <li>your name, email and contact details are removed</li>
+    <li>your location history, pending requests and notifications are deleted</li>
+    <li><strong>your worked hours and pay records are kept</strong>, with your name removed, because employers are legally required to retain payroll records</li>
+  </ul>
+  <p>This cannot be undone.</p>
+
+  <h2>Children, changes and complaints</h2>
+  <p><strong>Children.</strong> The app is for employees and is not intended for anyone under 16. Employers must not invite staff under that age.</p>
+  <p><strong>Changes to this policy.</strong> We will update this page when our practices change and show the new effective date at the top. Significant changes will be notified in the app.</p>
+  <p><strong>Complaints.</strong> If you are unhappy with how your information is handled, contact your employer or us at <span class="placeholder">[CONTACT EMAIL]</span> first. You also have the right to complain to the Information Commissioner's Office at <a href="https://ico.org.uk" rel="noopener">ico.org.uk</a> or on 0303 123 1113.</p>
+</main>
+
+<footer class="page-footer">
+  <p><a href="/">← Back to the app</a></p>
+</footer>
+
+</body>
+</html>

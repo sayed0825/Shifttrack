@@ -175,7 +175,16 @@ export default function ManagerMoreTab({
       : []),
   ];
 
-  return <MoreTabSections sections={sections} storageKey="shifttrack:manager-more" />;
+  return (
+    <div>
+      <MoreTabSections sections={sections} storageKey="shifttrack:manager-more" />
+      <p className="mt-4 text-center text-xs text-ink/50">
+        <a href="/privacy" className="underline hover:text-ink/70">
+          Privacy policy
+        </a>
+      </p>
+    </div>
+  );
 }
 
 // ===========================================================================
