@@ -223,13 +223,22 @@ begin
 end $$;
 
 alter table public.task_photos alter column task_item_id set not null;
+
+-- task_photos_select/task_photos_insert both read task_id directly in
+-- their USING/WITH CHECK (can_see_task(task_id)) -- Postgres refuses to
+-- drop a column a policy depends on, so these must go before the column
+-- does. The gap this leaves with no SELECT/INSERT policy on task_photos
+-- is harmless: everything in this migration runs as the table owner
+-- inside one transaction, not as 'authenticated' through PostgREST, and
+-- the replacement policies (can_see_task_item-based) are created in
+-- step 5 below, before this transaction ever commits.
+drop policy task_photos_select on public.task_photos;
+drop policy task_photos_insert on public.task_photos;
+
 -- task_photos_task_id_idx auto-drops with the column (same as the tasks
 -- indexes below) -- replace it with the item-keyed equivalent.
 alter table public.task_photos drop column task_id;
 create index task_photos_task_item_idx on public.task_photos (task_item_id);
-
-drop policy task_photos_select on public.task_photos;
-drop policy task_photos_insert on public.task_photos;
 
 -- ============================================================================
 -- 4. task_comments: re-point to items -- rejection is per item now.
@@ -252,13 +261,17 @@ begin
 end $$;
 
 alter table public.task_comments alter column task_item_id set not null;
+
+-- Same dependency as task_photos above -- comments_select/comments_insert
+-- read task_id directly (can_see_task(task_id)), so they must be dropped
+-- before the column. Replacements created in step 5 below.
+drop policy comments_select on public.task_comments;
+drop policy comments_insert on public.task_comments;
+
 -- task_comments_task_idx auto-drops with the column -- replace it with
 -- the item-keyed equivalent, same (col, created_at) shape as before.
 alter table public.task_comments drop column task_id;
 create index task_comments_task_item_idx on public.task_comments (task_item_id, created_at);
-
-drop policy comments_select on public.task_comments;
-drop policy comments_insert on public.task_comments;
 
 -- ============================================================================
 -- 5. can_see_task_item -- new companion to can_see_task (unchanged --
