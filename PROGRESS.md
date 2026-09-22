@@ -130,6 +130,63 @@ since grown well past the original spec — see the log below.
 
 ## Log
 
+### 2026-09-22 (driver pay engine, step 3)
+**Native compliance for background location — gated on the role flag,
+disclosed before the prompt, hard-stopped on clock-out.** No migration
+this step (schema/app pay work was steps 1-2, already live — see the
+step-1/step-2 entries below).
+
+- **Role gate fixed**: the background-tracking effect in
+  `EmployeeDashboard.tsx`'s `ClockInTab` checked `profile.role !==
+  'Driver'` — a literal role NAME, wrong once roles are per-org
+  configurable text. Now gated on `roles.tracks_orders` (mirrors
+  `canViewMap`'s existing pattern exactly). This was the change that
+  mattered most, for the DPIA as much as store review — a
+  front-of-house employee must never be tracked in the background,
+  and a name check doesn't guarantee that for an org that renames or
+  adds delivery-style roles.
+- **Prominent disclosure**: new `LocationConsentModal.tsx`, shown once
+  per driver (persisted client-side) before the watcher starts —
+  `addBackgroundLocationWatcher`'s `requestPermissions: true` (the
+  actual system prompt) only fires after "Agree and continue".
+  Required by Google Play ahead of a background-location request;
+  shown on iOS too since it reads well to Apple's reviewers, not just
+  where it's mandatory.
+- **iOS**: `Info.plist`'s `NSLocationWhenInUseUsageDescription`/
+  `NSLocationAlwaysAndWhenInUseUsageDescription` rewritten to the
+  exact stated reasons (clock-in verification; mileage for pay +
+  dispatch visibility, only while clocked in on a delivery shift).
+  `showsBackgroundLocationIndicator` (the blue status-bar pill
+  reviewers look for) turned out to already be automatic — it's a
+  CLLocationManager property the plugin's own Swift side sets
+  whenever a `backgroundMessage` is present, not an Info.plist key;
+  documented in place rather than adding a redundant/wrong key.
+- **Android**: manifest already had all four permissions
+  (`ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION`,
+  `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_LOCATION`) from earlier
+  work — confirmed, not re-added. The foreground notification text
+  ("Shift active" / "Measuring delivery mileage") comes from JS
+  (`backgroundTitle`/`backgroundMessage` in
+  `src/lib/backgroundGeolocation.ts`); it's non-dismissible
+  automatically too (`setOngoing(true)` in the plugin's own Java, a
+  foreground-service property, not a manifest setting).
+- **Hard stop, two gaps closed**: (1) the manager-side auto clock-out
+  sweep (`ManagerDashboard.tsx`'s `checkAndCloseEndedShifts`) closes a
+  shift from a *different* browser/device — the driver's own app
+  previously had no way to learn its shift had ended, so tracking
+  could keep running in the background indefinitely. Fixed with a
+  realtime listener on the driver's own `time_logs` row in
+  `ClockInTab`. (2) a watcher started before a crash or force-quit has
+  no live JS context left to clean it up, and the plugin exposes no
+  "stop everything" API, only `removeWatcher(id)`. Fixed by persisting
+  the watcher id (`backgroundGeolocation.ts`) and checking for a stale
+  one with no matching open shift on every app launch.
+- Privacy policy notes section added near the end of this file, for
+  whoever writes the actual policy.
+- **Android cannot be device-tested yet; iOS will be tested via
+  TestFlight** — neither has been verified on a real device this
+  session, per the user.
+
 ### 2026-09-22 (later)
 **Task lists/items redesign — the item becomes the unit of work.**
 Migration `0026_task_lists_and_items.sql` is written, self-reviewed, and
@@ -1264,6 +1321,47 @@ why.
   in from home
 - **Shifts deleted before deactivating**, not after — if deletion fails,
   nothing changes at all
+
+---
+
+## Privacy policy notes
+
+For whoever writes the actual privacy policy — what the app does, not
+polished copy.
+
+- **Background location is collected for one purpose only**: measuring
+  delivery mileage that a driver's pay is based on, and showing
+  managers where drivers are for dispatch. Not analytics, not
+  advertising, not location history beyond what's needed for those two
+  things.
+- **Only staff whose role has `tracks_orders` set are ever tracked in
+  the background.** Gated on that flag, never a role name — an org can
+  call its delivery role anything. A front-of-house employee, or any
+  other non-tracking role, is never tracked in the background, full
+  stop, regardless of whether they're clocked in. See
+  `EmployeeDashboard.tsx`'s `tracksLocation` (mirrors `canViewMap`'s
+  existing pattern) and migration 0028's `roles.tracks_orders`.
+- **Only while clocked in on a shift**, never outside one. Tracking
+  starts when a tracked-role driver clocks in and stops the moment
+  they clock out — including a clock-out triggered remotely by a
+  manager's auto clock-out sweep, not just the driver's own button
+  (see the realtime listener in `ClockInTab`, added specifically
+  because the sweep runs from a different browser/device with no other
+  way to reach the driver's own app).
+- **In-app disclosure before the system permission prompt** —
+  `LocationConsentModal`, shown once per driver (persisted client-side)
+  before `addBackgroundLocationWatcher`'s `requestPermissions: true`
+  ever fires. States what's tracked, when, and why, in plain language,
+  before iOS/Android's own prompt appears.
+- **Stored data**: raw coordinates go to `live_locations` (current
+  position only, for the dispatch map) and `delivery_runs`/
+  `delivery_drops` (mileage/pay audit trail — see migration 0028).
+  Neither is a general-purpose location history; both are scoped to
+  what a driver's own shift needs.
+- **A leftover watcher from a crash or force-quit** is checked for on
+  every app launch and stopped if the shift it was tracking for has
+  since closed — see the persisted watcher id in
+  `backgroundGeolocation.ts` and the launch-time check in `ClockInTab`.
 
 ---
 

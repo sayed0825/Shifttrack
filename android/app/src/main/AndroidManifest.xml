@@ -61,6 +61,14 @@
          to keep GPS alive. FOREGROUND_SERVICE_LOCATION is mandatory from
          Android 14 (API 34) — omitting it throws SecurityException at
          Service.startForeground().
+
+         The notification text itself ("Shift active" / "Measuring delivery
+         mileage") is set from JS (backgroundTitle/backgroundMessage in
+         src/lib/backgroundGeolocation.ts), not here — nothing to configure
+         in this file for it. It's non-dismissible by swipe automatically:
+         the plugin calls setOngoing(true) on it (see its
+         BackgroundGeolocation.java), a foreground-service notification
+         property, not something this manifest controls.
          =================================================================== -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />

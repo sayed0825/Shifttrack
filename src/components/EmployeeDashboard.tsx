@@ -29,7 +29,13 @@ import {
   onQueueChange,
   pendingCount,
 } from '../lib/offlineQueue';
-import { addBackgroundLocationWatcher, removeBackgroundLocationWatcher } from '../lib/backgroundGeolocation';
+import {
+  addBackgroundLocationWatcher,
+  removeBackgroundLocationWatcher,
+  getPersistedWatcherId,
+  setPersistedWatcherId,
+  clearPersistedWatcherId,
+} from '../lib/backgroundGeolocation';
 import { supabase, pushLiveLocation } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
@@ -44,6 +50,7 @@ import {
 } from '../lib/tracksOrders';
 import { friendlyError } from '../lib/friendlyError';
 import LiveMap from './LiveMap';
+import LocationConsentModal from './LocationConsentModal';
 import NotificationBell from './NotificationBell';
 import EmployeeShiftActions from './EmployeeShiftActions';
 import EmployeeTasks from './EmployeeTasks';
@@ -195,6 +202,11 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
   const { roles } = useRoles();
   const { organisation } = useOrganisation();
   const canViewMap = roles.find((r) => r.name === profile.role)?.can_view_map ?? false;
+  // Background location is gated on this flag, never a role NAME — an org
+  // can call its delivery role anything. A front-of-house employee whose
+  // role doesn't track orders is never tracked in the background, full
+  // stop; this is the check the DPIA (and the store submissions) rest on.
+  const tracksLocation = roles.find((r) => r.name === profile.role)?.tracks_orders ?? false;
 
   // Bumped on mount (checks "on login" regardless of which tab last
   // persisted), whenever the Clock or Tasks tab becomes active, and right
@@ -289,7 +301,7 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-md px-4 py-4 pb-[calc(4rem+env(safe-area-inset-bottom))] md:max-w-3xl md:px-6 md:pb-6 lg:max-w-4xl">
           {tab === 'clock' && (
-            <ClockInTab profile={profile} canViewMap={canViewMap} onClockedOut={recheckOwedOrders} />
+            <ClockInTab profile={profile} canViewMap={canViewMap} tracksLocation={tracksLocation} onClockedOut={recheckOwedOrders} />
           )}
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
@@ -331,10 +343,12 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
 function ClockInTab({
   profile,
   canViewMap,
+  tracksLocation,
   onClockedOut,
 }: {
   profile: Profile;
   canViewMap: boolean;
+  tracksLocation: boolean;
   onClockedOut: () => void;
 }): ReactNode {
   const [shift, setShift] = useState<ShiftRow | null>(null);
@@ -346,6 +360,14 @@ function ClockInTab({
   const [fault, setFault] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState<string | null>(null);
   const [pending, setPending] = useState(pendingCount());
+  const [locationConsent, setLocationConsent] = useState(() => {
+    try {
+      return localStorage.getItem(`location-consent-${profile.id}`) === 'granted';
+    } catch {
+      return false;
+    }
+  });
+  const [showLocationConsentDismissed, setShowLocationConsentDismissed] = useState(false);
 
   const tracking = Boolean(openLog);
 
@@ -380,6 +402,20 @@ function ClockInTab({
       setShift(shiftResult.data ?? null);
       setOpenLog(logResult.data ?? null);
       setLoading(false);
+
+      // Hard stop, part 1: a watcher started before a crash or force-quit
+      // has no live JS context left to clean it up, and the plugin has no
+      // "stop everything" API, only removeWatcher(id) — so the id is
+      // persisted (see backgroundGeolocation.ts) specifically so this
+      // check can find it again. If there's no open shift on this fresh
+      // launch, any leftover watcher is for a shift that's already
+      // closed, full stop, regardless of how it got left running.
+      if (Capacitor.isNativePlatform() && !logResult.data) {
+        const staleWatcherId = getPersistedWatcherId();
+        if (staleWatcherId) {
+          void removeBackgroundLocationWatcher(staleWatcherId).finally(clearPersistedWatcherId);
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -391,7 +427,42 @@ function ClockInTab({
     return () => clearInterval(id);
   }, [openLog]);
 
-  // Only drivers are tracked, and only while on shift.
+  // A "Not now" only defers the current shift's prompt — the next
+  // clock-in asks again, since tracking is what the mileage pay this
+  // role earns is actually based on.
+  useEffect(() => {
+    if (!tracking) setShowLocationConsentDismissed(false);
+  }, [tracking]);
+
+  // Hard stop, part 2: the manager-side auto clock-out sweep
+  // (ManagerDashboard's checkAndCloseEndedShifts) closes an open log from
+  // a DIFFERENT browser/device entirely — this driver's own app has no
+  // other way to learn its shift just ended. Without this, tracking would
+  // keep running in the background until the driver happened to reopen
+  // the tab. Scoped to this user's own rows; RLS would block anyone
+  // else's anyway.
+  useEffect(() => {
+    if (!openLog) return undefined;
+    const channel = supabase
+      .channel(`clock-in-tab-${profile.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'time_logs', filter: `user_id=eq.${profile.id}` },
+        (payload: { new: { id: string; clock_out: string | null } }) => {
+          const row = payload.new;
+          if (row.id === openLog.id && row.clock_out !== null) setOpenLog(null);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [openLog, profile.id]);
+
+  // Only a role with tracks_orders is ever tracked, and only while on
+  // shift, and only once the in-app disclosure has been agreed to (see
+  // LocationConsentModal below) — that ordering, disclosure before the
+  // system prompt, is what "prominent disclosure" means to both stores.
   //
   // Native (iOS/Android): a background-capable watcher via
   // @capacitor-community/background-geolocation. navigator.geolocation's
@@ -404,7 +475,7 @@ function ClockInTab({
   // compromise: fresh enough for dispatch, light enough not to drain a
   // phone across a five-hour evening.
   useEffect(() => {
-    if (!tracking || profile.role !== 'Driver') return undefined;
+    if (!tracking || !tracksLocation || !locationConsent) return undefined;
     let cancelled = false;
 
     if (Capacitor.isNativePlatform()) {
@@ -419,12 +490,20 @@ function ClockInTab({
           accuracy: location.accuracy,
         });
       });
+      void watcherPromise.then((watcherId) => {
+        if (!cancelled) setPersistedWatcherId(watcherId);
+      });
       return () => {
         cancelled = true;
         // Always await the watcher's own ID before removing it, even if
         // cleanup runs before addWatcher's promise has resolved — losing
-        // that race would leak a watcher no cleanup ever reaches.
-        void watcherPromise.then((watcherId) => removeBackgroundLocationWatcher(watcherId));
+        // that race would leak a watcher no cleanup ever reaches. This
+        // fires immediately on clock-out (openLog -> null, via either the
+        // driver's own button or the realtime listener above) and on
+        // unmount — the hard stop this effect exists to guarantee.
+        void watcherPromise
+          .then((watcherId) => removeBackgroundLocationWatcher(watcherId))
+          .finally(clearPersistedWatcherId);
       };
     }
 
@@ -452,7 +531,7 @@ function ClockInTab({
       cancelled = true;
       clearInterval(id);
     };
-  }, [tracking, profile.id, profile.role]);
+  }, [tracking, tracksLocation, locationConsent, profile.id]);
 
   const checkFence = useCallback(async () => {
     if (!shift?.locations) return;
@@ -871,6 +950,21 @@ function ClockInTab({
             <LiveMap height="100%" />
           </div>
         </div>
+      )}
+
+      {tracking && tracksLocation && !locationConsent && !showLocationConsentDismissed && (
+        <LocationConsentModal
+          onAgree={() => {
+            try {
+              localStorage.setItem(`location-consent-${profile.id}`, 'granted');
+            } catch {
+              // Best-effort — tracking still starts this session either way;
+              // a failed write just means asking again next session.
+            }
+            setLocationConsent(true);
+          }}
+          onDismiss={() => setShowLocationConsentDismissed(true)}
+        />
       )}
     </div>
   );

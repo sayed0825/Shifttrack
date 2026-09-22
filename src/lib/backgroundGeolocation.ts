@@ -7,6 +7,39 @@ import type { BackgroundGeolocationPlugin, Location, CallbackError } from '@capa
 // at each call site, keeps that a plugin-loading detail this module owns.
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
+// Persisted across app launches/process death — a watcher started before a
+// crash or force-quit has no live JS context left to call removeWatcher on
+// it, and this plugin exposes no "stop everything" API, only
+// removeWatcher(id). Recording the id here is what makes the app-launch
+// stale-watcher check (see EmployeeDashboard's ClockInTab) possible at all:
+// without it, an id lost to process death is simply unrecoverable.
+const WATCHER_ID_KEY = 'shifttrack-location-watcher-id';
+
+export function getPersistedWatcherId(): string | null {
+  try {
+    return localStorage.getItem(WATCHER_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setPersistedWatcherId(id: string): void {
+  try {
+    localStorage.setItem(WATCHER_ID_KEY, id);
+  } catch {
+    // Best-effort — a failed write here only degrades the stale-watcher
+    // check on a future launch, never the current session's tracking.
+  }
+}
+
+export function clearPersistedWatcherId(): void {
+  try {
+    localStorage.removeItem(WATCHER_ID_KEY);
+  } catch {
+    // See setPersistedWatcherId.
+  }
+}
+
 /**
  * Starts a background-capable location watcher — native (iOS/Android) only.
  * Unlike navigator.geolocation, this keeps delivering updates while the
@@ -18,15 +51,28 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('Backg
  * `backgroundMessage` is required for the watcher to keep reporting once
  * backgrounded (see the plugin's README) — without it, updates are only
  * guaranteed in the foreground, silently defeating the point of using this
- * over navigator.geolocation at all.
+ * over navigator.geolocation at all. The same "background" flag is also
+ * what makes the plugin's iOS side set `showsBackgroundLocationIndicator`
+ * (see its Plugin.swift) — that's automatic, not something configured
+ * from here.
+ *
+ * Only ever call this for a role with tracks_orders — a front-of-house
+ * employee clocking in must never be tracked in the background. See the
+ * gate at the call site (EmployeeDashboard's ClockInTab), not here — this
+ * module has no way to enforce it itself.
  */
 export function addBackgroundLocationWatcher(
   callback: (location: Location | undefined, error: CallbackError | undefined) => void
 ): Promise<string> {
   return BackgroundGeolocation.addWatcher(
     {
-      backgroundTitle: 'ShiftTrack is tracking your location',
-      backgroundMessage: 'Your location is shared with your manager while you are clocked in.',
+      // Exact wording requested: a real Android foreground-service
+      // notification splits title/body, so "Shift active" / "measuring
+      // delivery mileage" together read as the single intended phrase.
+      // The notification itself is non-dismissible while the shift is
+      // open — inherent to a foreground service, nothing to set here.
+      backgroundTitle: 'Shift active',
+      backgroundMessage: 'Measuring delivery mileage',
       requestPermissions: true,
       stale: false,
       // Distance-based, not time-based — there is no polling interval to

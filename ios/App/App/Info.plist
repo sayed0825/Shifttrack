@@ -55,20 +55,28 @@
 	     vague strings are a common rejection reason for Always access.
 	     =================================================================== -->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>ShiftTrack uses your location to confirm you are at your assigned work site when you clock in and out.</string>
+	<string>ShiftTrack uses your location for verifying clock-in at the store.</string>
 
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>ShiftTrack shares your location with your manager while you are clocked in, including when the app is in the background, so dispatch can see live driver positions. Tracking stops as soon as you clock out.</string>
+	<string>ShiftTrack uses your location for measuring delivery mileage for pay, and showing managers where drivers are, only while clocked in on a delivery shift. Tracking stops the moment you clock out.</string>
 
 	<!-- Legacy key. iOS 10 and earlier only; harmless to retain and some
 	     tooling still checks for it when Always access is requested. -->
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>ShiftTrack shares your location with your manager while you are clocked in. Tracking stops as soon as you clock out.</string>
+	<string>ShiftTrack uses your location for measuring delivery mileage for pay, and showing managers where drivers are, only while clocked in on a delivery shift. Tracking stops the moment you clock out.</string>
 
 	<!-- Required for CLLocationManager to deliver updates once suspended.
 	     Enable the matching "Location updates" capability in Xcode under
 	     Signing &amp; Capabilities > Background Modes, or the entitlement
-	     will not be applied to the built target. -->
+	     will not be applied to the built target.
+
+	     showsBackgroundLocationIndicator (the blue status-bar pill
+	     reviewers look for) is NOT an Info.plist key -- it's a
+	     CLLocationManager property, and @capacitor-community/background-
+	     geolocation's iOS side sets it automatically whenever a watcher is
+	     started with a backgroundMessage (see its Plugin.swift:
+	     `manager.showsBackgroundLocationIndicator = background`). Nothing
+	     to configure here beyond this array existing. -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

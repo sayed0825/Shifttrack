@@ -107,6 +107,20 @@ Some components are `.jsx`/`.js` (`ManagerScheduler.jsx`, `LiveMap.jsx`, `offlin
   An unbounded loop here can insert thousands of rows in one click.
 - The geofence must be enforced offline too, recalculated on-device against
   cached site coordinates, so an outage cannot be used to clock in from home.
+- Background location tracking (native only, `EmployeeDashboard.tsx`'s
+  `ClockInTab`) must be gated on `roles.tracks_orders`, never a role
+  name — roles are per-org configurable text, so a name check can't
+  guarantee a front-of-house employee is excluded the way the flag
+  can. This is the DPIA/store-review boundary; do not weaken it to a
+  name comparison again. Tracking must also stop immediately on
+  clock-out, including one triggered remotely by the manager-side auto
+  clock-out sweep (a realtime listener on the driver's own `time_logs`
+  row exists specifically for this — the sweep runs from a different
+  device, with no other way to reach the tracked driver's own app),
+  and a leftover watcher from a crash/force-quit must be caught and
+  stopped on the next app launch (see the persisted watcher id in
+  `src/lib/backgroundGeolocation.ts`). See PROGRESS.md's "Privacy
+  policy notes" section for the full picture.
 
 ### Database
 
