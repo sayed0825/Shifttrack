@@ -534,3 +534,8 @@ one-off values on a screen.
   include the `https://` prefix. Saved without it, Supabase treats the
   value as a relative path instead of an absolute origin, and every
   invite/magic-link email goes out with a broken redirect link.
+- `profiles.org_id` is immutable on an existing profile, for everyone,
+  including administrators — enforced by `tg_protect_profile_role`
+  (0038). Nothing in the app writes it after creation. Moving someone
+  between organisations requires a deliberate change through the SQL
+  Editor as `postgres`, not a product feature.
