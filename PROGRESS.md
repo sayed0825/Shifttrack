@@ -13,7 +13,52 @@ Newest entries at the top.
 
 ## Current state
 
-**This session, in order:** task lists shipped — the item is now the
+**Most recent session:** a full API-abuse/input-validation audit (12
+findings, report-only) was worked through fix by fix. Migrations
+0033-0036 closed mass-assignment gaps on `profiles` (self-edit column
+restriction), `delivery_runs` (INSERT-time mileage fabrication),
+`task_items` (submit-path column restriction), and `time_logs`
+(clock-in field freeze), each with the RLS test that would have caught
+it. 0037 fixed a same-day regression in 0034 (a service-role insert
+into `delivery_runs` got nulled too — caught by a pre-existing positive
+test). 0038 went further than the audit itself asked: `profiles.org_id`
+is now fully immutable, for everyone, including administrators — the
+audit's own fix had left admins able to set their own `org_id` to any
+organisation in the database, with no destination check at all. The
+`invite-staff` Edge Function got real role/email validation (a role
+carrying `is_admin`/`can_manage` now requires the caller to be an
+admin), and, separately, a rate limit: it sends a real email through
+Resend on every call with no cap otherwise, so it's now capped at 20
+invites/sender/hour and 100/org/day, logged to a new `invite_log`
+table. `task-photos`/`org-logos` storage buckets got server-side
+`file_size_limit`/`allowed_mime_types` (previously client-side only).
+
+While checking for other uncapped email paths: the app had **no
+forgot-password flow at all** — no `resetPasswordForEmail` call, no
+UI — confirmed live that Supabase's own `/recover` endpoint could be
+hit repeatedly for the same address with zero throttling. Built one:
+"Forgot password?" on the sign-in screen, an email-entry step, and a
+confirmation screen shown identically regardless of whether the
+address has an account. The reset-link landing screen needed no new
+code — `App.tsx`'s `inviteMode` already treated `type=recovery` the
+same as `type=invite`.
+
+The RLS test suite itself became the bottleneck partway through this:
+every test file called `signInAs()`, which re-authenticated via
+`signInWithPassword` every time — ~20 files sharing a handful of fixed
+users meant ~190 password sign-ins in under 30 seconds per run, which
+tripped Supabase auth's rate limiter and then kept re-tripping it on
+every retry. Rewritten so fixture users sign in once in global setup
+and every test file reuses that session via `setSession()` — down to 9
+sign-ins per run, confirmed against Supabase's own auth logs. One
+commit (the forgot-password UI) went up with `--no-verify` during the
+worst of the rate-limit chaos, by explicit request, noted in that
+commit's own message. **Note for later: Supabase's auth rate limits
+were raised to 100 in the dashboard while debugging this and should be
+set back down — the email-specific limits in particular are what
+protect the password-reset endpoint from abuse.**
+
+**Earlier in this session, in order:** task lists shipped — the item is now the
 unit of work, submitted and reviewed individually (migration 0026,
 which needed three rolled-back attempts before it ran clean,
 reconciled against manual backups each time; 0027 followed immediately
@@ -69,12 +114,16 @@ below for the exact testing note (1.5 m/s floor filters walking pace —
 test in a car, not on foot).
 
 **Next up, before anything else:**
-1. The actual device test drive for the GPS engine.
-2. ICO registration — a self-assessment says the fee applies; the user
+1. Set Supabase's dashboard auth rate limits back down from 100 —
+   raised there during the RLS-suite debugging above, not a
+   deliberate production value. The email-specific limits protect the
+   new forgot-password flow from abuse.
+2. The actual device test drive for the GPS engine.
+3. ICO registration — a self-assessment says the fee applies; the user
    has deferred it. The registration number line has been removed
    from the privacy policy entirely (not left as a placeholder) until
    it's done.
-3. Store assets not started at all: screenshots, a background-location
+4. Store assets not started at all: screenshots, a background-location
    demo video (required alongside the ICO/DPIA paperwork for both
    stores' background-location review), and the privacy labels
    (App Store's Privacy Nutrition Label / Play's Data Safety form) —
@@ -181,6 +230,98 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-23 (later still — API abuse audit fixes, forgot-password, test rate-limit fix)
+Full API-abuse/input-validation audit (report-only, 12 findings)
+fixed in the order specified, one migration per group, each with a
+live-tested probe before the fix and an RLS test after:
+
+- **0033** (`9967640`): `profiles` self-edit column restriction —
+  `org_id`, `is_active`, `accepted_at`, `email` were all settable on
+  your own row through `profiles_update_own`, which only ever checked
+  `id = auth.uid()`. Also closed a related escalation: any manager
+  could grant themselves or anyone an Administrator role by direct
+  table update.
+- **0034** (`f84702d`): `delivery_runs` INSERT could set fabricated
+  mileage directly, bypassing `record_delivery_run`'s GPS filtering
+  entirely — fixed with a transaction-local GUC flag so only
+  `record_delivery_run`'s own insert can set those columns. Same
+  migration restricted `task_items`' employee-submit path, which could
+  previously rewrite the item's own definition and spoof
+  `completed_by` to a different real user.
+- **0035** (`3971570`): `time_logs.role_at_clock_in`/`shift_id`/
+  `clock_in_latitude`/`clock_in_longitude`/`clock_in_distance_m` were
+  all editable by the row's own owner while the shift was still open —
+  extended the existing clock-in freeze to cover them.
+- **0037** (`97ca124`): a same-day regression in 0034 — the mileage
+  freeze nulled a service-role insert too, not just a client one,
+  which broke `shift-pay-worked-example.test.ts`'s own fixture. Caught
+  by that pre-existing positive test, exactly the kind of gap this
+  whole exercise was about closing.
+- **`invite-staff`** (`752af8c`): `role` was never checked against
+  anything before landing in `profiles.role` — a role carrying
+  `is_admin`/`can_manage` now requires the caller to be an admin.
+  Email validation replaced `.includes("@")` with a real pattern.
+- **0036** (`e444cab`): `task-photos`/`org-logos` storage buckets got
+  server-side `file_size_limit`/`allowed_mime_types` — previously
+  enforced client-side only.
+- **0038** (`931167f`): went beyond the audit's own scope, at the
+  user's follow-up request — `profiles.org_id` is now fully immutable,
+  for everyone, including administrators. 0033's own admin carve-out
+  had no destination check: an admin could set their own `org_id` to
+  any organisation in the database. No legitimate workflow anywhere in
+  the app ever writes it.
+
+Findings 7 (password-reset enumeration), 11 (no rate limiting below
+Supabase's platform layer), and 12 (`signUp()` enumeration, unreachable
+via the app's own UI) were explicitly left for separate follow-up.
+
+Finding 7 came back concrete: `invite-staff` sends a real email
+through Resend on every call with **no cap at all** — confirmed live
+that it could be used as a mass-mail relay. **0039** (`e4da628`) added
+`invite_log` (admin-readable within org, write-only via service role)
+and a rate limit in the function itself: 20 invites/sender/hour,
+100/org/day, both constants at the top of the file, returns 429 with a
+computed wait time, logs every email actually sent. Checked for other
+uncapped email paths while in there: StaffManager's "resend invite"
+goes through the same endpoint, already covered. Found something
+worse: **the app has no forgot-password flow at all** — no
+`resetPasswordForEmail` call, no UI anywhere — confirmed live (an
+`@rls-tests.invalid` address, 8 calls back to back, all 200, zero
+throttling per Supabase's own auth logs) that the same uncapped-email
+problem existed on Supabase's own `/recover` endpoint, reachable
+directly with the anon key regardless of what the app's UI exposes.
+
+Built the missing flow (`2e0e42e`): "Forgot password?" on the sign-in
+screen, an email-entry step, and a confirmation screen worded and
+shown identically whether or not the address has an account or the
+call errors — the screen itself must never leak account existence.
+The reset-link landing screen needed no new code: `App.tsx`'s
+`inviteMode` already treated `type=recovery` the same as
+`type=invite`, reusing the same password-set form; only its copy and
+error messages now branch on recovery vs. invite.
+
+This last push exposed the RLS suite's own problem: every test file
+calls `signInAs()`, which re-authenticated via `signInWithPassword`
+every time. ~20 files sharing a handful of fixture users meant ~190
+password sign-ins inside 30 seconds per run — enough to trip
+Supabase's auth rate limiter, which then cascaded across whichever
+fixture accounts got reused hardest, and recurred on every retry since
+each attempt added the same load again. Spent a long stretch on
+sequential waits before recognising the pattern; the forgot-password
+commit eventually went up with `--no-verify`, by explicit request, for
+that commit only, with the reason recorded in its own message.
+Rewritten properly after (`3a68f67`): fixture users sign in once in
+global setup and carry the session; every test file's `signInAs()`
+rehydrates it via `setSession()` instead of re-authenticating. Verified
+against the live project: 191/191 passed, and Supabase's own auth logs
+show 9 password sign-ins for the whole run, down from ~190.
+
+**Note for later**: Supabase's dashboard auth rate limits were raised
+to 100 while debugging the above and should be set back to sensible
+values — the email-specific limits in particular are what protect the
+new password-reset endpoint from the exact abuse this session's audit
+was looking for elsewhere.
 
 ### 2026-09-23 (privacy policy live, domain cleanup, GPS test rig)
 Migrations 0032 confirmed run, driver pay engine step 4 pushed
