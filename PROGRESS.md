@@ -43,21 +43,43 @@ fixed: the app sends its own device timestamp for clock_out, and a
 clock-out queued offline replays with its original, now possibly
 stale, timestamp).
 
-**Not yet tested: the GPS engine (step 4)** — needs an actual drive
-with a test store geofence set up at home; nothing about it has been
-verified on a real device this session. See "Known broken" below for
-the exact testing note (1.5 m/s floor filters walking pace — test in a
-car, not on foot).
+**Since then:** `0032_record_delivery_run.sql` ran, step 4 pushed
+(`b9a5dc3a48b49af411c7537e1a56685878c04bd9`), RLS suite confirmed green
+at 164/164 against the live database after each push.
+
+A public privacy policy went live at `kitescheduling.com/privacy` —
+static HTML (`public/privacy.html`), no JS, no session, no Supabase
+call, required for both app stores before submission. Custom domain
+`kitescheduling.com` added on the Cloudflare Pages production
+deployment. While checking that domain: confirmed there is **no
+subdomain tenancy** — the app never reads the hostname, organisation
+is resolved from `profiles.org_id` after sign-in (`useOrganisation.ts`
+→ `my_org_id()`), and the sign-in screen itself is unbranded on every
+domain, `App.tsx`'s `session === null` branch has no org lookup at
+all. Also fixed while in there: `index.html`'s title and favicon were
+still the original Bolt template's ("Placemarks", `/vite.svg` — which
+didn't even exist in `public/`, so the icon link was 404ing) on every
+domain, not just the custom one.
+
+**Not yet tested: the GPS engine (step 4)** — a real device test is
+now set up and ready (TEST STORE + TEST SHIFT rows in the live
+database, a 75m geofence at the tester's home, cleanup SQL already in
+hand) but the actual drive hasn't happened yet. See "Known broken"
+below for the exact testing note (1.5 m/s floor filters walking pace —
+test in a car, not on foot).
 
 **Next up, before anything else:**
-1. Run `0032_record_delivery_run.sql` (driver pay engine step 4's last
-   piece — the atomic run+drops insert), then push the already-committed
-   app code (`626e706dec90a3a2a770090e5ddecab258cc6375`, currently
-   local-only — GPS engine, Delivered button, offlineQueue.js's
-   `delivery_run_complete` entry type) and re-run `npm run test:rls`
-   to confirm.
-2. The actual device test drive for the GPS engine, once the above is
-   live.
+1. The actual device test drive for the GPS engine.
+2. ICO registration — a self-assessment says the fee applies; the user
+   has deferred it. The registration number line has been removed
+   from the privacy policy entirely (not left as a placeholder) until
+   it's done.
+3. Store assets not started at all: screenshots, a background-location
+   demo video (required alongside the ICO/DPIA paperwork for both
+   stores' background-location review), and the privacy labels
+   (App Store's Privacy Nutrition Label / Play's Data Safety form) —
+   PROGRESS.md's own "Privacy policy notes" section above is the
+   source for what those should say.
 
 **Older, still open, unrelated to this session:**
 - Migration 0021 (guards the two shift-notify triggers against an
@@ -159,6 +181,70 @@ since grown well past the original spec — see the log below.
 ---
 
 ## Log
+
+### 2026-09-23 (privacy policy live, domain cleanup, GPS test rig)
+Migrations 0032 confirmed run, driver pay engine step 4 pushed
+(`b9a5dc3a48b49af411c7537e1a56685878c04bd9`), 164/164 RLS tests green.
+
+Privacy policy (`public/privacy.html`) drafted by the user, built as a
+static page (no router in this app — `react-router-dom` is an unused
+dependency — and a static file served cold with no JS/session is more
+reliable for App Store/Play reviewers than depending on Cloudflare's
+SPA-fallback config anyway), linked from the sign-in screen and both
+More tabs. Content iterated: the "Before publishing" internal note
+removed (it was a note to the user, not policy text), all bracketed
+placeholders filled in except ICO registration number — that one
+removed entirely, not left as a placeholder, since it's genuinely
+pending (see below). Now live at `kitescheduling.com/privacy` — the
+custom domain was added on Cloudflare Pages' production deployment as
+part of this.
+
+While the custom domain was in front of us: the user asked whether it
+actually reads the subdomain to pick an organisation (it looked, from
+`kaanikaana.kitescheduling.com`, like it might be doing per-tenant
+routing). Traced it end to end — it doesn't. `App.tsx` never reads
+`window.location.hostname` anywhere; organisation is resolved purely
+from the signed-in user's `profiles.org_id` (`useOrganisation.ts` →
+`my_org_id()`), and that hook only ever mounts after `App.tsx` already
+has a session, so the sign-in screen itself has no org lookup at all
+and is identical on every domain. The apparent "branded sign-in page"
+on `kitescheduling.com` is almost certainly a persisted Supabase
+session in that specific browser resuming straight to the dashboard,
+not a routing bug — confirmed in code, not by testing the actual
+browser in question, so flagged as the likely explanation rather than
+a settled one.
+
+Found while checking `index.html` for the same reason: title was still
+the original Bolt template's "Placemarks — Your map of favorite
+places", and the favicon pointed at `/vite.svg`, which was never
+actually in `public/` — that icon link had been 404ing this whole
+time, on every domain. Fixed: real title, a description meta tag,
+`og:title`/`og:description`, and a plain placeholder favicon
+(`public/favicon.svg`, brand-green rounded square with a white "K",
+explicitly flagged in a code comment as a placeholder, not a designed
+mark). Also dropped `og:image`/`twitter:image`, which pointed at
+`https://bolt.new/static/og_default.png` — a third-party Bolt asset,
+served on every link preview of the app. Swept the rest of the repo
+for the same residue: `ios/App/App/public/index.html` has the same
+stale content but is an untracked `cap sync` build artifact, not
+hand-edited, picked up automatically by the next `npm run sync`;
+`README.md`'s "Open in Bolt" badge removed; `.bolt/config.json` left
+alone — internal scaffold marker, never shown in the browser or app,
+already documented as intentional in CLAUDE.md.
+
+GPS engine (step 4) device test rig is set up and confirmed live: a
+`TEST STORE` location (75m geofence, the tester's home) and a
+`TEST SHIFT` open until 36 hours from creation, both org- and
+profile-scoped correctly, `profile_locations` linked. Cleanup SQL
+already in the user's hands. The actual drive test hasn't happened
+yet — nothing about the GPS engine has been verified on a real device.
+
+Outstanding, reported rather than silently deferred: ICO registration
+— a self-assessment says the data protection fee applies, user has
+deferred paying/registering it, so the privacy policy's registration
+number line was removed entirely rather than left half-true. Store
+assets (screenshots, a background-location demo video, the two
+stores' privacy label/data-safety forms) haven't been started at all.
 
 ### 2026-09-22 (driver pay engine, step 4)
 **The GPS engine and the Delivered button — native only.** Web drivers
