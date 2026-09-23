@@ -512,25 +512,24 @@ one-off values on a screen.
   only put the exact same value into the exact same shipped JS bundle,
   readable by anyone the same way — no security gain, just an extra
   build-time indirection. Leave it hardcoded.
-- LiveMap.jsx uses TWO hardcoded MapTiler keys, not one — MapTiler's
-  origin and user-agent restrictions combine with AND, so a single key
-  can't be correctly restricted for both web and native at once
-  (MapTiler's own guidance: a key per platform). `MAPTILER_KEY_WEB` is
-  origin-restricted to `kitescheduling.com`. `MAPTILER_KEY_NATIVE` is
-  user-agent restricted to the literal string `KiteSchedulingApp` —
-  that string comes from `capacitor.config.json`'s `ios.appendUserAgent`/
-  `android.appendUserAgent`, appended to the native WebView's real user
-  agent, not a replacement for it (`overrideUserAgent` would replace
-  it and is deliberately not used). `Capacitor.isNativePlatform()`
-  picks which constant actually gets used, in LiveMap.jsx itself.
-  Neither key is kept secret — both are hardcoded and both are visible
-  to anyone who looks; the restrictions are quota protection (stopping
-  someone else's page from burning your MapTiler quota), not access
-  control, and both are spoofable by anyone deliberately trying (a
-  forged Origin or User-Agent header defeats either check).
-  **Changing `appendUserAgent` breaks the native map** until MapTiler's
-  native-key restriction is updated to match the new string — the two
-  must change together, never one without the other.
+- LiveMap.jsx's MapTiler key (`MAPTILER_KEY`, one constant, shared by
+  web and native) is hardcoded and deliberately UNRESTRICTED — not an
+  oversight. MapTiler's own restrictions (origin, user-agent) combine
+  with AND, so a single key can never be correctly restricted for both
+  web and native at once, and MapTiler's free tier only allows one
+  active key at all — a genuine per-platform split (a
+  `MAPTILER_KEY_WEB` origin-restricted to `kitescheduling.com` plus a
+  `MAPTILER_KEY_NATIVE` user-agent-restricted key) isn't possible on
+  this plan. Revisit if the account ever moves to a paid tier that
+  allows more than one key. The exposure this leaves is quota theft
+  (someone else's page burning your MapTiler quota), not data
+  access — there's nothing behind this key worth protecting beyond
+  that.
+  `capacitor.config.json`'s `ios.appendUserAgent`/`android.appendUserAgent`
+  (`KiteSchedulingApp`) is kept even though nothing currently reads
+  it — it costs nothing to have in place and means a future
+  user-agent restriction (on a paid tier) needs no new native build to
+  add, only a MapTiler dashboard change.
 - Supabase's Site URL setting (Authentication → URL Configuration) must
   include the `https://` prefix. Saved without it, Supabase treats the
   value as a relative path instead of an absolute origin, and every

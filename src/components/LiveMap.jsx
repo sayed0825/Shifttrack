@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Compass, Gauge, Loader2, RefreshCw, Truck } from 'lucide-react';
-import { Capacitor } from '@capacitor/core';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabaseClient';
 
@@ -12,15 +11,11 @@ const DEFAULT_CENTER = [51.6, 0.25]; // Essex — the three sites sit inside thi
 const DEFAULT_ZOOM = 10;
 const SITE_ZOOM = 15;
 
-// Two keys, not one — MapTiler's origin and user-agent restrictions
-// combine with AND, so a single key can't be restricted correctly for
-// both web (origin = kitescheduling.com) and native (no origin header at
-// all, restricted by the appendUserAgent string in capacitor.config.json
-// instead). See CLAUDE.md for the restriction setup and what breaks if
-// either one changes without the other.
-const MAPTILER_KEY_WEB = 'Z9cNYGdzYdzYthbFh0b1';
-const MAPTILER_KEY_NATIVE = 'REPLACE_WITH_NATIVE_MAPTILER_KEY';
-const MAPTILER_KEY = Capacitor.isNativePlatform() ? MAPTILER_KEY_NATIVE : MAPTILER_KEY_WEB;
+// One key, shared by web and native, deliberately unrestricted — see
+// CLAUDE.md for why (MapTiler's free tier allows only one active key,
+// and origin + user-agent restrictions combine with AND, so one key
+// can't cover both platforms anyway).
+const MAPTILER_KEY = 'Z9cNYGdzYdzYthbFh0b1';
 
 /*
  * Tailwind scans source files for literal class strings. DivIcon markup is
