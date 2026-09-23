@@ -21,7 +21,7 @@
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.0.0",
-    "@capacitor/core": "^7.0.0",
+    "@capacitor/core": "^8.5.2",
     "@capacitor/geolocation": "^7.0.0",
     "@capacitor/ios": "^7.6.9",
     "@capacitor/network": "^7.0.0",
