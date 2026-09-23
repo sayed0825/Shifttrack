@@ -109,22 +109,33 @@ describe('profiles — self-edit is column-restricted, not just row-restricted',
     expect(data?.is_active).toBe(true);
   });
 
-  it('an admin CAN change org_id', async () => {
-    // A throwaway profile, not a shared fixture — org_id is destructive
-    // enough that it shouldn't touch a row other tests depend on.
+  it('an admin CAN change their own org_id', async () => {
+    // A throwaway admin profile, not the shared fixtures.orgA.admin — org_id
+    // is destructive enough that it shouldn't touch a row other tests
+    // depend on. Changes their OWN row, not someone else's:
+    // profiles_manager_all's with_check pins org_id = my_org_id() for ANY
+    // manager/admin acting on another profile, so a cross-org move of a
+    // different row is blocked at the RLS-policy layer regardless of this
+    // trigger — a separate, pre-existing gap between 0033's own docstring
+    // and what's actually reachable, outside this migration's scope, flagged
+    // back to the user rather than silently patched here. Self org_id
+    // change is what profiles_update_own (id = auth.uid(), no org_id
+    // constraint in the policy itself) actually leaves reachable, and it's
+    // exactly what this trigger's is_admin() passthrough gates.
     const email = `audit-org-move-${Date.now()}@example.com`;
+    const password = `Test-${Date.now()}-Xx1!`;
     const { data: authUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
-      password: `Test-${Date.now()}-Xx1!`,
+      password,
       email_confirm: true,
       user_metadata: { org_id: fixtures.orgA.orgId, full_name: 'Org Move Test' },
     });
     if (createError || !authUser.user) throw new Error(`fixture user create failed: ${createError?.message}`);
-    await adminClient.from('profiles').update({ role: fixtures.orgA.roleNames.employee, is_active: true }).eq('id', authUser.user.id);
+    await adminClient.from('profiles').update({ role: fixtures.orgA.roleNames.administrator, is_active: true }).eq('id', authUser.user.id);
 
     try {
-      const admin = await signInAs(fixtures.orgA.admin);
-      const { error } = await admin.from('profiles').update({ org_id: fixtures.orgB.orgId }).eq('id', authUser.user.id);
+      const throwawayAdmin = await signInAs({ id: authUser.user.id, email, password });
+      const { error } = await throwawayAdmin.from('profiles').update({ org_id: fixtures.orgB.orgId }).eq('id', authUser.user.id);
       expect(error).toBeNull();
       const { data, error: readError } = await adminClient.from('profiles').select('org_id').eq('id', authUser.user.id).single();
       expect(readError).toBeNull();

@@ -17,7 +17,14 @@ const fixtures = inject('fixtures');
  * Each test opens its own throwaway open time_log — the shared
  * timeLogEmployee1Id fixture is closed, so RLS alone (not this trigger)
  * would already block the owner from reaching it, which wouldn't
- * actually exercise the column freeze this migration adds.
+ * actually exercise the column freeze this migration adds. Uses
+ * deactivatedEmployee, not employee1 — delivery-run-insert.test.ts and
+ * time-log-clock-out-window.test.ts both also open throwaway time_logs
+ * for employee1, and time_logs_one_open_per_user_idx allows only one
+ * open log per user; Vitest runs test files in parallel, so sharing
+ * employee1 across files collides on that index. deactivatedEmployee is
+ * still at Location A1, inside the manager's scope, so the positive
+ * control below still holds.
  */
 describe('time_logs — clock-in fields are frozen against the owner, even while open', () => {
   async function openThrowawayTimeLog(): Promise<string> {
@@ -25,7 +32,7 @@ describe('time_logs — clock-in fields are frozen against the owner, even while
       .from('time_logs')
       .insert({
         org_id: fixtures.orgA.orgId,
-        user_id: fixtures.orgA.employee1.id,
+        user_id: fixtures.orgA.deactivatedEmployee.id,
         location_id: fixtures.orgA.locationA1Id,
         shift_id: fixtures.orgA.shiftEmployee1Id,
         role_at_clock_in: fixtures.orgA.roleNames.employee,
@@ -43,11 +50,11 @@ describe('time_logs — clock-in fields are frozen against the owner, even while
   it('an employee cannot change role_at_clock_in/shift_id/clock_in location on their own open log', async () => {
     const timeLogId = await openThrowawayTimeLog();
     try {
-      const employee1 = await signInAs(fixtures.orgA.employee1);
+      const deactivatedEmployee = await signInAs(fixtures.orgA.deactivatedEmployee);
       await expectWriteBlocked(
         'employee rewriting clock-in fields on their own open log',
         () =>
-          employee1
+          deactivatedEmployee
             .from('time_logs')
             .update({
               role_at_clock_in: fixtures.orgA.roleNames.manager,
@@ -84,7 +91,7 @@ describe('time_logs — clock-in fields are frozen against the owner, even while
     const timeLogId = await openThrowawayTimeLog();
     try {
       const manager = await signInAs(fixtures.orgA.manager);
-      // employee1 is at Location A1, inside the manager's scope (see fixtures.ts).
+      // deactivatedEmployee is at Location A1, inside the manager's scope (see fixtures.ts).
       const { error } = await manager
         .from('time_logs')
         .update({ shift_id: fixtures.orgA.shiftEmployee2Id, role_at_clock_in: fixtures.orgA.roleNames.manager })

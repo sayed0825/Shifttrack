@@ -16,12 +16,17 @@ const fixtures = inject('fixtures');
  * Each test opens its own throwaway time_log (delivery_runs_insert_own
  * requires clock_out is null) rather than touching the shared
  * timeLogEmployee1Id fixture, which is closed and shared by other tests.
+ * Uses employee2, not employee1 — time-log-clock-out-window.test.ts and
+ * time-log-clock-in-fields.test.ts both also open throwaway time_logs for
+ * employee1, and time_logs_one_open_per_user_idx allows only one open log
+ * per user; Vitest runs test files in parallel, so sharing employee1
+ * across files collides on that index.
  */
 describe('delivery_runs — INSERT cannot set mileage directly', () => {
   async function openThrowawayTimeLog(): Promise<string> {
     const { data, error } = await adminClient
       .from('time_logs')
-      .insert({ org_id: fixtures.orgA.orgId, user_id: fixtures.orgA.employee1.id, location_id: fixtures.orgA.locationA1Id, clock_out: null })
+      .insert({ org_id: fixtures.orgA.orgId, user_id: fixtures.orgA.employee2.id, location_id: fixtures.orgA.locationA2Id, clock_out: null })
       .select('id')
       .single();
     if (error || !data) throw new Error(`fixture time_log create failed: ${error?.message}`);
@@ -31,8 +36,8 @@ describe('delivery_runs — INSERT cannot set mileage directly', () => {
   it('a driver directly inserting a run cannot set mileage columns', async () => {
     const timeLogId = await openThrowawayTimeLog();
     try {
-      const employee1 = await signInAs(fixtures.orgA.employee1);
-      const { error } = await employee1
+      const employee2 = await signInAs(fixtures.orgA.employee2);
+      const { error } = await employee2
         .from('delivery_runs')
         .insert({ time_log_id: timeLogId, one_way_miles: 500, gps_one_way_miles: 500, mileage_source: 'gps' });
       expect(error).toBeNull(); // the insert itself is not rejected — it just starts blank
@@ -54,12 +59,12 @@ describe('delivery_runs — INSERT cannot set mileage directly', () => {
   it('record_delivery_run itself still writes real mileage (the GUC escape hatch works)', async () => {
     const timeLogId = await openThrowawayTimeLog();
     try {
-      const employee1 = await signInAs(fixtures.orgA.employee1);
+      const employee2 = await signInAs(fixtures.orgA.employee2);
       const now = new Date();
       const drops = [
         { sequence: 1, delivered_at: now.toISOString(), latitude: 51.5, longitude: -0.1, accuracy: 10, odometer_miles: 3.2 },
       ];
-      const { data: runId, error } = await employee1.rpc('record_delivery_run', {
+      const { data: runId, error } = await employee2.rpc('record_delivery_run', {
         p_time_log_id: timeLogId,
         p_started_at: now.toISOString(),
         p_ended_at: now.toISOString(),
@@ -76,6 +81,30 @@ describe('delivery_runs — INSERT cannot set mileage directly', () => {
       if (readError || !data) throw new Error(`readback failed: ${readError?.message}`);
       expect(Number(data.one_way_miles)).toBe(3.2);
       expect(Number(data.gps_one_way_miles)).toBe(3.2);
+      expect(data.mileage_source).toBe('gps');
+    } finally {
+      await adminClient.from('time_logs').delete().eq('id', timeLogId);
+    }
+  });
+
+  it('a service-role insert (no session) can still set mileage directly', async () => {
+    // shift-pay-worked-example.test.ts (positive) relies on exactly this:
+    // it builds its fixture delivery_runs row with a direct adminClient
+    // insert, one_way_miles included, no session at all. Triggers fire
+    // for every role, service_role included, so this needs its own
+    // explicit carve-out in tg_protect_delivery_run_insert, the same
+    // null-auth.uid()-is-trusted convention every other protective
+    // trigger in this schema already uses (0035, 0033, 0031).
+    const timeLogId = await openThrowawayTimeLog();
+    try {
+      const { data, error } = await adminClient
+        .from('delivery_runs')
+        .insert({ org_id: fixtures.orgA.orgId, time_log_id: timeLogId, one_way_miles: 6.5, gps_one_way_miles: 6.5, mileage_source: 'gps' })
+        .select('one_way_miles, gps_one_way_miles, mileage_source')
+        .single();
+      if (error || !data) throw new Error(`insert failed: ${error?.message}`);
+      expect(Number(data.one_way_miles)).toBe(6.5);
+      expect(Number(data.gps_one_way_miles)).toBe(6.5);
       expect(data.mileage_source).toBe('gps');
     } finally {
       await adminClient.from('time_logs').delete().eq('id', timeLogId);
