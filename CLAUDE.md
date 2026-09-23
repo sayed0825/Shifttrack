@@ -502,8 +502,26 @@ one-off values on a screen.
 - Verify a component is actually imported and rendered before editing it.
   Five orphaned files were found in this project, and fixes were applied to
   components that never rendered.
-- Supabase credentials are currently hardcoded in src/supabaseClient.js as a
-  workaround for a Bolt bug. This must move back to environment variables.
+- The Supabase URL and anon key are hardcoded in src/supabaseClient.js,
+  deliberately, not a leftover to fix. It's a Bolt-template workaround
+  originally, but the anon key is public by design — RLS is the real
+  access boundary, not key secrecy (confirmed via a full-history
+  gitleaks scan, 2026-09-23: it's the only credential-shaped string
+  ever committed besides a MapTiler key, and it decodes to
+  `role: anon`, never service_role). Moving it into an env var would
+  only put the exact same value into the exact same shipped JS bundle,
+  readable by anyone the same way — no security gain, just an extra
+  build-time indirection. Leave it hardcoded.
+- The MapTiler tile key in LiveMap.jsx (`src/components/LiveMap.jsx`,
+  the `url` prop on the tile layer) is hardcoded too, and is
+  domain-restricted in MapTiler's own dashboard rather than kept
+  secret — do not rotate it without updating that restriction first,
+  or the live map breaks for everyone until it's fixed. The native
+  (Capacitor) build sends no HTTP referrer, so a plain domain
+  allowlist won't cover it — it needs its own separate allowance in
+  MapTiler's restriction settings (bundle ID / no-referrer rule,
+  whatever MapTiler's dashboard offers for native apps), not just the
+  web domain.
 - Supabase's Site URL setting (Authentication → URL Configuration) must
   include the `https://` prefix. Saved without it, Supabase treats the
   value as a relative path instead of an absolute origin, and every
