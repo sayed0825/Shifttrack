@@ -456,11 +456,29 @@ function ClockInTab({
   // reasoning as activeRunRef/trackStateRef above. isMoving/etaMinutes are
   // never read from inside that closure, only written to it, so a plain
   // ref isn't needed for them.
+  //
+  // Also persisted to localStorage (same pattern as drivingMode/
+  // locationConsent) and rehydrated on mount (see the initial-load effect
+  // below) — a real gap found investigating why dispatch-eta had zero
+  // invocations despite 'returning' messages existing with eta_minutes
+  // stuck at null: the whole insert-then-fetch chain lived only in this
+  // in-memory ref/state, so if the app backgrounded right after the
+  // Returning tap — switching to Maps/Waze for the actual turn-by-turn is
+  // the NORMAL next action here, not an edge case — before the chain
+  // finished, the message existed on the server but this screen had no
+  // memory of it at all, and neither the immediate call nor the periodic
+  // refresh nor geofence-arrival could ever reach it again.
   const dispatchMessageIdRef = useRef<string | null>(null);
   const [dispatchMessageId, setDispatchMessageIdState] = useState<string | null>(null);
   const setDispatchMessageId = (id: string | null) => {
     dispatchMessageIdRef.current = id;
     setDispatchMessageIdState(id);
+    try {
+      if (id) localStorage.setItem(`dispatch-message-id-${profile.id}`, id);
+      else localStorage.removeItem(`dispatch-message-id-${profile.id}`);
+    } catch {
+      // Best-effort — the in-memory ref/state above still govern this session.
+    }
   };
   const lastEtaCallRef = useRef(0);
   // Driver-toggled only — never set from a geofence crossing or any other
@@ -551,6 +569,45 @@ function ClockInTab({
     }
   }, []);
 
+  // Shared by every ETA-refresh trigger: the fix-triggered check inside
+  // the watcher (fires when a new GPS fix arrives — needs 50m of
+  // movement, gpsFilter.ts/backgroundGeolocation.ts's distanceFilter),
+  // the setInterval below (guarantees the ~90s cadence even with zero
+  // movement), and the immediate call in handleReturning. All three
+  // check/update the same lastEtaCallRef, so whichever fires first in a
+  // given window wins and the others are harmless no-ops for it —
+  // deliberate redundancy, not a race to avoid. `force` skips the
+  // throttle for the one call that IS the throttle's own origin (the
+  // very first one, right after the Returning tap) and for the interval
+  // tick, which already only fires every 90s by construction.
+  const maybeRefreshEta = useCallback(
+    (messageId: string, latitude: number, longitude: number, force: boolean) => {
+      if (!force && Date.now() - lastEtaCallRef.current < 90_000) return;
+      lastEtaCallRef.current = Date.now();
+      void callEtaUpdate(messageId, latitude, longitude).then((eta) => {
+        if (eta != null && dispatchMessageIdRef.current === messageId) setEtaMinutes(eta);
+      });
+    },
+    [callEtaUpdate]
+  );
+
+  // Guarantees the ~90s cadence independent of GPS fixes arriving at
+  // all — the watcher's own fix-triggered check can't help a stationary
+  // driver (no movement, no new fix, distance-filtered) or recover from
+  // the very first call being interrupted by backgrounding right after
+  // the Returning tap. Fires once per interval for as long as a
+  // 'returning'/'stale' message is tracked, using whatever position is
+  // currently known.
+  useEffect(() => {
+    if (!dispatchMessageId) return undefined;
+    const id = setInterval(() => {
+      const fix = lastFixRef.current;
+      if (!fix) return;
+      maybeRefreshEta(dispatchMessageId, fix.latitude, fix.longitude, true);
+    }, 90_000);
+    return () => clearInterval(id);
+  }, [dispatchMessageId, maybeRefreshEta]);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -582,6 +639,50 @@ function ClockInTab({
       setShift(shiftResult.data ?? null);
       setOpenLog(logResult.data ?? null);
       setLoading(false);
+
+      // Rehydrates a 'returning' dispatch message across an app kill —
+      // see setDispatchMessageId's own comment for why this exists. Only
+      // meaningful if the shift it belongs to is still the one open now;
+      // a stale id from a since-finished shift is discarded, not adopted.
+      if (logResult.data) {
+        try {
+          const persistedId = localStorage.getItem(`dispatch-message-id-${profile.id}`);
+          if (persistedId) {
+            const { data: persisted } = await supabase
+              .from('dispatch_messages')
+              .select('id, status, eta_minutes, time_log_id')
+              .eq('id', persistedId)
+              .maybeSingle();
+            if (
+              !cancelled &&
+              persisted &&
+              persisted.time_log_id === logResult.data.id &&
+              (persisted.status === 'returning' || persisted.status === 'stale')
+            ) {
+              // The driver was already outside the geofence when this was
+              // set — without this, the next fix would read as a FRESH
+              // "left the store" transition and silently drop the
+              // rehydrated message. Drops recorded before the kill are
+              // still lost (they only ever lived in activeRunRef, never
+              // persisted — the same pre-existing, accepted constraint as
+              // any other in-progress run losing unsaved drops to a
+              // crash), so this starts a fresh empty run rather than
+              // pretending to recover one, but arrival and further
+              // Delivered taps work correctly going forward.
+              insideGeofenceRef.current = false;
+              activeRunRef.current = { startedAt: new Date().toISOString(), drops: [] };
+              setShowDeliveredButton(true);
+              setDispatchMessageId(persisted.id);
+              setEtaMinutes(persisted.eta_minutes);
+            } else {
+              localStorage.removeItem(`dispatch-message-id-${profile.id}`);
+            }
+          }
+        } catch {
+          // Best-effort — worst case, this message just goes stale on the
+          // server's own 15-minute sweep instead of being rehydrated.
+        }
+      }
 
       // Hard stop, part 1: a watcher started before a crash or force-quit
       // has no live JS context left to clean it up, and the plugin has no
@@ -927,12 +1028,8 @@ function ClockInTab({
           const currentSpeed = location.speed ?? 0;
           setIsMoving(currentSpeed >= MIN_MOVING_SPEED_MPS);
 
-          if (dispatchMessageIdRef.current && Date.now() - lastEtaCallRef.current >= 90_000) {
-            lastEtaCallRef.current = Date.now();
-            const returningMessageId = dispatchMessageIdRef.current;
-            void callEtaUpdate(returningMessageId, location.latitude, location.longitude).then((eta) => {
-              if (eta != null && dispatchMessageIdRef.current === returningMessageId) setEtaMinutes(eta);
-            });
+          if (dispatchMessageIdRef.current) {
+            maybeRefreshEta(dispatchMessageIdRef.current, location.latitude, location.longitude, false);
           }
 
           trackStateRef.current = applyFix(trackStateRef.current, {
@@ -985,7 +1082,7 @@ function ClockInTab({
       cancelled = true;
       clearInterval(id);
     };
-  }, [tracking, tracksLocation, locationConsent, profile.id, openLog?.id, shift?.locations?.id, finalizeRun, endRunAndMaybeShift]);
+  }, [tracking, tracksLocation, locationConsent, profile.id, openLog?.id, shift?.locations?.id, finalizeRun, endRunAndMaybeShift, maybeRefreshEta]);
 
   const checkFence = useCallback(async () => {
     if (!shift?.locations) return;
@@ -1271,10 +1368,7 @@ function ClockInTab({
     void postDispatchMessage('returning').then((id) => {
       if (!id) return;
       setDispatchMessageId(id);
-      lastEtaCallRef.current = Date.now();
-      void callEtaUpdate(id, fix.latitude, fix.longitude).then((eta) => {
-        if (eta != null && dispatchMessageIdRef.current === id) setEtaMinutes(eta);
-      });
+      maybeRefreshEta(id, fix.latitude, fix.longitude, true);
     });
   };
 
