@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Lock, LogIn } from 'lucide-react';
+import { Loader2, Lock, LogIn, Mail, CheckCircle2 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 import { usePermissions } from './hooks/usePermissions';
 import { resetDocumentScroll } from './lib/resetDocumentScroll';
@@ -24,6 +24,9 @@ export default function App() {
     const hash = window.location.hash;
     return hash.includes('type=invite') || hash.includes('type=recovery');
   });
+  const [isRecovery] = useState(() => window.location.hash.includes('type=recovery'));
+  const [authScreen, setAuthScreen] = useState<'signin' | 'forgot' | 'forgot-sent'>('signin');
+  const [resetEmail, setResetEmail] = useState('');
 
   // Zoom or scroll left over from a previous native session (see
   // resetDocumentScroll) would otherwise persist across a reload, since
@@ -149,7 +152,13 @@ export default function App() {
 
       if (updateError) {
         const msg = updateError.message.toLowerCase();
-        if (msg.includes('already been registered')) {
+        if (isRecovery) {
+          if (msg.includes('expired') || msg.includes('invalid')) {
+            setError('This link has expired or has already been used. Request a new one from the sign-in screen.');
+          } else {
+            setError('Could not set your password. Please try again, or request a new reset link.');
+          }
+        } else if (msg.includes('already been registered')) {
           setError('This invite has already been used. Try signing in instead, or ask your manager to send a new invite.');
         } else if (msg.includes('expired') || msg.includes('invalid')) {
           setError('This invite link has expired or already been used. Ask your manager to resend the invite.');
@@ -170,6 +179,21 @@ export default function App() {
     }
   };
 
+  const handleForgotPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+
+    try {
+      await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: window.location.origin });
+    } catch {
+      // Always show the same confirmation regardless of outcome — this
+      // screen must never reveal whether the address has an account.
+    } finally {
+      setBusy(false);
+      setAuthScreen('forgot-sent');
+    }
+  };
+
   if (inviteMode) {
     return (
       <div className="flex h-dvh items-center justify-center bg-bg px-4">
@@ -178,8 +202,12 @@ export default function App() {
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <Lock className="h-6 w-6 text-primary" aria-hidden="true" />
             </div>
-            <h1 className="font-display text-xl tracking-tight text-ink">Set your password</h1>
-            <p className="mt-1 text-sm text-ink/60">Choose a password to finish setting up your account.</p>
+            <h1 className="font-display text-xl tracking-tight text-ink">
+              {isRecovery ? 'Reset your password' : 'Set your password'}
+            </h1>
+            <p className="mt-1 text-sm text-ink/60">
+              {isRecovery ? 'Choose a new password for your account.' : 'Choose a password to finish setting up your account.'}
+            </p>
           </div>
 
           <form onSubmit={handleSetPassword} className="space-y-4">
@@ -225,7 +253,7 @@ export default function App() {
               ) : (
                 <Lock className="h-4 w-4" aria-hidden="true" />
               )}
-              Set password
+              {isRecovery ? 'Reset password' : 'Set password'}
             </button>
           </form>
         </div>
@@ -237,6 +265,89 @@ export default function App() {
     return (
       <div className="flex h-dvh items-center justify-center bg-bg text-primary">
         <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  if (session === null && authScreen === 'forgot-sent') {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-bg px-4">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-sm">
+          <div className="mb-5 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <CheckCircle2 className="h-6 w-6 text-primary" aria-hidden="true" />
+            </div>
+            <h1 className="font-display text-xl tracking-tight text-ink">Check your email</h1>
+            <p className="mt-1 text-sm text-ink/60">
+              If an account exists for that address, we've sent a link to reset the password. It may take a few
+              minutes to arrive.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAuthScreen('signin');
+              setResetEmail('');
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (session === null && authScreen === 'forgot') {
+    return (
+      <div className="flex h-dvh items-center justify-center bg-bg px-4">
+        <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-sm">
+          <div className="mb-5 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Mail className="h-6 w-6 text-primary" aria-hidden="true" />
+            </div>
+            <h1 className="font-display text-xl tracking-tight text-ink">Reset your password</h1>
+            <p className="mt-1 text-sm text-ink/60">Enter your email and we'll send you a link to reset it.</p>
+          </div>
+
+          <form onSubmit={handleForgotPassword} className="space-y-4">
+            <div>
+              <label htmlFor="reset-email" className="block text-sm font-medium text-ink">
+                Email
+              </label>
+              <input
+                id="reset-email"
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+            >
+              {busy ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Mail className="h-4 w-4" aria-hidden="true" />
+              )}
+              Send reset link
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setAuthScreen('signin')}
+              className="w-full text-center text-xs font-medium text-ink/60 hover:text-ink/80 hover:underline"
+            >
+              Back to sign in
+            </button>
+          </form>
+        </div>
       </div>
     );
   }
@@ -276,6 +387,19 @@ export default function App() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1.5 w-full rounded-lg border border-border bg-paper px-3 py-2 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               />
+              <div className="mt-1.5 text-right">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResetEmail(email);
+                    setError(null);
+                    setAuthScreen('forgot');
+                  }}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
             </div>
 
             {error && (
