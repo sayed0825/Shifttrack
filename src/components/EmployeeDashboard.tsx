@@ -240,6 +240,12 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
   // stop; this is the check the DPIA (and the store submissions) rest on.
   const tracksLocation = roles.find((r) => r.name === profile.role)?.tracks_orders ?? false;
 
+  // Lifted up from ClockInTab (see its own onLocationChange prop) so the
+  // header below can mount DispatchChat next to the notification bell —
+  // reachable at all times without scrolling, not inside that tab's own
+  // scrollable body.
+  const [currentShiftLocationId, setCurrentShiftLocationId] = useState<string | null>(null);
+
   // Bumped on mount (checks "on login" regardless of which tab last
   // persisted), whenever the Clock or Tasks tab becomes active, and right
   // after a successful clock-out — each forces OwedOrdersModal to re-check.
@@ -311,6 +317,15 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* Reachable at all times without scrolling — the header is
+                where persistent actions already live (see the bell right
+                next to it), not floating over the page body. Visible to
+                anyone on an open shift at a location (FOH and drivers
+                alike; RLS is what actually scopes the content), not just
+                canViewMap roles. */}
+            {currentShiftLocationId && organisation?.id && (
+              <DispatchChat locationId={currentShiftLocationId} orgId={organisation.id} viewerId={profile.id} />
+            )}
             <NotificationBell onReminderTap={recheckReminders} />
             <button
               type="button"
@@ -344,8 +359,8 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
               profile={profile}
               canViewMap={canViewMap}
               tracksLocation={tracksLocation}
-              orgId={organisation?.id ?? null}
               onClockedOut={recheckOwedOrders}
+              onLocationChange={setCurrentShiftLocationId}
             />
           </div>
           {tab === 'schedule' && <MyScheduleTab />}
@@ -389,14 +404,18 @@ function ClockInTab({
   profile,
   canViewMap,
   tracksLocation,
-  orgId,
   onClockedOut,
+  onLocationChange,
 }: {
   profile: Profile;
   canViewMap: boolean;
   tracksLocation: boolean;
-  orgId: string | null;
   onClockedOut: () => void;
+  /** The current open shift's location — lifted up so the header can
+   *  mount DispatchChat there (see EmployeeDashboard's own header),
+   *  reachable at all times without scrolling, not inside this tab's own
+   *  scrollable body. Called with null once there's no open shift. */
+  onLocationChange: (locationId: string | null) => void;
 }): ReactNode {
   const [shift, setShift] = useState<ShiftRow | null>(null);
   const [openLog, setOpenLog] = useState<TimeLogRow | null>(null);
@@ -587,6 +606,10 @@ function ClockInTab({
     const id = setInterval(() => setElapsed(formatElapsed(openLog.clock_in)), 30_000);
     return () => clearInterval(id);
   }, [openLog]);
+
+  useEffect(() => {
+    onLocationChange(openLog?.location_id ?? null);
+  }, [openLog?.location_id, onLocationChange]);
 
   // A "Not now" only defers the current shift's prompt — the next
   // clock-in asks again, since tracking is what the mileage pay this
@@ -1486,13 +1509,6 @@ function ClockInTab({
             )}
           </div>
         </div>
-      )}
-
-      {/* Dispatch chat — visible to anyone on an open shift at a location
-          (FOH and drivers alike; RLS itself is what actually scopes the
-          content), not just canViewMap roles. */}
-      {tracking && openLog?.location_id && orgId && (
-        <DispatchChat locationId={openLog.location_id} orgId={orgId} />
       )}
 
       {/* Conditional LiveMap for FOH and KA */}

@@ -398,6 +398,15 @@ export default function ManagerDashboard(): ReactNode {
           </nav>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/* Reachable at all times without scrolling — the header is
+                where persistent actions already live (see the bell right
+                next to it), not floating over the page body or scrolling
+                out of view inside the map tab. Same locationFilter as the
+                map/roster below — 'all' becomes null (every location this
+                manager manages), a specific id filters to just that one. */}
+            {organisation?.id && (
+              <DispatchChat locationId={locationFilter === 'all' ? null : locationFilter} orgId={organisation.id} viewerId={viewer.id} />
+            )}
             <NotificationBell />
 
             {/* The week selector only drives the timesheet query. */}
@@ -458,23 +467,14 @@ export default function ManagerDashboard(): ReactNode {
 
       <main className="min-h-0 flex-1 overflow-y-auto p-4">
         {tab === 'map' && canManage && (
-          <div className="flex h-full min-h-0 flex-col gap-4">
-            {/* Same locationFilter as the map/roster below — 'all' becomes
-                null (every location this manager manages), a specific id
-                filters to just that one. RLS itself is what actually
-                scopes the rows either way. */}
-            {organisation?.id && (
-              <DispatchChat locationId={locationFilter === 'all' ? null : locationFilter} orgId={organisation.id} />
-            )}
-            <div className="grid h-full min-h-0 flex-1 gap-4 md:grid-cols-[1fr_16rem] lg:grid-cols-[1fr_20rem]">
-              {/* isolate contains Leaflet's internal z-index (panes/controls go up to
-                  1000) so it can never compete with page-level chrome like a modal. */}
-              <div className="relative z-0 min-h-[24rem] isolate">
-                <LiveMap locationFilter={locationFilter} />
-              </div>
-              {/* No role filter control on this tab (see header) — always unfiltered by role. */}
-              <RosterSidebar locationFilter={locationFilter} roleFilter="all" />
+          <div className="grid h-full min-h-0 gap-4 md:grid-cols-[1fr_16rem] lg:grid-cols-[1fr_20rem]">
+            {/* isolate contains Leaflet's internal z-index (panes/controls go up to
+                1000) so it can never compete with page-level chrome like a modal. */}
+            <div className="relative z-0 min-h-[24rem] isolate">
+              <LiveMap locationFilter={locationFilter} />
             </div>
+            {/* No role filter control on this tab (see header) — always unfiltered by role. */}
+            <RosterSidebar locationFilter={locationFilter} roleFilter="all" />
           </div>
         )}
 

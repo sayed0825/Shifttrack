@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { MapPinned, MessageCircle, Minimize2, Navigation, WifiOff, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 
@@ -80,26 +80,54 @@ function MessageLine({ row }: { row: DispatchMessageRow }): ReactNode {
   );
 }
 
+function lastSeenKey(viewerId: string, locationId: string | null, orgId: string): string {
+  return `dispatch-chat-seen-${viewerId}-${locationId ?? `org-${orgId}`}`;
+}
+
 /**
- * A compact trigger that expands into a full-screen dispatch chat feed —
- * used identically by FOH (their own open shift's location, never null)
- * and managers (the dashboard's existing locationFilter: a specific id,
- * or null for "all locations I manage", matching that filter's own 'all'
- * option). RLS (dispatch_messages_select) is what actually scopes which
- * rows come back either way; this component never applies its own
- * visibility rule beyond the query filter below.
+ * A header icon (matching NotificationBell's own — same size, same
+ * badge, same "always reachable, costs no screen space" placement, not
+ * a floating/draggable button) that expands into a full-screen dispatch
+ * chat feed. Used identically by FOH (their own open shift's location,
+ * never null) and managers (the dashboard's existing locationFilter: a
+ * specific id, or null for "all locations I manage", matching that
+ * filter's own 'all' option). RLS (dispatch_messages_select) is what
+ * actually scopes which rows come back either way; this component never
+ * applies its own visibility rule beyond the query filter below.
+ *
+ * "Unread" here is inherently viewer-local, not a server column the way
+ * notifications.is_read is — this feed has no per-recipient row, every
+ * viewer at a location sees the same messages. Tracked client-side only
+ * (localStorage, per viewer + scope, same keying pattern as
+ * locationConsent/drivingMode elsewhere): a message posted after the
+ * last time this viewer opened the panel counts as unread. Only
+ * `created_at` counts, not `updated_at` — an ETA refreshing every ~90s
+ * would otherwise keep inflating the badge for a message the viewer
+ * already saw.
  */
 export default function DispatchChat({
   locationId,
   orgId,
+  viewerId,
 }: {
   /** null = no single-location filter — the manager view's "all locations". */
   locationId: string | null;
   orgId: string;
+  viewerId: string;
 }): ReactNode {
   const [expanded, setExpanded] = useState(false);
   const [messages, setMessages] = useState<DispatchMessageRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const lastSeenRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      lastSeenRef.current = Number(localStorage.getItem(lastSeenKey(viewerId, locationId, orgId)) ?? 0);
+    } catch {
+      lastSeenRef.current = 0;
+    }
+  }, [viewerId, locationId, orgId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,7 +138,9 @@ export default function DispatchChat({
       .limit(100);
     query = locationId ? query.eq('location_id', locationId) : query.eq('org_id', orgId);
     const { data } = await query;
-    setMessages((data ?? []) as unknown as DispatchMessageRow[]);
+    const rows = (data ?? []) as unknown as DispatchMessageRow[];
+    setMessages(rows);
+    setUnreadCount(rows.filter((row) => new Date(row.created_at).getTime() > lastSeenRef.current).length);
     setLoading(false);
   }, [locationId, orgId]);
 
@@ -137,15 +167,32 @@ export default function DispatchChat({
     };
   }, [locationId, orgId, load]);
 
+  const handleOpen = () => {
+    setExpanded(true);
+    const now = Date.now();
+    lastSeenRef.current = now;
+    setUnreadCount(0);
+    try {
+      localStorage.setItem(lastSeenKey(viewerId, locationId, orgId), String(now));
+    } catch {
+      // Best-effort — the in-memory ref above still governs this session.
+    }
+  };
+
   return (
     <>
       <button
         type="button"
-        onClick={() => setExpanded(true)}
-        className="inline-flex min-h-[44px] items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-bg"
+        onClick={handleOpen}
+        aria-label={`Dispatch chat${unreadCount > 0 ? `, ${unreadCount} unread` : ''}`}
+        className="relative rounded-lg p-2 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
       >
-        <MessageCircle className="h-4 w-4 text-ink/60" aria-hidden="true" />
-        Dispatch chat
+        <MessageCircle className="h-5 w-5" aria-hidden="true" />
+        {unreadCount > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        )}
       </button>
 
       {expanded && (
