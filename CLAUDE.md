@@ -512,16 +512,25 @@ one-off values on a screen.
   only put the exact same value into the exact same shipped JS bundle,
   readable by anyone the same way — no security gain, just an extra
   build-time indirection. Leave it hardcoded.
-- The MapTiler tile key in LiveMap.jsx (`src/components/LiveMap.jsx`,
-  the `url` prop on the tile layer) is hardcoded too, and is
-  domain-restricted in MapTiler's own dashboard rather than kept
-  secret — do not rotate it without updating that restriction first,
-  or the live map breaks for everyone until it's fixed. The native
-  (Capacitor) build sends no HTTP referrer, so a plain domain
-  allowlist won't cover it — it needs its own separate allowance in
-  MapTiler's restriction settings (bundle ID / no-referrer rule,
-  whatever MapTiler's dashboard offers for native apps), not just the
-  web domain.
+- LiveMap.jsx uses TWO hardcoded MapTiler keys, not one — MapTiler's
+  origin and user-agent restrictions combine with AND, so a single key
+  can't be correctly restricted for both web and native at once
+  (MapTiler's own guidance: a key per platform). `MAPTILER_KEY_WEB` is
+  origin-restricted to `kitescheduling.com`. `MAPTILER_KEY_NATIVE` is
+  user-agent restricted to the literal string `KiteSchedulingApp` —
+  that string comes from `capacitor.config.json`'s `ios.appendUserAgent`/
+  `android.appendUserAgent`, appended to the native WebView's real user
+  agent, not a replacement for it (`overrideUserAgent` would replace
+  it and is deliberately not used). `Capacitor.isNativePlatform()`
+  picks which constant actually gets used, in LiveMap.jsx itself.
+  Neither key is kept secret — both are hardcoded and both are visible
+  to anyone who looks; the restrictions are quota protection (stopping
+  someone else's page from burning your MapTiler quota), not access
+  control, and both are spoofable by anyone deliberately trying (a
+  forged Origin or User-Agent header defeats either check).
+  **Changing `appendUserAgent` breaks the native map** until MapTiler's
+  native-key restriction is updated to match the new string — the two
+  must change together, never one without the other.
 - Supabase's Site URL setting (Authentication → URL Configuration) must
   include the `https://` prefix. Saved without it, Supabase treats the
   value as a relative path instead of an absolute origin, and every

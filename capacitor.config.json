@@ -4,9 +4,11 @@
   "webDir": "dist",
   "ios": {
     "contentInset": "never",
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": false,
+    "appendUserAgent": "KiteSchedulingApp"
   },
   "android": {
-    "useLegacyBridge": true
+    "useLegacyBridge": true,
+    "appendUserAgent": "KiteSchedulingApp"
   }
 }

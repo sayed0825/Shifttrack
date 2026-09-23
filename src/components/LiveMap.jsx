@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Compass, Gauge, Loader2, RefreshCw, Truck } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../supabaseClient';
 
@@ -10,6 +11,16 @@ const STALE_AFTER_MS = 5 * 60 * 1000;
 const DEFAULT_CENTER = [51.6, 0.25]; // Essex — the three sites sit inside this
 const DEFAULT_ZOOM = 10;
 const SITE_ZOOM = 15;
+
+// Two keys, not one — MapTiler's origin and user-agent restrictions
+// combine with AND, so a single key can't be restricted correctly for
+// both web (origin = kitescheduling.com) and native (no origin header at
+// all, restricted by the appendUserAgent string in capacitor.config.json
+// instead). See CLAUDE.md for the restriction setup and what breaks if
+// either one changes without the other.
+const MAPTILER_KEY_WEB = 'Z9cNYGdzYdzYthbFh0b1';
+const MAPTILER_KEY_NATIVE = 'REPLACE_WITH_NATIVE_MAPTILER_KEY';
+const MAPTILER_KEY = Capacitor.isNativePlatform() ? MAPTILER_KEY_NATIVE : MAPTILER_KEY_WEB;
 
 /*
  * Tailwind scans source files for literal class strings. DivIcon markup is
@@ -245,7 +256,7 @@ export default function LiveMap({ height = '100%', locationFilter = 'all' }) {
       <div className="relative flex-1" style={{ height }}>
         <MapContainer center={DEFAULT_CENTER} zoom={DEFAULT_ZOOM} scrollWheelZoom className="h-full w-full">
           <TileLayer
-            url="https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=Z9cNYGdzYdzYthbFh0b1"
+            url={`https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`}
             attribution='&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             maxZoom={18}
           />
