@@ -65,6 +65,42 @@ export function haversineMeters(lat1, lon1, lat2, lon2) {
   return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
+const CLOCK_OUT_REVIEW_THRESHOLD_MS = 5 * 60_000;
+
+/**
+ * clock_out is always server time now (tg_protect_own_time_log, 0041) —
+ * the device's own clock is never trusted as fact, whether the request
+ * went through immediately or had to queue offline and replay later.
+ * This compares what the device claimed at tap time against what the
+ * server actually recorded and, if they differ by more than a few
+ * minutes, flags it for a manager exactly the way an employee's own
+ * overtime claim already gets reviewed: same overtime_claims table
+ * (claimed_clock_out is the column that already exists for exactly this
+ * "asserted time differs from the recorded time" shape), same
+ * decide_overtime_claim() RPC, same OvertimeApprovals screen, same
+ * notify-managers-on-insert trigger. No separate review mechanism to
+ * build or maintain.
+ *
+ * Best-effort: called after the clock-out itself has already succeeded,
+ * so a failure here never loses the clock-out — it just means this one
+ * shift doesn't get flagged, same tolerance as everything else in this
+ * file that isn't the primary write.
+ */
+export async function flagClockOutDiscrepancy(supabase, userId, timeLogId, claimedIso, recordedIso) {
+  try {
+    const diffMs = Math.abs(new Date(recordedIso).getTime() - new Date(claimedIso).getTime());
+    if (diffMs <= CLOCK_OUT_REVIEW_THRESHOLD_MS) return;
+    await supabase.from('overtime_claims').insert({
+      user_id: userId,
+      time_log_id: timeLogId,
+      claimed_clock_out: claimedIso,
+      reason: 'Recorded automatically — the device and server clock-out times differed by more than a few minutes.',
+    });
+  } catch {
+    // Best-effort — see the comment above.
+  }
+}
+
 /**
  * Replays queued entries in order. Returns { synced, failed }.
  *
@@ -99,14 +135,25 @@ export async function flushQueue(supabase) {
           remaining.push(entry);
           continue;
         }
-        const { error } = await supabase
+        // .select() (an array, not .single()) preserves the same
+        // zero-row-tolerant behaviour as before when the shift is
+        // already closed (e.g. a remote clock-out beat this replay to
+        // it) — data is just [] then, not an error — while still
+        // letting this read back the ACTUAL clock_out the server set
+        // (entry.clock_out is only ever a claim now, see 0041) whenever
+        // a row genuinely was updated.
+        const { data, error } = await supabase
           .from('time_logs')
           .update({ clock_out: entry.clock_out })
           .eq('id', logId)
-          .is('clock_out', null);
+          .is('clock_out', null)
+          .select('clock_out, user_id');
 
         if (error) throw error;
         synced += 1;
+        if (data?.[0]?.clock_out) {
+          void flagClockOutDiscrepancy(supabase, data[0].user_id, logId, entry.clock_out, data[0].clock_out);
+        }
       } else if (entry.type === 'delivery_run_complete') {
         // Same local-id correlation as clock_out — a run may belong to a
         // shift that itself hasn't synced yet. Queued ahead of that

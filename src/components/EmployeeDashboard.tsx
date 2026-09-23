@@ -27,6 +27,7 @@ import {
 import { Capacitor } from '@capacitor/core';
 import {
   enqueue,
+  flagClockOutDiscrepancy,
   flushQueue,
   haversineMeters,
   onQueueChange,
@@ -1059,15 +1060,27 @@ function ClockInTab({
 
     try {
       if (isLocal) throw new Error('queued');
-      const { error } = await supabase
+      // clockOut is sent but never trusted server-side — 0041 forces the
+      // server's own now() instead, whatever this says. .select() (an
+      // array, not .single()) so a zero-row match (already closed by
+      // something else) stays a no-op here rather than an error, same
+      // tolerance as the offline replay path in offlineQueue.js.
+      const { data, error } = await supabase
         .from('time_logs')
         .update({ clock_out: clockOut })
-        .eq('id', openLog.id);
+        .eq('id', openLog.id)
+        .select('clock_out');
       if (error) throw error;
       setOpenLog(null);
       // Closed for real (not just queued) — an orders entry may now be
       // owed for this shift.
       onClockedOut();
+      // A slow request can land well after the tap — flag it for review
+      // the same way an offline replay does if the server's actual time
+      // differs meaningfully from what was attempted.
+      if (data?.[0]?.clock_out) {
+        void flagClockOutDiscrepancy(supabase, profile.id, openLog.id, clockOut, data[0].clock_out);
+      }
     } catch {
       enqueue({
         type: 'clock_out',

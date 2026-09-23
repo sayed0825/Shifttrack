@@ -12,8 +12,17 @@ const fixtures = inject('fixtures');
  * their own row) could never clock themselves out at all — confirmed by
  * impersonating a driver in SQL. Fixed live, recorded in migration 0031.
  * These are the tests that would have caught it before it shipped.
+ *
+ * The 5-minute/1-minute window itself (0031) was later replaced entirely
+ * by 0041, which forces clock_out to the server's own now() for the
+ * owner's own clock-out — see time-log-server-clock-out.test.ts. There is
+ * no window left to test; "an employee cannot set clock_out outside the
+ * 5-minute window" below is updated to assert the new behaviour (the
+ * value is ignored and overridden, not rejected) rather than removed, to
+ * keep this file's own history of what tg_protect_own_time_log's
+ * clock-out branch has done over time in one place.
  */
-describe('time_log clock-out — allowed once, open to closed, within the window', () => {
+describe('time_log clock-out — allowed once, open to closed, server decides the time', () => {
   async function createOpenLog(userId: string, clockInHoursAgo: number): Promise<string> {
     const { data, error } = await adminClient
       .from('time_logs')
@@ -45,22 +54,24 @@ describe('time_log clock-out — allowed once, open to closed, within the window
     expect(data?.clock_out).not.toBeNull();
   });
 
-  it('an employee cannot set clock_out outside the 5-minute window', async () => {
+  it('an employee setting a clock_out far outside any old window gets the server\'s now() instead, not a rejection', async () => {
     const logId = await createOpenLog(fixtures.orgA.employee1.id, 2);
     const employee1 = await signInAs(fixtures.orgA.employee1);
 
-    // 10 minutes in the past — well outside now()-5m..now()+1m.
+    // 10 minutes in the past — would have been rejected under the old
+    // now()-5m..now()+1m window (0031). 0041 replaced that window with
+    // force-derivation: this value is simply ignored, not validated.
     const tooOld = new Date(Date.now() - 10 * 60_000).toISOString();
+    const before = Date.now();
+    const { error } = await employee1.from('time_logs').update({ clock_out: tooOld }).eq('id', logId);
+    const after = Date.now();
+    expect(error).toBeNull();
 
-    await expectWriteBlocked(
-      'employee setting clock_out outside the window',
-      () => employee1.from('time_logs').update({ clock_out: tooOld }).eq('id', logId),
-      async () => {
-        const { data, error } = await adminClient.from('time_logs').select('clock_out').eq('id', logId).single();
-        if (error || !data) throw new Error(error?.message ?? 'row missing on re-read');
-        if (data.clock_out !== null) throw new Error(`clock_out was set to ${data.clock_out}`);
-      }
-    );
+    const { data, error: readError } = await adminClient.from('time_logs').select('clock_out').eq('id', logId).single();
+    if (readError || !data?.clock_out) throw new Error(readError?.message ?? 'row missing on re-read');
+    const recordedMs = new Date(data.clock_out).getTime();
+    expect(recordedMs).toBeGreaterThanOrEqual(before - 1000);
+    expect(recordedMs).toBeLessThanOrEqual(after + 1000);
   });
 
   it('an employee cannot change clock_out once it is set', async () => {
