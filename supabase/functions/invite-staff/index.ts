@@ -1,5 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2.112.4";
 
+// This function sends a real email through Resend on every successful
+// call, with no cap otherwise -- callable in a loop by any manager/admin
+// session, usable as a mass-mail relay. Generous for real onboarding (60
+// staff over a few days is well within both), low enough that abuse is
+// capped fast. Change here if the real-world onboarding pace changes.
+const MAX_INVITES_PER_SENDER_PER_HOUR = 20;
+const MAX_INVITES_PER_ORG_PER_DAY = 100;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -174,6 +182,75 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Rate limits, checked last, right before the call that actually
+    // sends mail -- a request that fails validation above never counts
+    // against either cap, since it never sends anything.
+    const now = Date.now();
+    const hourAgo = new Date(now - 60 * 60 * 1000).toISOString();
+    const dayAgo = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+
+    const { count: senderCount, error: senderCountError } = await adminClient
+      .from("invite_log")
+      .select("id", { count: "exact", head: true })
+      .eq("sender_id", user.id)
+      .gte("created_at", hourAgo);
+
+    if (senderCountError) {
+      return new Response(JSON.stringify({ error: "Could not verify your invite rate" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if ((senderCount ?? 0) >= MAX_INVITES_PER_SENDER_PER_HOUR) {
+      const { data: oldest } = await adminClient
+        .from("invite_log")
+        .select("created_at")
+        .eq("sender_id", user.id)
+        .gte("created_at", hourAgo)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const waitMinutes = oldest
+        ? Math.max(1, Math.ceil((new Date(oldest.created_at).getTime() + 60 * 60 * 1000 - now) / 60000))
+        : 60;
+      return new Response(
+        JSON.stringify({ error: `You've sent ${MAX_INVITES_PER_SENDER_PER_HOUR} invites in the last hour. Try again in about ${waitMinutes} minute${waitMinutes === 1 ? "" : "s"}.` }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { count: orgCount, error: orgCountError } = await adminClient
+      .from("invite_log")
+      .select("id", { count: "exact", head: true })
+      .eq("org_id", orgId)
+      .gte("created_at", dayAgo);
+
+    if (orgCountError) {
+      return new Response(JSON.stringify({ error: "Could not verify your organisation's invite rate" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if ((orgCount ?? 0) >= MAX_INVITES_PER_ORG_PER_DAY) {
+      const { data: oldest } = await adminClient
+        .from("invite_log")
+        .select("created_at")
+        .eq("org_id", orgId)
+        .gte("created_at", dayAgo)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      const waitMinutes = oldest
+        ? Math.max(1, Math.ceil((new Date(oldest.created_at).getTime() + 24 * 60 * 60 * 1000 - now) / 60000))
+        : 24 * 60;
+      return new Response(
+        JSON.stringify({ error: `Your organisation has sent ${MAX_INVITES_PER_ORG_PER_DAY} invites in the last 24 hours. Try again in about ${waitMinutes} minute${waitMinutes === 1 ? "" : "s"}.` }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const appUrl = (typeof redirectBase === 'string' && redirectBase) ||
       req.headers.get('origin') || '';
     const { data: inviteData, error: inviteError } =
@@ -193,6 +270,17 @@ Deno.serve(async (req: Request) => {
     }
 
     const newUserId = inviteData.user.id;
+
+    // Logged as soon as the email is actually sent, independent of
+    // whether the profile/location upserts below succeed -- this row is
+    // what the rate limit above counts against, so it must reflect real
+    // sends, not a fully-completed invite.
+    const { error: logError } = await adminClient
+      .from("invite_log")
+      .insert({ org_id: orgId, sender_id: user.id, email_sent_to: email });
+    if (logError) {
+      console.error("Invite log insert failed:", logError.message);
+    }
 
     const { error: profileError } = await adminClient.from("profiles").upsert({
       id: newUserId,
