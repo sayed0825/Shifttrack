@@ -734,16 +734,36 @@ function ClockInTab({
   // effect above it). The drops/mileage recorded in this window still
   // attach to THIS shift (time_logs.clock_out itself is never touched
   // again), never a later one.
+  // Extended once more here: a manager clearing clock_out on this same
+  // row (EditLogModal's "reopen") must reach this screen live too, not
+  // just an auto-clock-out closing it — time_logs only entered the
+  // realtime publication in 0040, so before that this whole channel was
+  // silently receiving nothing at all, either direction. Not gated on
+  // `openLog` any more, since the reopen case is exactly the moment
+  // openLog is null (the employee's own screen already shows "clocked
+  // out") and there'd be nothing to compare row.id against yet.
   useEffect(() => {
-    if (!openLog) return undefined;
     const channel = supabase
       .channel(`clock-in-tab-${profile.id}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'time_logs', filter: `user_id=eq.${profile.id}` },
-        (payload: { new: { id: string; clock_out: string | null } }) => {
+        (payload: { new: { id: string; clock_in: string; clock_out: string | null; notes: string | null; location_id: string | null } }) => {
           const row = payload.new;
-          if (row.id !== openLog.id || row.clock_out === null) return;
+
+          if (row.clock_out === null) {
+            // Reopened. time_logs_one_open_per_user_idx (at most one open
+            // shift per user) means this can only ever succeed when
+            // nothing else is already open for this employee, so it's
+            // always safe to adopt as the tracked shift — the "fresh
+            // tracking session" effect below re-runs off openLog?.id
+            // changing and resets everything else (refs, driving mode,
+            // dispatch state) the same way a normal clock-in already does.
+            setOpenLog({ id: row.id, clock_in: row.clock_in, clock_out: null, notes: row.notes, location_id: row.location_id });
+            return;
+          }
+
+          if (!openLog || row.id !== openLog.id) return;
 
           if (activeRunRef.current) {
             setPostClockOut({

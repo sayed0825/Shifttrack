@@ -127,6 +127,9 @@ export interface TimeLogRow {
   profiles: Profile | null;
   orders_count?: number | null;
   role_at_clock_in?: string | null;
+  reopened_by?: string | null;
+  reopened_at?: string | null;
+  reopened_by_profile?: { first_name: string | null; full_name: string | null } | null;
 }
 
 export interface RosterEntry {
@@ -818,7 +821,7 @@ function TimesheetsPanel({
     let query = supabase
       .from('time_logs')
       .select(
-        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, role_at_clock_in, profiles:user_id ( id, first_name, full_name, role ), locations:location_id ( name ), shifts:shift_id ( start_time )'
+        'id, user_id, location_id, shift_id, clock_in, clock_out, notes, orders_count, role_at_clock_in, reopened_by, reopened_at, profiles:user_id ( id, first_name, full_name, role ), locations:location_id ( name ), shifts:shift_id ( start_time ), reopened_by_profile:reopened_by ( first_name, full_name )'
       )
       .gte('clock_in', weekStart.toISOString())
       .lt('clock_in', addDays(weekStart, 7).toISOString())
@@ -1282,6 +1285,21 @@ function EditLogModal({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
+          {/* Reopening a shift is pay-affecting and must never be
+              invisible — reopened_by/reopened_at are force-derived
+              server-side (0043) whenever a manager/admin clears clock_out
+              on someone else's row, never client-supplied. */}
+          {log.reopened_at && (
+            <div className="flex items-center gap-2 rounded-lg bg-warning-bg px-3 py-2 text-sm text-warning">
+              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>
+                Reopened by{' '}
+                {log.reopened_by_profile?.first_name ?? log.reopened_by_profile?.full_name ?? 'a manager'} ·{' '}
+                {formatDay(log.reopened_at)}, {formatClock(log.reopened_at)}
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="edit-clock-in" className="block text-sm font-medium text-ink">
