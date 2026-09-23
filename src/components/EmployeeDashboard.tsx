@@ -17,6 +17,7 @@ import {
   MapPin,
   MapPinned,
   MoreHorizontal,
+  Navigation,
   Radio,
   RefreshCw,
   User,
@@ -37,8 +38,8 @@ import {
   setPersistedWatcherId,
   clearPersistedWatcherId,
 } from '../lib/backgroundGeolocation';
-import { applyFix, initialRunTrackState, isInsideGeofence, type RunTrackState } from '../lib/gpsFilter';
-import { supabase, pushLiveLocation } from '../supabaseClient';
+import { applyFix, initialRunTrackState, isInsideGeofence, MIN_MOVING_SPEED_MPS, type RunTrackState } from '../lib/gpsFilter';
+import { supabase, pushLiveLocation, SUPABASE_URL, SUPABASE_ANON_KEY } from '../supabaseClient';
 import { useRoles } from '../hooks/useRoles';
 import { useOrganisation } from '../hooks/useOrganisation';
 import { useLateGrace } from '../hooks/useLateGrace';
@@ -51,6 +52,7 @@ import {
   tracksOrdersRoleNames,
 } from '../lib/tracksOrders';
 import { friendlyError } from '../lib/friendlyError';
+import DispatchChat from './DispatchChat';
 import LiveMap from './LiveMap';
 import LocationConsentModal from './LocationConsentModal';
 import NotificationBell from './NotificationBell';
@@ -329,7 +331,13 @@ export default function EmployeeDashboard({ profile }: { profile: Profile }): Re
               driver checking Tasks or Timesheets mid-run would silently
               lose everything recorded since the last Delivered tap. */}
           <div className={tab === 'clock' ? '' : 'hidden'}>
-            <ClockInTab profile={profile} canViewMap={canViewMap} tracksLocation={tracksLocation} onClockedOut={recheckOwedOrders} />
+            <ClockInTab
+              profile={profile}
+              canViewMap={canViewMap}
+              tracksLocation={tracksLocation}
+              orgId={organisation?.id ?? null}
+              onClockedOut={recheckOwedOrders}
+            />
           </div>
           {tab === 'schedule' && <MyScheduleTab />}
           {tab === 'shifts' && <EmployeeShiftActions profile={profile} />}
@@ -372,11 +380,13 @@ function ClockInTab({
   profile,
   canViewMap,
   tracksLocation,
+  orgId,
   onClockedOut,
 }: {
   profile: Profile;
   canViewMap: boolean;
   tracksLocation: boolean;
+  orgId: string | null;
   onClockedOut: () => void;
 }): ReactNode {
   const [shift, setShift] = useState<ShiftRow | null>(null);
@@ -411,7 +421,70 @@ function ClockInTab({
   const [dropCount, setDropCount] = useState(0);
   const [showDeliveredButton, setShowDeliveredButton] = useState(false);
 
+  // Dispatch chat / driving mode — dispatchMessageIdRef mirrors the state
+  // below so the watcher's long-lived closure (see the tracking effect
+  // further down) can read the current 'returning' message id without
+  // capturing a stale snapshot from whenever that effect last ran, same
+  // reasoning as activeRunRef/trackStateRef above. isMoving/etaMinutes are
+  // never read from inside that closure, only written to it, so a plain
+  // ref isn't needed for them.
+  const dispatchMessageIdRef = useRef<string | null>(null);
+  const [dispatchMessageId, setDispatchMessageIdState] = useState<string | null>(null);
+  const setDispatchMessageId = (id: string | null) => {
+    dispatchMessageIdRef.current = id;
+    setDispatchMessageIdState(id);
+  };
+  const lastEtaCallRef = useRef(0);
+  const [drivingMode, setDrivingMode] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
+  const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
+  const [chatPostFailures, setChatPostFailures] = useState(0);
+
   const tracking = Boolean(openLog);
+
+  // Best-effort, not queued through offlineQueue — dispatch chat isn't a
+  // system of record the way clock-in/out and the run itself are, so a
+  // failed post is surfaced to the driver (chatPostFailures, shown as a
+  // small marker in driving mode) rather than retried. They can say so
+  // over the radio or by phone instead.
+  const postDispatchMessage = useCallback(async (status: 'delivered' | 'returning'): Promise<string | null> => {
+    try {
+      const { data, error } = await supabase.from('dispatch_messages').insert({ status }).select('id').single();
+      if (error || !data) {
+        setChatPostFailures((n) => n + 1);
+        return null;
+      }
+      return data.id;
+    } catch {
+      setChatPostFailures((n) => n + 1);
+      return null;
+    }
+  }, []);
+
+  // Calls the ETA Edge Function (holds the Mapbox token — never the
+  // client bundle). Best-effort like the post above: a failed refresh
+  // just means the ETA on screen goes stale a little longer, caught by
+  // the 15-minute server-side sweep (0040) either way.
+  const callEtaUpdate = useCallback(async (messageId: string, latitude: number, longitude: number): Promise<number | null> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return null;
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/dispatch-eta`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ message_id: messageId, latitude, longitude }),
+      });
+      if (!response.ok) return null;
+      const result = await response.json();
+      return typeof result.eta_minutes === 'number' ? result.eta_minutes : null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -567,6 +640,14 @@ function ClockInTab({
             trackStateRef.current = initialRunTrackState();
             setShowDeliveredButton(false);
             setDropCount(0);
+            // A still-open 'returning' message from this trip is left as
+            // is, not resolved here — there's no way to know whether they
+            // actually arrived. The 15-minute staleness sweep (0040)
+            // catches it.
+            setDrivingMode(false);
+            setDispatchMessageId(null);
+            setEtaMinutes(null);
+            setChatPostFailures(0);
             void finalizeRun(openLog.id, isLocal, run);
           }
           setOpenLog(null);
@@ -605,6 +686,11 @@ function ClockInTab({
     lastFixRef.current = null;
     setShowDeliveredButton(false);
     setDropCount(0);
+    setDrivingMode(false);
+    setDispatchMessageId(null);
+    setEtaMinutes(null);
+    setIsMoving(false);
+    setChatPostFailures(0);
 
     if (Capacitor.isNativePlatform()) {
       // ONE watcher drives both the live map and the mileage engine — the
@@ -652,6 +738,15 @@ function ClockInTab({
           trackStateRef.current = initialRunTrackState();
           setShowDeliveredButton(true);
           setDropCount(0);
+          // Driving mode takes over the whole screen the instant they
+          // leave — a phone-at-the-wheel offence is exactly what this is
+          // meant not to invite, so there's no separate "enter driving
+          // mode" tap for the driver to make while already moving.
+          setDrivingMode(true);
+          setDispatchMessageId(null);
+          setEtaMinutes(null);
+          setIsMoving(false);
+          setChatPostFailures(0);
         } else if (!insideGeofenceRef.current && nowInsideGeofence) {
           // Back at the store — the run ends here, same as clocking out
           // without returning (handleClockOut) ends it at the last drop.
@@ -661,10 +756,29 @@ function ClockInTab({
           trackStateRef.current = initialRunTrackState();
           setShowDeliveredButton(false);
           setDropCount(0);
+          setDrivingMode(false);
+          if (dispatchMessageIdRef.current) {
+            const arrivingMessageId = dispatchMessageIdRef.current;
+            dispatchMessageIdRef.current = null;
+            void supabase.rpc('mark_dispatch_message_arrived', { p_message_id: arrivingMessageId });
+          }
+          setDispatchMessageId(null);
+          setEtaMinutes(null);
           if (finishedRun) void finalizeRun(timeLogId, isLocalTimeLog, finishedRun);
         }
 
         if (!insideGeofenceRef.current) {
+          const currentSpeed = location.speed ?? 0;
+          setIsMoving(currentSpeed >= MIN_MOVING_SPEED_MPS);
+
+          if (dispatchMessageIdRef.current && Date.now() - lastEtaCallRef.current >= 90_000) {
+            lastEtaCallRef.current = Date.now();
+            const returningMessageId = dispatchMessageIdRef.current;
+            void callEtaUpdate(returningMessageId, location.latitude, location.longitude).then((eta) => {
+              if (eta != null && dispatchMessageIdRef.current === returningMessageId) setEtaMinutes(eta);
+            });
+          }
+
           trackStateRef.current = applyFix(trackStateRef.current, {
             latitude: location.latitude,
             longitude: location.longitude,
@@ -908,6 +1022,14 @@ function ClockInTab({
       trackStateRef.current = initialRunTrackState();
       setShowDeliveredButton(false);
       setDropCount(0);
+      // Same as the remote-clock-out listener above: a still-open
+      // 'returning' message is left for the staleness sweep, not
+      // resolved here — clocking out without returning doesn't mean
+      // they arrived.
+      setDrivingMode(false);
+      setDispatchMessageId(null);
+      setEtaMinutes(null);
+      setChatPostFailures(0);
       await finalizeRun(openLog.id, isLocal, runToFinalize);
     }
 
@@ -936,10 +1058,13 @@ function ClockInTab({
     }
   };
 
-  // Records a drop entirely in memory — see DropDraft's own comment for
-  // why that's also what makes this work offline with no special-casing:
-  // there is no network call here to fail.
+  // The drop itself is recorded entirely in memory — see DropDraft's own
+  // comment for why that's also what makes THAT part work offline with no
+  // special-casing: there is no network call to fail for pay purposes.
+  // The chat post alongside it is a separate, best-effort side effect —
+  // see postDispatchMessage's own comment.
   const handleDelivered = () => {
+    if (isMoving) return; // defense in depth — the button is also disabled while moving
     const run = activeRunRef.current;
     const fix = lastFixRef.current;
     if (!run || !fix) return;
@@ -954,6 +1079,25 @@ function ClockInTab({
     };
     activeRunRef.current = { ...run, drops: [...run.drops, drop] };
     setDropCount(activeRunRef.current.drops.length);
+    void postDispatchMessage('delivered');
+  };
+
+  // Posts the one 'returning' message for this trip and kicks off the
+  // first ETA lookup immediately, rather than waiting up to 90s for the
+  // next qualifying fix — dispatchMessageIdRef is what the watcher's
+  // periodic update (see the tracking effect above) then keeps refreshing.
+  const handleReturning = () => {
+    if (isMoving || dispatchMessageIdRef.current) return;
+    const fix = lastFixRef.current;
+    if (!fix) return;
+    void postDispatchMessage('returning').then((id) => {
+      if (!id) return;
+      setDispatchMessageId(id);
+      lastEtaCallRef.current = Date.now();
+      void callEtaUpdate(id, fix.latitude, fix.longitude).then((eta) => {
+        if (eta != null && dispatchMessageIdRef.current === id) setEtaMinutes(eta);
+      });
+    });
   };
 
   if (loading) {
@@ -1120,19 +1264,21 @@ function ClockInTab({
               </div>
             )}
 
-            {/* Delivered — shown while clocked in and outside the store on
-                a delivery shift. Native only; web drivers keep entering
-                mileage manually (see OwedOrdersModal), since mobile
-                Safari suspends location the moment the screen locks. */}
-            {tracking && showDeliveredButton && (
+            {/* Shown while clocked in and outside the store on a delivery
+                shift, if driving mode has been manually exited — full
+                Delivered/Returning taps only ever happen inside driving
+                mode itself (see DrivingMode below), never here. Native
+                only; web drivers keep entering mileage manually (see
+                OwedOrdersModal), since mobile Safari suspends location the
+                moment the screen locks. */}
+            {tracking && showDeliveredButton && !drivingMode && (
               <button
                 type="button"
-                onClick={handleDelivered}
-                disabled={!lastFixRef.current}
-                className="mt-5 flex h-16 w-full items-center justify-center gap-2 rounded-lg bg-secondary text-lg font-semibold text-white transition active:scale-[0.99] disabled:opacity-60"
+                onClick={() => setDrivingMode(true)}
+                className="mt-5 flex h-16 w-full items-center justify-center gap-2 rounded-lg bg-secondary text-lg font-semibold text-white transition active:scale-[0.99]"
               >
-                <MapPinned className="h-6 w-6" aria-hidden="true" />
-                Delivered
+                <Navigation className="h-6 w-6" aria-hidden="true" />
+                Resume driving mode
                 <span className="ml-1 rounded-full bg-white/20 px-2.5 py-0.5 text-sm tabular-nums">{dropCount}</span>
               </button>
             )}
@@ -1172,6 +1318,13 @@ function ClockInTab({
         </div>
       )}
 
+      {/* Dispatch chat — visible to anyone on an open shift at a location
+          (FOH and drivers alike; RLS itself is what actually scopes the
+          content), not just canViewMap roles. */}
+      {tracking && openLog?.location_id && orgId && (
+        <DispatchChat locationId={openLog.location_id} orgId={orgId} />
+      )}
+
       {/* Conditional LiveMap for FOH and KA */}
       {canViewMap && (
         <div className="rounded-2xl border border-border bg-surface">
@@ -1204,6 +1357,112 @@ function ClockInTab({
           onDismiss={() => setShowLocationConsentDismissed(true)}
         />
       )}
+
+      {drivingMode && (
+        <DrivingMode
+          dropCount={dropCount}
+          isMoving={isMoving}
+          isReturning={dispatchMessageId != null}
+          etaMinutes={etaMinutes}
+          chatPostFailures={chatPostFailures}
+          onDelivered={handleDelivered}
+          onReturning={handleReturning}
+          onExit={() => setDrivingMode(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Full-screen, three large buttons, nothing else — leaving the store
+ *  triggers this automatically (see the tracking effect above), and the
+ *  two action buttons disable themselves the instant GPS speed crosses
+ *  MIN_MOVING_SPEED_MPS. A driver tapping either while the vehicle is
+ *  moving is a phone-at-the-wheel offence; the app should not invite it,
+ *  so Exit is the only thing ever tappable while in motion. */
+function DrivingMode({
+  dropCount,
+  isMoving,
+  isReturning,
+  etaMinutes,
+  chatPostFailures,
+  onDelivered,
+  onReturning,
+  onExit,
+}: {
+  dropCount: number;
+  isMoving: boolean;
+  isReturning: boolean;
+  etaMinutes: number | null;
+  chatPostFailures: number;
+  onDelivered: () => void;
+  onReturning: () => void;
+  onExit: () => void;
+}): ReactNode {
+  return (
+    // Higher than DispatchChat's own expanded overlay (z-[1400]) — if a
+    // driver had the chat feed open when they left the geofence, driving
+    // mode (safety-critical) must still win and cover it, not the other
+    // way round.
+    <div className="fixed inset-0 z-[1450] flex flex-col bg-ink text-white">
+      <div className="flex items-center justify-between px-5 pt-[calc(env(safe-area-inset-top)+1rem)] pb-2">
+        <span
+          role="status"
+          aria-live="polite"
+          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${
+            isMoving ? 'bg-warning-bg text-warning' : 'bg-white/10 text-white/70'
+          }`}
+        >
+          {isMoving ? 'Vehicle moving — buttons locked' : 'Stopped'}
+        </span>
+        {chatPostFailures > 0 && (
+          <span className="text-xs font-medium text-warning">
+            {chatPostFailures} not sent — tell dispatch by radio or phone
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col justify-center gap-4 px-5 pb-[env(safe-area-inset-bottom)]">
+        <button
+          type="button"
+          onClick={onDelivered}
+          disabled={isMoving}
+          className="flex h-28 w-full flex-col items-center justify-center gap-1 rounded-2xl bg-secondary text-2xl font-bold text-white transition active:scale-[0.98] disabled:opacity-40"
+        >
+          <MapPinned className="h-8 w-8" aria-hidden="true" />
+          Delivered
+          <span className="text-sm font-medium opacity-80">{dropCount} so far</span>
+        </button>
+
+        {isReturning ? (
+          <div className="flex h-28 w-full flex-col items-center justify-center gap-1 rounded-2xl border-2 border-primary bg-primary/20 text-2xl font-bold text-white">
+            <Navigation className="h-8 w-8" aria-hidden="true" />
+            Returning
+            <span className="text-sm font-medium opacity-80">
+              {etaMinutes != null ? `ETA ${etaMinutes} min${etaMinutes === 1 ? '' : 's'}` : 'Calculating ETA…'}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onReturning}
+            disabled={isMoving}
+            className="flex h-28 w-full flex-col items-center justify-center gap-1 rounded-2xl bg-primary text-2xl font-bold text-white transition active:scale-[0.98] disabled:opacity-40"
+          >
+            <Navigation className="h-8 w-8" aria-hidden="true" />
+            Returning
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onExit}
+          className="flex h-20 w-full items-center justify-center gap-2 rounded-2xl border border-white/20 text-lg font-semibold text-white/80 transition active:scale-[0.98]"
+        >
+          <X className="h-6 w-6" aria-hidden="true" />
+          Exit
+        </button>
+      </div>
     </div>
   );
 }
