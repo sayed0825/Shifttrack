@@ -15,11 +15,32 @@ export function anonClient(): SupabaseClient {
  * accidentally end up testing the wrong identity. Throws on failure: every
  * fixture user being able to sign in is a precondition the whole suite
  * depends on, not something each test should have to re-check.
+ *
+ * When `user.session` exists (every fixture user — see createUser in
+ * fixtures.ts), rehydrates that one already-issued session via
+ * setSession() rather than calling signInWithPassword() again. Dozens of
+ * test files each re-authenticating the same handful of shared fixture
+ * users was ~190 sign-ins inside 30 seconds on every run, which is what
+ * kept tripping Supabase auth's rate limiter. A one-off throwaway user a
+ * test constructs itself mid-run (no `session` field, nothing to reuse)
+ * still signs in for real.
  */
 export async function signInAs(user: TestUser): Promise<SupabaseClient> {
   const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+
+  if (user.session) {
+    const { error } = await client.auth.setSession({
+      access_token: user.session.accessToken,
+      refresh_token: user.session.refreshToken,
+    });
+    if (error) {
+      throw new Error(`Could not restore session for ${user.email}: ${error.message}`);
+    }
+    return client;
+  }
+
   const { error } = await client.auth.signInWithPassword({
     email: user.email,
     password: user.password,

@@ -7,6 +7,14 @@ export interface TestUser {
   id: string;
   email: string;
   password: string;
+  /**
+   * A session obtained once, in global setup (fixtures.ts's createUser),
+   * for every fixture user — signInAs rehydrates it via setSession()
+   * instead of re-authenticating. Absent for one-off throwaway users a
+   * test constructs itself mid-run (there's no earlier sign-in to reuse),
+   * which still fall back to signInWithPassword in that case.
+   */
+  session?: { accessToken: string; refreshToken: string };
 }
 
 export interface OrgAFixture {

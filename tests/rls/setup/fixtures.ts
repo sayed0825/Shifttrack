@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { adminClient } from './env';
+import { createClient } from '@supabase/supabase-js';
+import { adminClient, SUPABASE_URL, SUPABASE_ANON_KEY } from './env';
 import { ORG_A_NAME, ORG_A_SLUG, ORG_B_NAME, ORG_B_SLUG, EMAIL_DOMAIN } from './constants';
 import type { FixtureManifest, OrgAFixture, OrgBFixture, TestUser } from './types';
 
@@ -66,6 +67,11 @@ interface CreateUserArgs {
  * lands in the right *test* org rather than the trigger's real-org
  * fallback (`slug = 'org-1'`). Then updates role/is_active, which the
  * trigger doesn't set.
+ *
+ * Signs in once, here, and carries the session on the returned TestUser —
+ * every test file's signInAs() rehydrates this same session instead of
+ * re-authenticating. One real sign-in per fixture user for the whole
+ * suite, not one per test file per user.
  */
 async function createUser({ orgId, emailLocalPart, fullName, role, isActive = true }: CreateUserArgs): Promise<TestUser> {
   const email = `${emailLocalPart}@${EMAIL_DOMAIN}`;
@@ -85,7 +91,18 @@ async function createUser({ orgId, emailLocalPart, fullName, role, isActive = tr
   const updated = await adminClient.from('profiles').update({ role, is_active: isActive }).eq('id', id).select('id').single();
   mustSucceed(updated, `set role/is_active for ${email}`);
 
-  return { id, email, password: pass };
+  const signInClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+  const signedIn = await signInClient.auth.signInWithPassword({ email, password: pass });
+  if (signedIn.error || !signedIn.data.session) {
+    throw new Error(`Fixture setup failed — sign in ${email} once for session reuse: ${signedIn.error?.message ?? 'no session returned'}`);
+  }
+
+  return {
+    id,
+    email,
+    password: pass,
+    session: { accessToken: signedIn.data.session.access_token, refreshToken: signedIn.data.session.refresh_token },
+  };
 }
 
 async function assignLocation(profileId: string, locationId: string, orgId: string, isPrimary: boolean): Promise<void> {
