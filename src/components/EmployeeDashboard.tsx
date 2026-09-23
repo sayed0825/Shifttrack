@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   ArrowLeftRight,
@@ -435,7 +436,29 @@ function ClockInTab({
     setDispatchMessageIdState(id);
   };
   const lastEtaCallRef = useRef(0);
-  const [drivingMode, setDrivingMode] = useState(false);
+  // Driver-toggled only — never set from a geofence crossing or any other
+  // automatic condition (see the tracking effect below). Persisted, same
+  // pattern as locationConsent above: switching to Google Maps/Waze for
+  // the actual driving is the normal case for a delivery driver, and the
+  // OS reclaiming a backgrounded WebView for memory (more likely, not
+  // less, with a heavy app like Maps now in the foreground) must not
+  // silently drop this — it resumes in the same state instead of
+  // reverting to the ordinary dashboard.
+  const [drivingMode, setDrivingModeState] = useState(() => {
+    try {
+      return localStorage.getItem(`driving-mode-${profile.id}`) === 'on';
+    } catch {
+      return false;
+    }
+  });
+  const setDrivingMode = (on: boolean) => {
+    setDrivingModeState(on);
+    try {
+      localStorage.setItem(`driving-mode-${profile.id}`, on ? 'on' : 'off');
+    } catch {
+      // Best-effort — the in-memory state above still governs this session.
+    }
+  };
   const [isMoving, setIsMoving] = useState(false);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [chatPostFailures, setChatPostFailures] = useState(0);
@@ -738,11 +761,11 @@ function ClockInTab({
           trackStateRef.current = initialRunTrackState();
           setShowDeliveredButton(true);
           setDropCount(0);
-          // Driving mode takes over the whole screen the instant they
-          // leave — a phone-at-the-wheel offence is exactly what this is
-          // meant not to invite, so there's no separate "enter driving
-          // mode" tap for the driver to make while already moving.
-          setDrivingMode(true);
+          // Driving mode itself is untouched by this — driver-toggled
+          // only, never opened or closed by a geofence crossing. It must
+          // not fight the driver for the screen; if they're already
+          // showing turn-by-turn from Maps/Waze, leaving the geofence
+          // popping this open on top of it would do exactly that.
           setDispatchMessageId(null);
           setEtaMinutes(null);
           setIsMoving(false);
@@ -750,13 +773,14 @@ function ClockInTab({
         } else if (!insideGeofenceRef.current && nowInsideGeofence) {
           // Back at the store — the run ends here, same as clocking out
           // without returning (handleClockOut) ends it at the last drop.
+          // Driving mode's own on/off state is untouched here too — see
+          // the "left the store" branch above.
           insideGeofenceRef.current = true;
           const finishedRun = activeRunRef.current;
           activeRunRef.current = null;
           trackStateRef.current = initialRunTrackState();
           setShowDeliveredButton(false);
           setDropCount(0);
-          setDrivingMode(false);
           if (dispatchMessageIdRef.current) {
             const arrivingMessageId = dispatchMessageIdRef.current;
             dispatchMessageIdRef.current = null;
@@ -1265,7 +1289,9 @@ function ClockInTab({
             )}
 
             {/* Shown while clocked in and outside the store on a delivery
-                shift, if driving mode has been manually exited — full
+                shift, whenever driving mode isn't currently showing — the
+                driver turns it on themselves; it's never opened
+                automatically (see the tracking effect above). Full
                 Delivered/Returning taps only ever happen inside driving
                 mode itself (see DrivingMode below), never here. Native
                 only; web drivers keep entering mileage manually (see
@@ -1278,7 +1304,7 @@ function ClockInTab({
                 className="mt-5 flex h-16 w-full items-center justify-center gap-2 rounded-lg bg-secondary text-lg font-semibold text-white transition active:scale-[0.99]"
               >
                 <Navigation className="h-6 w-6" aria-hidden="true" />
-                Resume driving mode
+                Driving mode
                 <span className="ml-1 rounded-full bg-white/20 px-2.5 py-0.5 text-sm tabular-nums">{dropCount}</span>
               </button>
             )}
@@ -1358,25 +1384,37 @@ function ClockInTab({
         />
       )}
 
-      {drivingMode && (
-        <DrivingMode
-          dropCount={dropCount}
-          isMoving={isMoving}
-          isReturning={dispatchMessageId != null}
-          etaMinutes={etaMinutes}
-          chatPostFailures={chatPostFailures}
-          onDelivered={handleDelivered}
-          onReturning={handleReturning}
-          onExit={() => setDrivingMode(false)}
-        />
-      )}
+      {/* Portalled to document.body, not rendered inline here — this whole
+          card sits inside EmployeeDashboard's tab === 'clock' ? '' :
+          'hidden' wrapper, which is display:none the moment any other tab
+          is selected. A portal is the only way this can never be hidden
+          by that, or by anything else in the ancestor chain, regardless
+          of which tab is nominally active underneath. */}
+      {drivingMode &&
+        createPortal(
+          <DrivingMode
+            dropCount={dropCount}
+            isMoving={isMoving}
+            isReturning={dispatchMessageId != null}
+            etaMinutes={etaMinutes}
+            chatPostFailures={chatPostFailures}
+            onDelivered={handleDelivered}
+            onReturning={handleReturning}
+            onExit={() => setDrivingMode(false)}
+          />,
+          document.body
+        )}
     </div>
   );
 }
 
-/** Full-screen, three large buttons, nothing else — leaving the store
- *  triggers this automatically (see the tracking effect above), and the
- *  two action buttons disable themselves the instant GPS speed crosses
+/** Full-screen, three large buttons, nothing else. Driver-toggled only —
+ *  never opened automatically by a geofence crossing or any other run
+ *  state (see the parent's setDrivingMode calls, all driver-initiated).
+ *  Switching to Google Maps/Waze for the actual turn-by-turn is the
+ *  normal case, and this must not fight the driver for the screen — Exit
+ *  means exit until they turn it back on themselves. The two action
+ *  buttons disable themselves the instant GPS speed crosses
  *  MIN_MOVING_SPEED_MPS. A driver tapping either while the vehicle is
  *  moving is a phone-at-the-wheel offence; the app should not invite it,
  *  so Exit is the only thing ever tappable while in motion. */
