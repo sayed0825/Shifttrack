@@ -84,6 +84,13 @@ const TABS: ReadonlyArray<{ id: TabId; label: string; Icon: typeof Clock }> = [
 ];
 
 const LATE_THRESHOLD_MS = 5 * 60 * 1000;
+// Mid-delivery auto clock-out: sweep_open_shifts() (pg_cron) can close a
+// shift while a driver is still out on a run. Tracking continues past
+// that until they're back at the store or this much time has passed,
+// whichever is first — the client targets exactly this figure; the
+// actual server-side hard cap (0042, time_log_accepts_drops()) adds a
+// little slack on top for request latency, not an extension of this.
+const POST_CLOCK_OUT_GRACE_MS = 2 * 60 * 60 * 1000;
 
 /** Muted "No role" label for anywhere a role is displayed. */
 function roleLabel(role: string | null | undefined): ReactNode {
@@ -464,6 +471,21 @@ function ClockInTab({
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [chatPostFailures, setChatPostFailures] = useState(0);
 
+  // Mid-delivery auto clock-out — set when the remote-clock-out listener
+  // (below) detects the shift closing WHILE a run is still active.
+  // openLog deliberately stays set for the rest of the grace period (see
+  // that listener) so `tracking` below stays true and the watcher effect
+  // keeps running — this is the whole mechanism that lets tracking
+  // continue past the shift's own end. Ref mirrors state the same way as
+  // dispatchMessageId above, for the same reason: the watcher's
+  // long-lived closure needs to read the current value, not a stale one.
+  const postClockOutRef = useRef<{ timeLogId: string; isLocalTimeLog: boolean; deadline: number } | null>(null);
+  const [postClockOut, setPostClockOutState] = useState<{ timeLogId: string; isLocalTimeLog: boolean; deadline: number } | null>(null);
+  const setPostClockOut = (value: { timeLogId: string; isLocalTimeLog: boolean; deadline: number } | null) => {
+    postClockOutRef.current = value;
+    setPostClockOutState(value);
+  };
+
   const tracking = Boolean(openLog);
 
   // Best-effort, not queued through offlineQueue — dispatch chat isn't a
@@ -640,11 +662,78 @@ function ClockInTab({
     []
   );
 
-  // Hard stop, part 2 of step 3 — extended here to also finalize any
-  // in-progress run before dropping the tracked shift. A remote clock-out
-  // (the manager-side auto clock-out sweep) can close an overdue shift
-  // mid-run just as easily as the driver's own clock-out button can, and
-  // the run's drops are only sitting in this tab's own memory until then.
+  // Ends the current run — geofence re-entry (the normal case) or a
+  // mid-delivery-auto-clock-out grace period reaching its own end (2
+  // hours, or this same re-entry, whichever came first). If the shift
+  // itself had already ended (postClockOutRef.current set), this is also
+  // the end of the whole tracking session, not just the run — there's
+  // nothing left to keep tracking. If it hadn't, only the run ends; the
+  // shift carries on exactly as before.
+  const endRunAndMaybeShift = useCallback(
+    (timeLogId: string, isLocalTimeLog: boolean) => {
+      insideGeofenceRef.current = true;
+      const finishedRun = activeRunRef.current;
+      activeRunRef.current = null;
+      trackStateRef.current = initialRunTrackState();
+      setShowDeliveredButton(false);
+      setDropCount(0);
+      if (dispatchMessageIdRef.current) {
+        const arrivingMessageId = dispatchMessageIdRef.current;
+        dispatchMessageIdRef.current = null;
+        void supabase.rpc('mark_dispatch_message_arrived', { p_message_id: arrivingMessageId });
+      }
+      setDispatchMessageId(null);
+      setEtaMinutes(null);
+
+      if (postClockOutRef.current) {
+        setDrivingMode(false);
+        setPostClockOut(null);
+        setOpenLog(null);
+      }
+
+      if (finishedRun) void finalizeRun(timeLogId, isLocalTimeLog, finishedRun);
+    },
+    [finalizeRun]
+  );
+
+  // The setTimeout supplement below exists because the native watcher is
+  // distance-filtered (50m, backgroundGeolocation.ts), not time-filtered —
+  // a driver stationary near the 2-hour mark generates no new fix at all,
+  // so the deadline check inside the watcher's own callback (see the
+  // tracking effect further down) would never run. This is a genuine
+  // second mechanism, not a redundant one, though both call the same
+  // function and activeRunRef.current being nulled by whichever fires
+  // first makes the second a harmless no-op.
+  useEffect(() => {
+    if (!postClockOut) return undefined;
+    const msRemaining = postClockOut.deadline - Date.now();
+    if (msRemaining <= 0) {
+      endRunAndMaybeShift(postClockOut.timeLogId, postClockOut.isLocalTimeLog);
+      return undefined;
+    }
+    const id = setTimeout(() => endRunAndMaybeShift(postClockOut.timeLogId, postClockOut.isLocalTimeLog), msRemaining);
+    return () => clearTimeout(id);
+  }, [postClockOut, endRunAndMaybeShift]);
+
+  // Hard stop, part 2 of step 3 — extended here for two different cases.
+  // A remote clock-out (the manager-side auto clock-out sweep) can close
+  // an overdue shift mid-run just as easily as the driver's own
+  // clock-out button can, and the run's drops are only sitting in this
+  // tab's own memory until then.
+  //
+  // No run in progress: stop tracking immediately, exactly as before.
+  //
+  // A run IS in progress (mid-delivery auto clock-out): tracking
+  // continues rather than losing the final drop, that leg's mileage and
+  // its order pay. openLog deliberately stays set — this is the whole
+  // mechanism: `tracking` below stays true, so the watcher effect keeps
+  // running, keeps accepting Delivered taps, keeps accumulating mileage —
+  // until the driver is back at the store or POST_CLOCK_OUT_GRACE_MS
+  // passes, whichever is first (endRunAndMaybeShift above, called from
+  // both the watcher's own geofence-re-entry branch and the setTimeout
+  // effect above it). The drops/mileage recorded in this window still
+  // attach to THIS shift (time_logs.clock_out itself is never touched
+  // again), never a later one.
   useEffect(() => {
     if (!openLog) return undefined;
     const channel = supabase
@@ -656,24 +745,27 @@ function ClockInTab({
           const row = payload.new;
           if (row.id !== openLog.id || row.clock_out === null) return;
 
-          const run = activeRunRef.current;
-          if (run) {
-            const isLocal = openLog.id.startsWith('local-');
-            activeRunRef.current = null;
-            insideGeofenceRef.current = true;
-            trackStateRef.current = initialRunTrackState();
-            setShowDeliveredButton(false);
-            setDropCount(0);
-            // A still-open 'returning' message from this trip is left as
-            // is, not resolved here — there's no way to know whether they
-            // actually arrived. The 15-minute staleness sweep (0040)
-            // catches it.
-            setDrivingMode(false);
-            setDispatchMessageId(null);
-            setEtaMinutes(null);
-            setChatPostFailures(0);
-            void finalizeRun(openLog.id, isLocal, run);
+          if (activeRunRef.current) {
+            setPostClockOut({
+              timeLogId: openLog.id,
+              isLocalTimeLog: openLog.id.startsWith('local-'),
+              deadline: Date.now() + POST_CLOCK_OUT_GRACE_MS,
+            });
+            return;
           }
+
+          insideGeofenceRef.current = true;
+          trackStateRef.current = initialRunTrackState();
+          setShowDeliveredButton(false);
+          setDropCount(0);
+          // A still-open 'returning' message from this trip is left as
+          // is, not resolved here — there's no way to know whether they
+          // actually arrived. The 15-minute staleness sweep (0040)
+          // catches it.
+          setDrivingMode(false);
+          setDispatchMessageId(null);
+          setEtaMinutes(null);
+          setChatPostFailures(0);
           setOpenLog(null);
         }
       )
@@ -715,6 +807,7 @@ function ClockInTab({
     setEtaMinutes(null);
     setIsMoving(false);
     setChatPostFailures(0);
+    setPostClockOut(null);
 
     if (Capacitor.isNativePlatform()) {
       // ONE watcher drives both the live map and the mileage engine — the
@@ -752,6 +845,12 @@ function ClockInTab({
           siteLocation.longitude,
           siteLocation.radius_meters
         );
+        // Mid-delivery auto clock-out's other trigger, alongside the
+        // setTimeout effect above — a fix arriving here is the earliest
+        // point this closure can notice the deadline passed, since the
+        // watcher is distance-filtered, not time-filtered. Checked
+        // regardless of geofence state, same as the setTimeout.
+        const deadlineReached = postClockOutRef.current != null && Date.now() >= postClockOutRef.current.deadline;
 
         if (insideGeofenceRef.current && !nowInsideGeofence) {
           // Left the store — a run starts. Reset accumulation so this
@@ -771,25 +870,14 @@ function ClockInTab({
           setEtaMinutes(null);
           setIsMoving(false);
           setChatPostFailures(0);
-        } else if (!insideGeofenceRef.current && nowInsideGeofence) {
-          // Back at the store — the run ends here, same as clocking out
-          // without returning (handleClockOut) ends it at the last drop.
-          // Driving mode's own on/off state is untouched here too — see
-          // the "left the store" branch above.
-          insideGeofenceRef.current = true;
-          const finishedRun = activeRunRef.current;
-          activeRunRef.current = null;
-          trackStateRef.current = initialRunTrackState();
-          setShowDeliveredButton(false);
-          setDropCount(0);
-          if (dispatchMessageIdRef.current) {
-            const arrivingMessageId = dispatchMessageIdRef.current;
-            dispatchMessageIdRef.current = null;
-            void supabase.rpc('mark_dispatch_message_arrived', { p_message_id: arrivingMessageId });
-          }
-          setDispatchMessageId(null);
-          setEtaMinutes(null);
-          if (finishedRun) void finalizeRun(timeLogId, isLocalTimeLog, finishedRun);
+        } else if (!insideGeofenceRef.current && (nowInsideGeofence || deadlineReached)) {
+          // Back at the store, or the mid-delivery-auto-clock-out grace
+          // period's own cap reached first — either way the run ends
+          // here, same as clocking out without returning (handleClockOut)
+          // ends it at the last drop. endRunAndMaybeShift also ends the
+          // whole tracking session, not just the run, if the shift itself
+          // had already closed underneath this one.
+          endRunAndMaybeShift(timeLogId, isLocalTimeLog);
         }
 
         if (!insideGeofenceRef.current) {
@@ -854,7 +942,7 @@ function ClockInTab({
       cancelled = true;
       clearInterval(id);
     };
-  }, [tracking, tracksLocation, locationConsent, profile.id, openLog?.id, shift?.locations?.id, finalizeRun]);
+  }, [tracking, tracksLocation, locationConsent, profile.id, openLog?.id, shift?.locations?.id, finalizeRun, endRunAndMaybeShift]);
 
   const checkFence = useCallback(async () => {
     if (!shift?.locations) return;
@@ -1028,6 +1116,16 @@ function ClockInTab({
 
   const handleClockOut = async () => {
     if (!openLog) return;
+
+    // The shift already ended server-side (mid-delivery auto clock-out —
+    // see postClockOut above) — a real clock-out attempt would just be
+    // rejected (0041: the shift is already closed). Tapping this here
+    // means "I'm done, stop tracking now" instead.
+    if (postClockOutRef.current) {
+      endRunAndMaybeShift(postClockOutRef.current.timeLogId, postClockOutRef.current.isLocalTimeLog);
+      return;
+    }
+
     setBusy(true);
     setFault(null);
     const clockOut = new Date().toISOString();
@@ -1283,6 +1381,19 @@ function ClockInTab({
               </div>
             )}
 
+            {/* Mid-delivery auto clock-out — the driver must always know
+                tracking is still running once the shift itself has ended.
+                Shown regardless of driving mode being open (see its own
+                header) or not. */}
+            {postClockOut && (
+              <div className="mt-4 flex items-center gap-2 rounded-lg bg-warning-bg px-4 py-3">
+                <Radio className="h-4 w-4 shrink-0 animate-pulse text-warning" aria-hidden="true" />
+                <p className="text-sm font-medium text-warning">
+                  Shift ended. Still recording until you are back at the store.
+                </p>
+              </div>
+            )}
+
             {pending > 0 && (
               <div className="mt-4 flex gap-2 rounded-lg bg-secondary/10 p-3 text-sm">
                 <CloudOff className="mt-0.5 h-4 w-4 shrink-0 text-secondary" aria-hidden="true" />
@@ -1411,6 +1522,7 @@ function ClockInTab({
             isReturning={dispatchMessageId != null}
             etaMinutes={etaMinutes}
             chatPostFailures={chatPostFailures}
+            shiftEnded={postClockOut != null}
             onDelivered={handleDelivered}
             onReturning={handleReturning}
             onExit={() => setDrivingMode(false)}
@@ -1437,6 +1549,7 @@ function DrivingMode({
   isReturning,
   etaMinutes,
   chatPostFailures,
+  shiftEnded,
   onDelivered,
   onReturning,
   onExit,
@@ -1446,6 +1559,7 @@ function DrivingMode({
   isReturning: boolean;
   etaMinutes: number | null;
   chatPostFailures: number;
+  shiftEnded: boolean;
   onDelivered: () => void;
   onReturning: () => void;
   onExit: () => void;
@@ -1472,6 +1586,18 @@ function DrivingMode({
           </span>
         )}
       </div>
+
+      {/* Mid-delivery auto clock-out — the driver must always know
+          tracking is still running once the shift itself has ended,
+          whether they're looking at this screen or the normal one. */}
+      {shiftEnded && (
+        <div className="mx-5 mt-1 flex items-center gap-2 rounded-lg bg-warning-bg px-3 py-2">
+          <Radio className="h-4 w-4 shrink-0 animate-pulse text-warning" aria-hidden="true" />
+          <p className="text-sm font-medium text-warning">
+            Shift ended. Still recording until you are back at the store.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-1 flex-col justify-center gap-4 px-5 pb-[env(safe-area-inset-bottom)]">
         <button

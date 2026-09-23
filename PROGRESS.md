@@ -1744,13 +1744,23 @@ polished copy.
   stop, regardless of whether they're clocked in. See
   `EmployeeDashboard.tsx`'s `tracksLocation` (mirrors `canViewMap`'s
   existing pattern) and migration 0028's `roles.tracks_orders`.
-- **Only while clocked in on a shift**, never outside one. Tracking
-  starts when a tracked-role driver clocks in and stops the moment
-  they clock out — including a clock-out triggered remotely by a
-  manager's auto clock-out sweep, not just the driver's own button
+- **Only while clocked in on a shift**, with one deliberate exception.
+  Tracking starts when a tracked-role driver clocks in and stops the
+  moment they clock out — including a clock-out triggered remotely by
+  a manager's auto clock-out sweep, not just the driver's own button
   (see the realtime listener in `ClockInTab`, added specifically
   because the sweep runs from a different browser/device with no other
-  way to reach the driver's own app).
+  way to reach the driver's own app). **Except**: if the driver is
+  still out on a delivery run when the shift ends (auto clock-out
+  mid-delivery), tracking continues until they're back at the store or
+  two hours pass, whichever is first — a hard cap enforced server-side
+  (migration 0042, `time_log_accepts_drops()`), not just client-side —
+  so that final leg's drops, mileage and pay aren't silently lost. A
+  clear on-screen banner ("Shift ended. Still recording until you are
+  back at the store.") is shown for the whole time this is happening,
+  on top of the existing OS-level indicators — never track someone with
+  no way of knowing. See `POST_CLOCK_OUT_GRACE_MS` in
+  `EmployeeDashboard.tsx`.
 - **In-app disclosure before the system permission prompt** —
   `LocationConsentModal`, shown once per driver (persisted client-side)
   before `addBackgroundLocationWatcher`'s `requestPermissions: true`
