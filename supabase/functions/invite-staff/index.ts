@@ -64,21 +64,83 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const body = await req.json();
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Request body must be valid JSON" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const { email, role, firstName, fullName, primaryLocationId, additionalLocationIds, redirectBase } = body;
 
-    if (!email || !email.includes("@")) {
+    // Security audit finding 2 (2026-09-23): typeof narrows this from
+    // whatever shape a raw client sends before it ever reaches an actual
+    // email API. .includes("@") alone let "not-an-email" through.
+    const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (typeof email !== "string" || !EMAIL_PATTERN.test(email)) {
       return new Response(JSON.stringify({ error: "A valid email is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (!role) {
+    if (typeof firstName !== "undefined" && (typeof firstName !== "string" || firstName.length > 100)) {
+      return new Response(JSON.stringify({ error: "First name must be 100 characters or fewer" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (typeof fullName !== "undefined" && (typeof fullName !== "string" || fullName.length > 100)) {
+      return new Response(JSON.stringify({ error: "Full name must be 100 characters or fewer" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (typeof role !== "string" || !role.trim()) {
       return new Response(JSON.stringify({ error: "A role is required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Security audit finding 2: the role name was never checked against
+    // anything — an invite for a role that carries is_admin/can_manage
+    // went straight into profiles, the exact escalation path
+    // tg_protect_profile_role (0033) closes on the direct-update side.
+    // roles_select_org scopes this to the caller's own org already, via
+    // userClient (the caller's own JWT), so this can't be used to probe
+    // another org's role names.
+    const { data: roleRow, error: roleError } = await userClient
+      .from("roles")
+      .select("is_admin, can_manage")
+      .eq("org_id", orgId)
+      .eq("name", role)
+      .maybeSingle();
+
+    if (roleError) {
+      return new Response(JSON.stringify({ error: "Could not verify that role" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!roleRow) {
+      return new Response(JSON.stringify({ error: "That role does not exist in your organisation" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (roleRow.is_admin || roleRow.can_manage) {
+      const { data: callerIsAdmin, error: callerIsAdminError } = await userClient.rpc("is_admin");
+      if (callerIsAdminError || !callerIsAdmin) {
+        return new Response(JSON.stringify({ error: "Only an Administrator may assign a manager or admin role" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     // Managers are location-scoped now: an invite can only assign
