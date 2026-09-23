@@ -38,9 +38,21 @@ describe('dispatch_messages — force-derived columns, driver-only posting, loca
     if (createError || !authUser.user) throw new Error(`fixture driver create failed: ${createError?.message}`);
     await adminClient.from('profiles').update({ role: roleName, is_active: true }).eq('id', authUser.user.id);
 
+    // clock_in explicitly set well in the past, not left to the column's
+    // own now() default — this session found real clock skew between this
+    // machine and the Supabase server earlier, and time_logs_time_order
+    // requires clock_out > clock_in; a clock_out built from this
+    // machine's own Date.now() (see the "no open shift" test below) could
+    // otherwise land before a server-defaulted clock_in.
     const { data: timeLog, error: timeLogError } = await adminClient
       .from('time_logs')
-      .insert({ org_id: fixtures.orgA.orgId, user_id: authUser.user.id, location_id: fixtures.orgA.locationA1Id, clock_out: null })
+      .insert({
+        org_id: fixtures.orgA.orgId,
+        user_id: authUser.user.id,
+        location_id: fixtures.orgA.locationA1Id,
+        clock_in: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+        clock_out: null,
+      })
       .select('id')
       .single();
     if (timeLogError || !timeLog) throw new Error(`fixture time_log create failed: ${timeLogError?.message}`);
@@ -110,7 +122,8 @@ describe('dispatch_messages — force-derived columns, driver-only posting, loca
   it('a driver with no open shift cannot post', async () => {
     const { driver, timeLogId, cleanup } = await openThrowawayDriver();
     try {
-      await adminClient.from('time_logs').update({ clock_out: new Date().toISOString() }).eq('id', timeLogId);
+      const { error: closeError } = await adminClient.from('time_logs').update({ clock_out: new Date().toISOString() }).eq('id', timeLogId);
+      if (closeError) throw new Error(`fixture time_log close failed: ${closeError.message}`);
       const driverClient = await signInAs(driver);
       const { error } = await driverClient.from('dispatch_messages').insert({ status: 'delivered' });
       expect(error).not.toBeNull();
