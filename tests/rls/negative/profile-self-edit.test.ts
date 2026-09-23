@@ -16,6 +16,13 @@ const fixtures = inject('fixtures');
  * close a related escalation: any manager could previously grant
  * themselves or anyone an Administrator role by direct table update, the
  * same class of bug fixed in invite-staff.
+ *
+ * 0038 tightened org_id further: 0033's is_admin() carve-out had no
+ * destination check at all, so an administrator could set their OWN
+ * org_id to ANY organisation in the database, not just one they have any
+ * relationship to. org_id is now fully immutable on an existing profile,
+ * for everyone, admin included — no legitimate workflow anywhere in the
+ * app ever writes it.
  */
 describe('profiles — self-edit is column-restricted, not just row-restricted', () => {
   it('an employee cannot set their own org_id', async () => {
@@ -109,19 +116,12 @@ describe('profiles — self-edit is column-restricted, not just row-restricted',
     expect(data?.is_active).toBe(true);
   });
 
-  it('an admin CAN change their own org_id', async () => {
+  it('an admin cannot change org_id, not even their own (0038)', async () => {
     // A throwaway admin profile, not the shared fixtures.orgA.admin — org_id
     // is destructive enough that it shouldn't touch a row other tests
-    // depend on. Changes their OWN row, not someone else's:
-    // profiles_manager_all's with_check pins org_id = my_org_id() for ANY
-    // manager/admin acting on another profile, so a cross-org move of a
-    // different row is blocked at the RLS-policy layer regardless of this
-    // trigger — a separate, pre-existing gap between 0033's own docstring
-    // and what's actually reachable, outside this migration's scope, flagged
-    // back to the user rather than silently patched here. Self org_id
-    // change is what profiles_update_own (id = auth.uid(), no org_id
-    // constraint in the policy itself) actually leaves reachable, and it's
-    // exactly what this trigger's is_admin() passthrough gates.
+    // depend on. This is the exact capability 0033 deliberately granted
+    // admins and 0038 revoked: no destination-org check existed, so an
+    // admin could self-relocate into any organisation in the database.
     const email = `audit-org-move-${Date.now()}@example.com`;
     const password = `Test-${Date.now()}-Xx1!`;
     const { data: authUser, error: createError } = await adminClient.auth.admin.createUser({
@@ -135,11 +135,15 @@ describe('profiles — self-edit is column-restricted, not just row-restricted',
 
     try {
       const throwawayAdmin = await signInAs({ id: authUser.user.id, email, password });
-      const { error } = await throwawayAdmin.from('profiles').update({ org_id: fixtures.orgB.orgId }).eq('id', authUser.user.id);
-      expect(error).toBeNull();
-      const { data, error: readError } = await adminClient.from('profiles').select('org_id').eq('id', authUser.user.id).single();
-      expect(readError).toBeNull();
-      expect(data?.org_id).toBe(fixtures.orgB.orgId);
+      await expectWriteBlocked(
+        'admin setting their own org_id to a different organisation',
+        () => throwawayAdmin.from('profiles').update({ org_id: fixtures.orgB.orgId }).eq('id', authUser.user.id),
+        async () => {
+          const { data, error } = await adminClient.from('profiles').select('org_id').eq('id', authUser.user.id).single();
+          if (error || !data) throw new Error(error?.message ?? 'row missing on re-read');
+          if (data.org_id !== fixtures.orgA.orgId) throw new Error(`org_id changed to ${data.org_id}`);
+        }
+      );
     } finally {
       await adminClient.auth.admin.deleteUser(authUser.user.id);
     }
