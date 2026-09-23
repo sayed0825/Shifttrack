@@ -24,7 +24,7 @@
     "@capacitor/core": "^7.0.0",
     "@capacitor/geolocation": "^7.0.0",
     "@capacitor/ios": "^7.6.9",
-    "@capacitor/network": "^7.0.0",
+    "@capacitor/network": "^8.0.1",
     "@capacitor/preferences": "^7.0.0",
     "@fontsource/instrument-sans": "^5.3.0",
     "@fontsource/instrument-serif": "^5.3.0",
